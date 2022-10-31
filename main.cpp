@@ -1,0 +1,26 @@
+#include <iostream>
+#include "piece.hpp"
+#include "square.hpp"
+#include "chessboard.hpp"
+
+
+int main()
+{
+    std::cout << "Hello World!" << std::endl;
+    Chessboard chessboard;
+    chessboard.setStartupPieces();
+    std::cout<<chessboard.getSquare(0,0).getPiece().getType()<<std::endl;
+    // chessboard.board[0][0].setPiece(Piece(WHITE,KING));
+    std::vector<Square> vec_legal_moves = chessboard.getLegalMoves(1,0);
+    std::cout<<"legal moves: "<<std::endl;
+    std::cout<<vec_legal_moves.size()<<std::endl;
+    for (int i = 0; i < vec_legal_moves.size(); i++)
+    {
+
+        std::cout<<"i: "<<i<<std::endl;
+        std::cout<<vec_legal_moves[i].getName()<<std::endl;
+    }
+
+    chessboard.print();
+    return 0;
+}
