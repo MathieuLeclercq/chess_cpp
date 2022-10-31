@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include <algorithm>
 #include "piece.hpp"
 #include "square.hpp"
 
@@ -8,6 +9,8 @@
 class Chessboard
 {
     private:
+    const std::array<char, 8> files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
+    const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
     
 
     public:
@@ -27,4 +30,6 @@ class Chessboard
         void Clear();
         void setStartupPieces();
         void printBoard();
+        void movePiece(int orig_file,int orig_rank, int file, int rank);
+        void movePiece(std::string orig_square, std::string square);
 };

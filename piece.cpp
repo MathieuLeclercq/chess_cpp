@@ -6,6 +6,7 @@
 Piece::Piece()
 {
     this->type = NONE;
+    this->color = NO_COLOR;
 }
 
 Piece::Piece(Color color, PieceType type)
@@ -22,6 +23,11 @@ const PieceType& Piece::getType() const
 }
 
 Color Piece::getColor()
+{
+    return this->color;
+}
+
+const Color& Piece::getColor() const
 {
     return this->color;
 }

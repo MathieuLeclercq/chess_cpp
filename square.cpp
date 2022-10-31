@@ -68,6 +68,11 @@ std::string Square::getName() const
     return square_name;
 }
 
+bool Square::operator == (const Square& square) const
+{
+    return (this->file == square.file && this->rank == square.rank);
+}
+
 //...............Setters...............
 
 void Square::setPiece(Piece piece)

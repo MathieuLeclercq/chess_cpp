@@ -18,7 +18,8 @@ enum PieceType
 enum Color
 {
     WHITE,
-    BLACK
+    BLACK,
+    NO_COLOR
 };
 
 class Piece
@@ -35,6 +36,7 @@ class Piece
 
         // getters
         const PieceType& getType() const;
+        const Color& getColor() const;
         Color getColor();
     
         // setters

@@ -28,6 +28,7 @@ class Square
         int getFile() const;
         int getRank() const;
         std::string getName() const;
+        bool operator == (const Square& square) const;
 
         // setters
         void setPiece(Piece piece);
