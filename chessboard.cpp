@@ -9,7 +9,6 @@ Chessboard::Chessboard()
 }
 
 
-
 //...............Getters...............
 
 
@@ -45,20 +44,43 @@ void Chessboard::print() const
     {
         for (int j = 0; j < 8; j++)
         {
-            // if (this->board[j][i].CheckOccupied())
-            // {
-            //     std::cout << "X ";
-            // }
-            // else
-            // {
-            //     std::cout << "O ";
-            // }
-            std::cout << board[j][i].getPiece().getType() << " ";
+            std::cout << this->board[j][i].getPiece().getValue() << " ";
         }
         std::cout << std::endl;
     }
 }
 
+void Chessboard::print(std::vector<std::vector<Square>> some_board) const
+{
+    for (int i = 7; i > -1; i--)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            std::cout << some_board[j][i].getPiece().getType() << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+const std::vector<std::map<PieceType, std::array<Square,2>>>& Chessboard::getMoveHistory() const
+{
+    return moveHistory;
+}
+
+std::vector<std::map<PieceType, std::array<Square,2>>>& Chessboard::getMoveHistory()
+{
+    return moveHistory;
+}
+
+const std::vector<std::vector<std::vector<Square>>>& Chessboard::getBoardHistory() const
+{
+    return boardHistory;
+}
+
+std::vector<std::vector<std::vector<Square>>>& Chessboard::getBoardHistory()
+{
+    return boardHistory;
+}
 
 
 std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
@@ -481,6 +503,13 @@ void Chessboard::setStartupPieces()
     }
 }
 
+void Chessboard::updateHistory(Square first_square, Square second_square)
+{
+    std::map <PieceType,std::array<Square,2>> move;
+    this->moveHistory.push_back(move);
+    this->boardHistory.push_back(this->board);
+}
+
 void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
 {
     Square first_square = this->board[orig_file][orig_rank];
@@ -488,8 +517,9 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
     const std::vector<Square> legalMoves = this->getLegalMoves(orig_file, orig_rank);
     if (std::find(legalMoves.begin(), legalMoves.end(), second_square) != legalMoves.end())
     {
-        this->board[file][rank].setPiece(first_square.getPiece());
-        this->board[orig_file][orig_rank].setPiece(Piece());
+        this->board[file][rank].setPiece(first_square.getPiece()); // move piece
+        this->board[orig_file][orig_rank].setPiece(Piece()); // empty square where piece was
+        this->updateHistory(first_square, second_square);
     }
     else
     {
@@ -506,6 +536,6 @@ void Chessboard::movePiece(std::string orig_square, std::string square)
     // find index of square[0] in files
     int file = std::find(files.begin(), files.end(), square[0]) - files.begin();
     int rank = std::find(ranks.begin(), ranks.end(), square[1]) - ranks.begin();
-    std::cout<<"orig_file: " << orig_file << " orig_rank: " << orig_rank << " file: " << file << " rank: " << rank << std::endl;
+    // std::cout<<"orig_file: " << orig_file << " orig_rank: " << orig_rank << " file: " << file << " rank: " << rank << std::endl;
     this->movePiece(orig_file, orig_rank, file, rank);
 }

@@ -1,9 +1,6 @@
 #pragma once
 #include <iostream>
 
-
-
-
 enum PieceType
 {
     KING,
@@ -27,6 +24,7 @@ class Piece
     private:
         PieceType type;
         Color color;
+        int value;
 
     public:
         // constructors
@@ -38,9 +36,11 @@ class Piece
         const PieceType& getType() const;
         const Color& getColor() const;
         Color getColor();
-    
+        int getValue() const;
+
         // setters
         void setType(PieceType type);
         void move(int file, int rank);
+        void setValue();
 
 };
