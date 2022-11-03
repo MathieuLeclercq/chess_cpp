@@ -1,4 +1,5 @@
 #include "chessboard.hpp"
+#include <assert.h>
 
 //...............Constructors...............
 
@@ -44,6 +45,7 @@ void Chessboard::print() const
     {
         for (int j = 0; j < 8; j++)
         {
+            // std::cout << this->board[j][i].getPiece().getType() << " ";
             std::cout << this->board[j][i].getPiece().getValue() << " ";
         }
         std::cout << std::endl;
@@ -407,6 +409,30 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
 }
 
 
+bool Chessboard::checkForCheck()
+{
+    Color oppositeColor = (this->turn == WHITE) ? BLACK : WHITE;
+    // check if king is in check
+    for (int i = 0; i<8; i++)
+    {
+        for (int j = 0; j<8; j++)
+        {
+            if (this->board[i][j].getPiece().getColor() == oppositeColor)
+            {
+                std::vector<Square> legalMoves = this->getLegalMoves(i,j);
+                for (int k = 0; k<legalMoves.size(); k++)
+                {
+                    if (legalMoves[k].getPiece().getType() == KING)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 //...............Setters...............
 
 
@@ -503,6 +529,21 @@ void Chessboard::setStartupPieces()
     }
 }
 
+void Chessboard::setBoard(std::vector<std::vector<Square>> some_board)
+{
+    
+    for (int i = 0; i<8; i++)
+    {
+        for (int j = 0; j<8; j++)
+        {
+            this->board[i][j].setPiece(some_board[i][j].getPiece());
+            this->board[i][j].setPosition(i,j);
+            // assert both boards have the same piece
+            assert(this->board[i][j].getPiece().getType() == some_board[i][j].getPiece().getType());
+        }
+    }
+}
+
 void Chessboard::updateHistory(Square first_square, Square second_square)
 {
     std::map <PieceType,std::array<Square,2>> move;
@@ -515,15 +556,50 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
     Square first_square = this->board[orig_file][orig_rank];
     Square second_square = this->board[file][rank];
     const std::vector<Square> legalMoves = this->getLegalMoves(orig_file, orig_rank);
-    if (std::find(legalMoves.begin(), legalMoves.end(), second_square) != legalMoves.end())
+    if (first_square.getPiece().getColor() != this ->turn) // check turn
     {
+        std::cout<<"It is not your turn!"<<std::endl;
+        return;
+    }
+
+
+    if (std::find(legalMoves.begin(), legalMoves.end(), second_square) != legalMoves.end()) // naive legal move check
+    {
+        // copy of the board
+        std::vector<std::vector<Square>> board_copy = this->board;
         this->board[file][rank].setPiece(first_square.getPiece()); // move piece
         this->board[orig_file][orig_rank].setPiece(Piece()); // empty square where piece was
+
+        if (this->checkForCheck()) // handles pins and checks
+        {
+            std::cout<<"Illegal move: your king is checked"<<std::endl;    
+            std::cout<<"-------------------------"<<std::endl;
+            this->print();
+            std::cout<<"-------------------------"<<std::endl;  
+            this->setBoard(board_copy); // put board back to original state
+            return;
+        }
+
         this->updateHistory(first_square, second_square);
+        this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+        bool check = this->checkForCheck();
+        // get length of move history
+        std::cout<< "move "<<this->boardHistory.size()<<"."<<std::endl;
+        this->print();
+        std::string color_str = (this->turn == WHITE) ? "White" : "Black";
+        std::cout<< color_str<< " to move"<<std::endl;
+        std::cout<<"\n\n"<<std::endl;
+        if (check)
+            std::cout<<"Check!"<<std::endl;
+        return;
     }
+
     else
     {
         std::cout << "Illegal move" << std::endl;
+        std::cout<<"-------------------------"<<std::endl;
+        this->print();
+        std::cout<<"-------------------------"<<std::endl;  
     }
 }
 

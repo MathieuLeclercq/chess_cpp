@@ -13,6 +13,7 @@ class Chessboard
     const std::array<char, 8> files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
     const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
     std::vector<std::vector<Square>> board;
+    Color turn = WHITE;
 
 
     
@@ -35,6 +36,7 @@ class Chessboard
         std::vector<std::map<PieceType, std::array<Square,2>>>& getMoveHistory();
         const std::vector<std::vector<std::vector<Square>>>& getBoardHistory() const;
         std::vector<std::vector<std::vector<Square>>>& getBoardHistory();
+        bool checkForCheck();
         
         
 
@@ -43,6 +45,7 @@ class Chessboard
         // setters
         void Clear();
         void setStartupPieces();
+        void setBoard(std::vector<std::vector<Square>> some_board);
         void movePiece(int orig_file,int orig_rank, int file, int rank);
         void movePiece(std::string orig_square, std::string square);
         void updateHistory(Square first_square, Square second_square);

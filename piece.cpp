@@ -52,7 +52,7 @@ void Piece::setType(PieceType type)
 void Piece::setValue()
 {
     if (this->type == KING)
-        this->value = 1000;
+        this->value = 2; //  king : no sense of value
     else if (this->type == QUEEN)
         this->value = 9;
     else if (this->type == ROOK)
