@@ -3,6 +3,8 @@
 // #include "square.hpp"
 #include "chessboard.hpp"
 
+#include <chrono>
+
 
 int main()
 {
@@ -20,23 +22,51 @@ int main()
     //     std::cout<<vec_legal_moves[i].getName()<<std::endl;
     // }
 
+
+    auto t_start = std::chrono::high_resolution_clock::now();
+
+
+    // chessboard.movePiece("d2","d4");
+    // chessboard.movePiece("d7","d5");
+
+    // chessboard.movePiece("c2","c4");
+    // chessboard.movePiece("e7","e5");
+
+    // chessboard.movePiece("d1","a4"); // check
+    // chessboard.movePiece("e8","d7"); // king still under check
+    // chessboard.movePiece("c8","d7");
+
+    // chessboard.movePiece("g1","f3");
+    // chessboard.movePiece("d7","e6");//
+    // chessboard.movePiece("g8","f6");
+
+    // chessboard.movePiece("d4","e5");
+    // chessboard.movePiece("b8","d7");
+    // chessboard.movePiece("b8","c6");
+
+    // chessboard.movePiece("e2","e3");
+    // chessboard.movePiece("h7","h5");
+
+    // chessboard.movePiece("h1","g1");
+    // chessboard.movePiece("h8","g8");
+
+    // chessboard.movePiece("f1","e2");
+    // chessboard.movePiece("f8","e7");
+    
+    // chessboard.movePiece("e1","g1"); // white short castle
+    // chessboard.movePiece("e8","g8"); // black short castle
+
     chessboard.movePiece("d2","d4");
-    chessboard.movePiece("d7","d5");
-    chessboard.movePiece("c2","c4");
+    chessboard.movePiece("f7","f6");
+    chessboard.movePiece("d4","d5");
     chessboard.movePiece("e7","e5");
-    chessboard.movePiece("d1","a4"); // check
-    chessboard.movePiece("e8","d7"); // king still under check
-    chessboard.movePiece("c8","d7");
-    chessboard.movePiece("g1","f3");
-    chessboard.movePiece("d7","e6");
-    chessboard.movePiece("g8","f6");
-    chessboard.movePiece("d4","e5");
-    chessboard.movePiece("b8","d7");
-    chessboard.movePiece("b8","c6");
-    chessboard.movePiece("e2","e3");
-    chessboard.movePiece("h7","h6");
-    chessboard.movePiece("f1","e2");
-    chessboard.movePiece("f8","e7");
+    chessboard.movePiece("d5","e6");
+
+
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end-t_start).count();
+    std::cout<<"elapsed time: "<<elapsed_time_ms<<" ms"<<std::endl;
+
 
 
     // chessboard.print();

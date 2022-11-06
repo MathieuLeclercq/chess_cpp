@@ -28,6 +28,9 @@ class Square
         int getFile() const;
         int getRank() const;
         std::string getName() const;
+        
+        // overload operators
+        Square& operator=(const Square& other);
         bool operator == (const Square& square) const;
 
         // setters

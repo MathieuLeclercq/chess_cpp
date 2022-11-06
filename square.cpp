@@ -68,6 +68,23 @@ std::string Square::getName() const
     return square_name;
 }
 
+
+
+//...............Overload Operators...............
+
+Square& Square::operator=(const Square& other)
+{
+
+    if (this != &other)
+    {
+        this->file = other.file;
+        this->rank = other.rank;
+        this->piece = other.piece;
+    }
+
+    return *this;
+}
+
 bool Square::operator == (const Square& square) const
 {
     return (this->file == square.file && this->rank == square.rank);
