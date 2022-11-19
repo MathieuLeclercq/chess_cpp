@@ -56,16 +56,48 @@ int main()
     // chessboard.movePiece("e1","g1"); // white short castle
     // chessboard.movePiece("e8","g8"); // black short castle
 
+
+
+
+    // chessboard.movePiece("d2","d4");
+    // chessboard.movePiece("f7","f6");
+    // chessboard.movePiece("d4","d5");
+    // chessboard.movePiece("e7","e5");
+    // chessboard.movePiece("d5","e6");
+
+
+
     chessboard.movePiece("d2","d4");
-    chessboard.movePiece("f7","f6");
-    chessboard.movePiece("d4","d5");
+    chessboard.movePiece("d7","d5");
+    // c4
+    chessboard.movePiece("c2","c4");
+    // e5
     chessboard.movePiece("e7","e5");
-    chessboard.movePiece("d5","e6");
+    // d4xe5
+    chessboard.movePiece("d4","e5");
+    // d4
+    chessboard.movePiece("d5","d4");
+    // e3
+    chessboard.movePiece("e2","e3");
+    // bishop b4
+    chessboard.movePiece("f8","b4");
+    // bishop d2
+    chessboard.movePiece("c1","d2");
+    chessboard.movePiece("d4","e3");
+    chessboard.movePiece("d2","b4");
+
+    chessboard.movePiece("e3","f2");
+    // king e2
+    chessboard.movePiece("e1","e2");
+    // pawn takes and promotes
+    chessboard.movePiece("f2","g1");
+
 
 
     auto t_end = std::chrono::high_resolution_clock::now();
     double elapsed_time_ms = std::chrono::duration<double, std::milli>(t_end-t_start).count();
     std::cout<<"elapsed time: "<<elapsed_time_ms<<" ms"<<std::endl;
+    // std::cin.get();
 
 
 

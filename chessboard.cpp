@@ -650,6 +650,51 @@ void Chessboard::updateCastleFlags()
     // std::cout<<"size of move history: "<<size<<std::endl;
 }
 
+void Chessboard::checkPromotion(Square& second_square)
+{
+    // check if pawn reached end of board
+    // if so, ask user what piece to promote to
+    // update piece
+
+    PieceType type_piece = second_square.getPiece().getType();
+    Color color_piece = second_square.getPiece().getColor();
+    int rank = second_square.getRank();
+    if (type_piece == PAWN)
+    {
+        if (rank == 0 || rank == 7)
+        {
+            std::cout << "Pawn reached end of board. What piece would you like to promote to?" << std::endl;
+            std::cout << "1. Queen" << std::endl;
+            std::cout << "2. Rook" << std::endl;
+            std::cout << "3. Bishop" << std::endl;
+            std::cout << "4. Knight" << std::endl;
+            int choice;
+            std::cin >> choice;
+            switch (choice)
+            {
+            case 1:
+                second_square.setPiece(Piece(color_piece, QUEEN));
+                break;
+            case 2:
+                second_square.setPiece(Piece(color_piece, ROOK));
+                break;
+            case 3:
+                second_square.setPiece(Piece(color_piece, BISHOP));
+                break;
+            case 4:
+                second_square.setPiece(Piece(color_piece, KNIGHT));
+                break;
+            default:
+                std::cout << "Invalid choice. Defaulting to Queen." << std::endl;
+                second_square.setPiece(Piece(second_square.getPiece().getColor(), QUEEN));
+                break;
+            }
+        }
+    }
+    
+
+}
+
 void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
 {
     Square& first_square = this->board[orig_file][orig_rank];
@@ -717,12 +762,13 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
             this->setBoard(board_copy); // put board back to original state
             return;
         }
-
+        this->checkPromotion(second_square); // check if pawn promotion is needed
         this->updateHistory(first_square, second_square);
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
         this->printPly();
         this->updateCastleFlags();
         this->checkEnPassant();
+        
         return;
     }
 

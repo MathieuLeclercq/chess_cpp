@@ -47,6 +47,7 @@ class Chessboard
         std::vector<std::vector<std::vector<Square>>>& getBoardHistory();
         void checkEnPassant();
         bool checkForCheck() const;
+
         
         
 
@@ -60,4 +61,5 @@ class Chessboard
         void movePiece(std::string orig_square, std::string square);
         void updateHistory(const Square& first_square, const Square& second_square);
         void updateCastleFlags();
+        void checkPromotion(Square& second_square);
 };
