@@ -21,6 +21,7 @@ class Chessboard
     bool long_castle_black = true;
     bool en_passant = false;
     int en_passant_file = -1;
+    bool checkmate = false;
 
 
 
@@ -47,6 +48,7 @@ class Chessboard
         std::vector<std::vector<std::vector<Square>>>& getBoardHistory();
         void checkEnPassant();
         bool checkForCheck() const;
+        bool checkForCheckmate();
 
         
         

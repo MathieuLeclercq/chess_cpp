@@ -463,6 +463,42 @@ bool Chessboard::checkForCheck() const
     return false;
 }
 
+bool Chessboard::checkForCheckmate()
+{
+    Color color = this->turn;
+
+    std::cout.setstate(std::ios_base::failbit);
+
+
+
+    // check if king is in checkmate
+    for (int i = 0; i<8; i++)
+    {
+        for (int j = 0; j<8; j++)
+        {
+            if (this->board[i][j].getPiece().getColor() == color)
+            {
+                std::vector<Square> legalMoves = this->getLegalMoves(i,j);
+                for (int k = 0; k<legalMoves.size(); k++)
+                {
+                    Chessboard temp = *this;
+                    temp.movePiece(i,j,legalMoves[k].getFile(),legalMoves[k].getRank());
+                    if (temp.checkForCheck() == false)
+                    {
+                        std::cout.clear();
+                        return false;
+                    }
+                        
+                }
+
+            }
+        }
+    }
+    std::cout.clear();
+    checkmate = true;
+    return true;
+}
+
 void Chessboard::checkEnPassant()
 {
     // check if pawn has moved two squares
@@ -762,10 +798,19 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
             this->setBoard(board_copy); // put board back to original state
             return;
         }
+
         this->checkPromotion(second_square); // check if pawn promotion is needed
         this->updateHistory(first_square, second_square);
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
         this->printPly();
+        if (this->checkForCheck())
+        {
+            if (this->checkForCheckmate())
+                std::cout<<"Checkmate!"<<std::endl;
+        }
+
+
+        
         this->updateCastleFlags();
         this->checkEnPassant();
         
