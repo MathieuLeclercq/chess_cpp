@@ -32,10 +32,10 @@ class Chessboard
     bool checkmate = false;
 
 
-
-    
     std::vector<Move> moveHistory;
     std::vector<std::array<Square, 64>> boardHistory;
+
+    bool isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy);
 
     public:
         // constructors

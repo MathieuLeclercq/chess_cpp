@@ -752,6 +752,72 @@ void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion
     }
 }
 
+bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy)
+{
+    bool short_castle = (file == 6);
+    bool long_castle = (file == 2);
+
+    if (!short_castle && !long_castle)
+    {
+        std::cout << "Invalid castling move!" << std::endl;
+        return false;
+    }
+
+    int dir = short_castle ? 1 : -1;
+    Piece king_piece = this->board[orig_rank * 8 + orig_file].getPiece();
+
+    for (int i = 0; i <= 2; i++)
+    {
+        int current_file = orig_file + (i * dir);
+        this->setBoard(board_copy);
+
+        // On place le roi sur la case testée et on vide l'origine (si on a bougé)
+        this->board[orig_rank * 8 + current_file].setPiece(king_piece);
+        if (current_file != orig_file) {
+            this->board[orig_rank * 8 + orig_file].setPiece(Piece());
+        }
+
+        // Mise à jour temporaire du cache des coordonnées pour checkForCheck()
+        if (this->turn == WHITE) {
+            this->white_king_file = current_file;
+        }
+        else {
+            this->black_king_file = current_file;
+        }
+
+        bool is_checked = this->checkForCheck();
+        if (this->turn == WHITE) {
+            this->white_king_file = orig_file;
+        }
+        else {
+            this->black_king_file = orig_file;
+        }
+
+        if (is_checked)
+        {
+            std::cout << "You cannot castle: there are threats on the way." << std::endl;
+            this->setBoard(board_copy);
+            return false;
+        }
+    }
+
+    // On restaure le plateau propre avant de valider les mouvements finaux
+    this->setBoard(board_copy);
+
+    // On est sûr que le castle est valide : on bouge la tour
+    if (short_castle)
+    {
+        this->board[rank * 8 + 5].setPiece(Piece(this->turn, ROOK));
+        this->board[rank * 8 + 7].setPiece(Piece());
+    }
+    else if (long_castle)
+    {
+        this->board[rank * 8 + 3].setPiece(Piece(this->turn, ROOK));
+        this->board[rank * 8 + 0].setPiece(Piece());
+    }
+    return true;
+}
+
 bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion)
 {
     Square& first_square = this->board[orig_rank * 8 + orig_file];
@@ -769,36 +835,11 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     {
         std::array<Square, 64> board_copy = this->board;
 
+        // si on veut castle: regarder si on est en échec, ou si le chemin est safe
         if (first_square.getPiece().getType() == KING && abs(orig_file - file) == 2)
         {
-            if (file == 6) // short castle
-                this->board[rank * 8 + (orig_file + 1)].setPiece(first_square.getPiece());
-            else if (file == 2) // long castle
-                this->board[rank * 8 + (orig_file - 1)].setPiece(first_square.getPiece());
-            else
-            {
-                std::cout << "Invalid castling move!" << std::endl;
+            if (!this->isCastlePossible(orig_file, orig_rank, file, rank, board_copy))
                 return false;
-            }
-
-            if (this->checkForCheck())
-            {
-                std::cout << "You cannot castle: there are threats on the way." << std::endl;
-                this->setBoard(board_copy);
-                return false;
-            }
-
-            // on est sûr que le castle est valide : on bouge la tour
-            if (file == 6) // short
-            {
-                this->board[rank * 8 + 5].setPiece(Piece(this->turn, ROOK));
-                this->board[rank * 8 + 7].setPiece(Piece());
-            }
-            else if (file == 2) // long
-            {
-                this->board[rank * 8 + 3].setPiece(Piece(first_square.getPiece().getColor(), ROOK));
-                this->board[rank * 8 + 0].setPiece(Piece());
-            }
         }
 
         // check si on a pris en passant
