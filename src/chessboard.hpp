@@ -1,9 +1,6 @@
 #pragma once
-#include <iostream>
 #include <vector>
 #include <string>
-#include <algorithm>
-#include <unordered_map>
 #include <array>
 #include "piece.hpp"
 #include "square.hpp"

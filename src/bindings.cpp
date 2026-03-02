@@ -27,6 +27,14 @@ PYBIND11_MODULE(chess_engine, m) {
         .value("KING", KING)
         .export_values();
 
+    py::enum_<GameState>(m, "GameState")
+        .value("ONGOING", ONGOING)
+        .value("CHECKMATE", CHECKMATE)
+        .value("STALEMATE", STALEMATE)
+        .value("DRAW_REPETITION", DRAW_REPETITION)
+        .value("DRAW_50_MOVES", DRAW_50_MOVES)
+        .export_values();
+
     // --- Classes ---
     py::class_<Piece>(m, "Piece")
         .def(py::init<>())
@@ -55,5 +63,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("get_legal_moves", &Chessboard::getLegalMoves)
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType)>(&Chessboard::movePiece),
             py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE)
-        .def("check_for_checkmate", &Chessboard::checkForCheckmate);
+        .def("check_for_checkmate", &Chessboard::checkForCheckmate)
+        .def_property_readonly("turn", &Chessboard::getTurn)
+        .def_property_readonly("game_state", &Chessboard::getGameState);
 }
