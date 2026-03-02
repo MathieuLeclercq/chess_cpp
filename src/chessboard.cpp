@@ -83,6 +83,16 @@ std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory()
     return boardHistory;
 }
 
+Color Chessboard::getTurn() const
+{
+    return this->turn;
+}
+
+GameState Chessboard::getGameState() const
+{
+    return this->current_state;
+}
+
 std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
 {
     Square orig_square = board[rank * 8 + file];
@@ -556,7 +566,7 @@ bool Chessboard::checkForCheckmate()
         }
     }
 
-    checkmate = true;
+    this->current_state = CHECKMATE;
     return true;
 }
 
@@ -595,6 +605,7 @@ void Chessboard::Clear()
             this->board[j * 8 + i].setPosition(i, j);
         }
     }
+    this->current_state = ONGOING;
 }
 
 void Chessboard::setStartupPieces()

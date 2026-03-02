@@ -9,6 +9,15 @@
 #include "square.hpp"
 #include "move.hpp"
 
+enum GameState
+{
+    ONGOING,
+    CHECKMATE,
+    STALEMATE,
+    DRAW_REPETITION,
+    DRAW_50_MOVES
+};
+
 class Chessboard
 {
     private:
@@ -29,7 +38,8 @@ class Chessboard
     bool long_castle_black = true;
     bool en_passant = false;
     int en_passant_file = -1;
-    bool checkmate = false;
+
+    GameState current_state = ONGOING;
 
 
     std::vector<Move> moveHistory;
@@ -56,6 +66,8 @@ class Chessboard
         void checkEnPassant();
         bool checkForCheck() const;
         bool checkForCheckmate();
+        Color getTurn() const;
+        GameState getGameState() const;
 
         // setters
         void Clear();
