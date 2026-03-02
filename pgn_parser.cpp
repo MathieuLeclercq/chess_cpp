@@ -80,7 +80,7 @@ bool PgnParser::parseFiles(const std::string& filename)
     }
 
     file.close();
-    std::cout << "Lecture reussie. \n";
+    //std::cout << "Lecture reussie. \n";
     return true;
 }
 

@@ -14,7 +14,8 @@ int main()
 
     int success_count = 0;
     int error_count = 0;
-    std::vector<std::string> failed_files; // Ajout du conteneur
+    int total_plies = 0; // Ajout du compteur total
+    std::vector<std::string> failed_files;
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
@@ -41,7 +42,7 @@ int main()
             {
                 std::cerr << "-> Echec de la lecture du fichier." << std::endl;
                 error_count++;
-                failed_files.push_back(current_file); // Enregistrement de l'échec
+                failed_files.push_back(current_file);
                 continue;
             }
 
@@ -56,6 +57,7 @@ int main()
                     game_success = false;
                     break;
                 }
+                total_plies++;
             }
 
             if (game_success)
@@ -66,7 +68,7 @@ int main()
             else
             {
                 error_count++;
-                failed_files.push_back(current_file); // Enregistrement de l'échec
+                failed_files.push_back(current_file);
             }
             std::cout << std::endl;
         }
@@ -79,9 +81,16 @@ int main()
     std::cout << "Bilan des simulations :" << std::endl;
     std::cout << "Parties reussies : " << success_count << std::endl;
     std::cout << "Parties echouees : " << error_count << std::endl;
+    std::cout << "Nombre total de ply simules : " << total_plies << std::endl; // Affichage du total
     std::cout << "Temps total d'execution : " << elapsed_time_ms << " ms" << std::endl;
 
-    // Affichage des fichiers en erreur
+    // Affichage de la moyenne par ply (avec protection contre la division par zéro)
+    if (total_plies > 0)
+    {
+        double avg_time_per_ply = elapsed_time_ms / total_plies;
+        std::cout << "Temps moyen par ply : " << avg_time_per_ply << " ms" << std::endl;
+    }
+
     if (!failed_files.empty())
     {
         std::cout << "----------------------------------------" << std::endl;

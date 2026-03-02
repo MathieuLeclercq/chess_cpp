@@ -830,7 +830,7 @@ bool Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank, Piec
         this->checkPromotion(second_square, promotion); // check if pawn promotion is needed
         this->updateHistory(first_square, second_square);
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
-        this->printPly();
+        //this->printPly();
         if (this->checkForCheck())
         {
             if (this->checkForCheckmate())
