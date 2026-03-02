@@ -817,7 +817,7 @@ bool Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank, Piec
             return false;
         }
 
-        this->checkPromotion(second_square); // check if pawn promotion is needed
+        this->checkPromotion(second_square, promotion); // check if pawn promotion is needed
         this->updateHistory(first_square, second_square);
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
         this->printPly();
@@ -963,9 +963,7 @@ bool Chessboard::movePieceSAN(std::string san)
     // 8. Exécution
     if (match_count == 1)
     {
-        return this->movePiece(final_orig_file, final_orig_rank, dest_file, dest_rank);
-
-        // TODO: Gérer l'application de 'promotion_type' ici si la pièce était un pion
+        return this->movePiece(final_orig_file, final_orig_rank, dest_file, dest_rank, promotion_type);
     }
     else
     {
