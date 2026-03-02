@@ -10,7 +10,7 @@ namespace fs = std::filesystem;
 
 int main()
 {
-    std::string folder_path = "C:/Users/M47h1/Documents/chess_cpp/docs/PGN/others";
+    std::string folder_path = "C:/Users/M47h1/Documents/chess_cpp/docs/PGN/all";
     //std::string folder_path = "C:/Users/M47h1/Documents/chess_cpp/docs/PGN";
 
     int success_count = 0;

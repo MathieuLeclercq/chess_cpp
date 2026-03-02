@@ -65,5 +65,6 @@ PYBIND11_MODULE(chess_engine, m) {
             py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE)
         .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)
         .def_property_readonly("turn", &Chessboard::getTurn)
-        .def_property_readonly("game_state", &Chessboard::getGameState);
+        .def_property_readonly("game_state", &Chessboard::getGameState)
+        .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock);
 }

@@ -83,6 +83,11 @@ std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory()
     return boardHistory;
 }
 
+int Chessboard::getHalfMoveClock() const
+{
+    return this->half_move_clock;
+}
+
 Color Chessboard::getTurn() const
 {
     return this->turn;
@@ -606,6 +611,7 @@ void Chessboard::Clear()
         }
     }
     this->current_state = ONGOING;
+    this->half_move_clock = 0;
 }
 
 void Chessboard::setStartupPieces()
@@ -879,6 +885,12 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         bool is_king_move = (moving_piece.getType() == KING);
         Color moving_color = moving_piece.getColor();
 
+        bool is_en_passant_capture = (second_square.getPiece().getType() == NONE && 
+                                      moving_piece.getType() == PAWN && 
+                                      abs(orig_file - file) == 1);
+        bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
+        bool is_pawn_move = (moving_piece.getType() == PAWN);
+
         // si on veut castle: regarder si on est en échec, ou si le chemin est safe
         if (first_square.getPiece().getType() == KING && abs(orig_file - file) == 2)
         {
@@ -933,6 +945,14 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 
+        // maj du compteur de la règle des 50 coups une fois que le coup est validé
+        if (is_capture || is_pawn_move) {
+            this->half_move_clock = 0;
+        }
+        else {
+            this->half_move_clock++;
+        }
+
         if (!this->hasAnyLegalMove())  // soit mat soit pat
         {
             if (this->isInCheck())
@@ -958,7 +978,6 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
 bool Chessboard::movePiece(std::string orig_square, std::string square)
 {
-    // Attention: files et ranks sont dans le .hpp, assure-toi qu'ils sont accessibles ou crée une conversion propre
     int orig_file = orig_square[0] - 'a';
     int orig_rank = orig_square[1] - '1';
     int file = square[0] - 'a';

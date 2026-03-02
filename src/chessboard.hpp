@@ -35,6 +35,7 @@ class Chessboard
     bool long_castle_black = true;
     bool en_passant = false;
     int en_passant_file = -1;
+    int half_move_clock = 0;  // pour regle des 50 coups
 
     GameState current_state = ONGOING;
 
@@ -52,6 +53,7 @@ class Chessboard
         const Square& getSquare(int file, int rank) const; 
         Square& getSquare(int file, int rank);
         int getNumberOfOccupiedSquares() const;
+        int getHalfMoveClock() const;
         void print() const;
         void print(std::array<Square, 64> some_board) const;
         void printPly() const;
