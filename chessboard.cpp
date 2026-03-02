@@ -83,14 +83,29 @@ std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory()
     return boardHistory;
 }
 
-std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
+std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
 {
-    Square square = board[rank * 8 + file];
-    std::vector<Square> legalMoves;
-    PieceType type = square.getPiece().getType();
-    Color color = square.getPiece().getColor();
+    Square orig_square = board[rank * 8 + file];
+    std::vector<Move> legalMoves;
+    PieceType type = orig_square.getPiece().getType();
+    Color color = orig_square.getPiece().getColor();
 
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
+
+    // Fonction lambda pour gérer automatiquement les sous-promotions
+    auto addMove = [&](const Square& target_square) {
+        if (type == PAWN && (target_square.getRank() == 0 || target_square.getRank() == 7))
+        {
+            legalMoves.push_back(Move(orig_square, target_square, QUEEN));
+            legalMoves.push_back(Move(orig_square, target_square, ROOK));
+            legalMoves.push_back(Move(orig_square, target_square, BISHOP));
+            legalMoves.push_back(Move(orig_square, target_square, KNIGHT));
+        }
+        else
+        {
+            legalMoves.push_back(Move(orig_square, target_square, NONE));
+        }
+    };
 
     switch (type)
     {
@@ -98,18 +113,18 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
     {
         if (color == WHITE && rank < 7 && this->board[(rank + 1) * 8 + file].CheckOccupied() == false)
         {
-            legalMoves.push_back(this->board[(rank + 1) * 8 + file]);
+            addMove(this->board[(rank + 1) * 8 + file]);
             if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false)
             {
-                legalMoves.push_back(this->board[(rank + 2) * 8 + file]);
+                addMove(this->board[(rank + 2) * 8 + file]);
             }
         }
         else if (color == BLACK && rank > 0 && this->board[(rank - 1) * 8 + file].CheckOccupied() == false)
         {
-            legalMoves.push_back(this->board[(rank - 1) * 8 + file]);
+            addMove(this->board[(rank - 1) * 8 + file]);
             if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)
             {
-                legalMoves.push_back(this->board[(rank - 2) * 8 + file]);
+                addMove(this->board[(rank - 2) * 8 + file]);
             }
         }
 
@@ -117,30 +132,30 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         {
             if (file < 7 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + 1) * 8 + (file + 1)]);
+                addMove(this->board[(rank + 1) * 8 + (file + 1)]);
             }
             if (file > 0 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + 1) * 8 + (file - 1)]);
+                addMove(this->board[(rank + 1) * 8 + (file - 1)]);
             }
             if (this->en_passant && rank == 4 && abs(file - this->en_passant_file) == 1)
             {
-                legalMoves.push_back(this->board[(rank + 1) * 8 + this->en_passant_file]);
+                addMove(this->board[(rank + 1) * 8 + this->en_passant_file]);
             }
         }
         else if (color == BLACK && rank > 0)
         {
             if (file < 7 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - 1) * 8 + (file + 1)]);
+                addMove(this->board[(rank - 1) * 8 + (file + 1)]);
             }
             if (file > 0 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - 1) * 8 + (file - 1)]);
+                addMove(this->board[(rank - 1) * 8 + (file - 1)]);
             }
             if (this->en_passant && rank == 3 && abs(file - this->en_passant_file) == 1)
             {
-                legalMoves.push_back(this->board[(rank - 1) * 8 + this->en_passant_file]);
+                addMove(this->board[(rank - 1) * 8 + this->en_passant_file]);
             }
         }
         break;
@@ -150,10 +165,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = rank + 1; i < 8; i++) // top
         {
             if (this->board[i * 8 + file].CheckOccupied() == false)
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
             else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
                 break;
             }
             else break;
@@ -161,10 +176,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = rank - 1; i > -1; i--) // bottom
         {
             if (this->board[i * 8 + file].CheckOccupied() == false)
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
             else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
                 break;
             }
             else break;
@@ -172,10 +187,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = file + 1; i < 8; i++) // right
         {
             if (this->board[rank * 8 + i].CheckOccupied() == false)
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
             else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
                 break;
             }
             else break;
@@ -183,10 +198,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = file - 1; i > -1; i--) // left
         {
             if (this->board[rank * 8 + i].CheckOccupied() == false)
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
             else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
                 break;
             }
             else break;
@@ -196,21 +211,21 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
     case KNIGHT:
     {
         if (file + 2 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 1) * 8 + (file + 2)]);
+            addMove(this->board[(rank + 1) * 8 + (file + 2)]);
         if (file + 2 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 1) * 8 + (file + 2)]);
+            addMove(this->board[(rank - 1) * 8 + (file + 2)]);
         if (file - 2 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 1) * 8 + (file - 2)]);
+            addMove(this->board[(rank + 1) * 8 + (file - 2)]);
         if (file - 2 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 1) * 8 + (file - 2)]);
+            addMove(this->board[(rank - 1) * 8 + (file - 2)]);
         if (file + 1 < 8 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 2) * 8 + (file + 1)]);
+            addMove(this->board[(rank + 2) * 8 + (file + 1)]);
         if (file + 1 < 8 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 2) * 8 + (file + 1)]);
+            addMove(this->board[(rank - 2) * 8 + (file + 1)]);
         if (file - 1 > -1 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 2) * 8 + (file - 1)]);
+            addMove(this->board[(rank + 2) * 8 + (file - 1)]);
         if (file - 1 > -1 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 2) * 8 + (file - 1)]);
+            addMove(this->board[(rank - 2) * 8 + (file - 1)]);
         break;
     }
     case BISHOP:
@@ -218,10 +233,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // up right
         {
             if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
             else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
                 break;
             }
             else break;
@@ -229,10 +244,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // up left
         {
             if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
             else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -240,10 +255,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // down right
         {
             if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
             else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
                 break;
             }
             else break;
@@ -251,10 +266,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // down left
         {
             if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
             else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -267,10 +282,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = rank + 1; i < 8; i++)  // up
         {
             if (this->board[i * 8 + file].CheckOccupied() == false)
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
             else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
                 break;
             }
             else break;
@@ -278,10 +293,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = rank - 1; i > -1; i--) // down
         {
             if (this->board[i * 8 + file].CheckOccupied() == false)
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
             else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[i * 8 + file]);
+                addMove(this->board[i * 8 + file]);
                 break;
             }
             else break;
@@ -289,10 +304,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = file + 1; i < 8; i++) // right
         {
             if (this->board[rank * 8 + i].CheckOccupied() == false)
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
             else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
                 break;
             }
             else break;
@@ -300,10 +315,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = file - 1; i > -1; i--) // left
         {
             if (this->board[rank * 8 + i].CheckOccupied() == false)
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
             else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[rank * 8 + i]);
+                addMove(this->board[rank * 8 + i]);
                 break;
             }
             else break;
@@ -311,10 +326,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // up right
         {
             if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
             else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
                 break;
             }
             else break;
@@ -322,10 +337,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // up left
         {
             if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
             else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -333,10 +348,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // down right
         {
             if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
             else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
                 break;
             }
             else break;
@@ -344,10 +359,10 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
         for (int i = 1; i < 8; i++) // down left
         {
             if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
             else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                legalMoves.push_back(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -357,32 +372,32 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
     case KING:
     {
         if (file + 1 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 1) * 8 + (file + 1)]);
+            addMove(this->board[(rank + 1) * 8 + (file + 1)]);
         if (file + 1 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 1) * 8 + (file + 1)]);
+            addMove(this->board[(rank - 1) * 8 + (file + 1)]);
         if (file - 1 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 1) * 8 + (file - 1)]);
+            addMove(this->board[(rank + 1) * 8 + (file - 1)]);
         if (file - 1 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 1) * 8 + (file - 1)]);
+            addMove(this->board[(rank - 1) * 8 + (file - 1)]);
         if (file + 1 < 8 && this->board[rank * 8 + (file + 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[rank * 8 + (file + 1)]);
+            addMove(this->board[rank * 8 + (file + 1)]);
         if (file - 1 > -1 && this->board[rank * 8 + (file - 1)].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[rank * 8 + (file - 1)]);
+            addMove(this->board[rank * 8 + (file - 1)]);
         if (rank + 1 < 8 && this->board[(rank + 1) * 8 + file].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank + 1) * 8 + file]);
+            addMove(this->board[(rank + 1) * 8 + file]);
         if (rank - 1 > -1 && this->board[(rank - 1) * 8 + file].getPiece().getColor() != color)
-            legalMoves.push_back(this->board[(rank - 1) * 8 + file]);
+            addMove(this->board[(rank - 1) * 8 + file]);
 
         // short castle
         if (color == WHITE && this->short_castle_white == true && this->board[0 * 8 + 5].CheckOccupied() == false && this->board[0 * 8 + 6].CheckOccupied() == false)
-            legalMoves.push_back(this->board[0 * 8 + 6]);
+            addMove(this->board[0 * 8 + 6]);
         if (color == BLACK && this->short_castle_black == true && this->board[7 * 8 + 5].CheckOccupied() == false && this->board[7 * 8 + 6].CheckOccupied() == false)
-            legalMoves.push_back(this->board[7 * 8 + 6]);
+            addMove(this->board[7 * 8 + 6]);
         // long castle
         if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false && this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
-            legalMoves.push_back(this->board[0 * 8 + 2]);
+            addMove(this->board[0 * 8 + 2]);
         if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false && this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
-            legalMoves.push_back(this->board[7 * 8 + 2]);
+            addMove(this->board[7 * 8 + 2]);
         break;
     }
     }
@@ -497,12 +512,11 @@ bool Chessboard::checkForCheckmate()
         {
             if (this->board[j * 8 + i].getPiece().getColor() == color)
             {
-                std::vector<Square> legalMoves = this->getLegalMoves(i, j);
+                std::vector<Move> legalMoves = this->getLegalMoves(i, j);
                 for (int k = 0; k < legalMoves.size(); k++)
                 {
-
-                    int dest_file = legalMoves[k].getFile();
-                    int dest_rank = legalMoves[k].getRank();
+                    int dest_file = legalMoves[k].getDestSquare().getFile();
+                    int dest_rank = legalMoves[k].getDestSquare().getRank();
 
                     bool is_king_move = (this->board[j * 8 + i].getPiece().getType() == KING);
                     if (is_king_move) {
@@ -671,9 +685,51 @@ void Chessboard::updateHistory(const Square& first_square, const Square& second_
     this->boardHistory.push_back(this->board);
 }
 
+//void Chessboard::updateCastleFlags()
+//{
+//    Move lastMove = this->moveHistory.back();
+//    if (lastMove.getPiece().getType() == KING)
+//    {
+//        if (lastMove.getPiece().getColor() == WHITE)
+//        {
+//            this->short_castle_white = false;
+//            this->long_castle_white = false;
+//        }
+//        else if (lastMove.getPiece().getColor() == BLACK)
+//        {
+//            this->short_castle_black = false;
+//            this->long_castle_black = false;
+//        }
+//    }
+//    else if (lastMove.getPiece().getType() == ROOK)
+//    {
+//        if (lastMove.getPiece().getColor() == WHITE)
+//        {
+//            if (lastMove.getOrigSquare().getFile() == 0)
+//                this->long_castle_white = false;
+//            else if (lastMove.getOrigSquare().getFile() == 7)
+//                this->short_castle_white = false;
+//        }
+//        else if (lastMove.getPiece().getColor() == BLACK)
+//        {
+//            if (lastMove.getOrigSquare().getFile() == 0)
+//                this->long_castle_black = false;
+//            else if (lastMove.getOrigSquare().getFile() == 7)
+//                this->short_castle_black = false;
+//        }
+//    }
+//}
+
+
 void Chessboard::updateCastleFlags()
 {
+    // 3 cas à gérer : 
+    // roi a bougé
+    // tour a bougé
+    // tour capturée (sans forcément avoir bougé avant)
     Move lastMove = this->moveHistory.back();
+
+    // 1. Perte des deux droits si le roi bouge
     if (lastMove.getPiece().getType() == KING)
     {
         if (lastMove.getPiece().getColor() == WHITE)
@@ -687,68 +743,37 @@ void Chessboard::updateCastleFlags()
             this->long_castle_black = false;
         }
     }
-    else if (lastMove.getPiece().getType() == ROOK)
-    {
-        if (lastMove.getPiece().getColor() == WHITE)
-        {
-            if (lastMove.getOrigSquare().getFile() == 0)
-                this->long_castle_white = false;
-            else if (lastMove.getOrigSquare().getFile() == 7)
-                this->short_castle_white = false;
-        }
-        else if (lastMove.getPiece().getColor() == BLACK)
-        {
-            if (lastMove.getOrigSquare().getFile() == 0)
-                this->long_castle_black = false;
-            else if (lastMove.getOrigSquare().getFile() == 7)
-                this->short_castle_black = false;
-        }
-    }
+
+    // 2. Perte d'un droit spécifique si une case de tour est impliquée (départ ou arrivée)
+    int orig_f = lastMove.getOrigSquare().getFile();
+    int orig_r = lastMove.getOrigSquare().getRank();
+    int dest_f = lastMove.getDestSquare().getFile();
+    int dest_r = lastMove.getDestSquare().getRank();
+
+    // Tour blanche a1 (Grand roque blanc)
+    if ((orig_f == 0 && orig_r == 0) || (dest_f == 0 && dest_r == 0))
+        this->long_castle_white = false;
+
+    // Tour blanche h1 (Petit roque blanc)
+    if ((orig_f == 7 && orig_r == 0) || (dest_f == 7 && dest_r == 0))
+        this->short_castle_white = false;
+
+    // Tour noire a8 (Grand roque noir)
+    if ((orig_f == 0 && orig_r == 7) || (dest_f == 0 && dest_r == 7))
+        this->long_castle_black = false;
+
+    // Tour noire h8 (Petit roque noir)
+    if ((orig_f == 7 && orig_r == 7) || (dest_f == 7 && dest_r == 7))
+        this->short_castle_black = false;
 }
+
+
 
 void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion)
 {
-    PieceType type_piece = second_square.getPiece().getType();
-    Color color_piece = second_square.getPiece().getColor();
-
     if (force_promotion != NONE)
     {
-        second_square.setPiece(Piece(color_piece, force_promotion));
-        return;
-    }
-
-    int rank = second_square.getRank();
-    if (type_piece == PAWN)
-    {
-        if (rank == 0 || rank == 7)
-        {
-            std::cout << "Pawn reached end of board. What piece would you like to promote to?" << std::endl;
-            std::cout << "1. Queen" << std::endl;
-            std::cout << "2. Rook" << std::endl;
-            std::cout << "3. Bishop" << std::endl;
-            std::cout << "4. Knight" << std::endl;
-            int choice;
-            std::cin >> choice;
-            switch (choice)
-            {
-            case 1:
-                second_square.setPiece(Piece(color_piece, QUEEN));
-                break;
-            case 2:
-                second_square.setPiece(Piece(color_piece, ROOK));
-                break;
-            case 3:
-                second_square.setPiece(Piece(color_piece, BISHOP));
-                break;
-            case 4:
-                second_square.setPiece(Piece(color_piece, KNIGHT));
-                break;
-            default:
-                std::cout << "Invalid choice. Defaulting to Queen." << std::endl;
-                second_square.setPiece(Piece(color_piece, QUEEN));
-                break;
-            }
-        }
+        second_square.setPiece(Piece(second_square.getPiece().getColor(), force_promotion));
     }
 }
 
@@ -822,7 +847,8 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 {
     Square& first_square = this->board[orig_rank * 8 + orig_file];
     Square& second_square = this->board[rank * 8 + file];
-    const std::vector<Square> legalMoves = this->getLegalMoves(orig_file, orig_rank);
+
+    const std::vector<Move> legalMoves = this->getLegalMoves(orig_file, orig_rank);
 
     if (first_square.getPiece().getColor() != this->turn)
     {
@@ -830,8 +856,11 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         return false;
     }
 
-    // si la case d'arrivée est dans les legal moves
-    if (std::find(legalMoves.begin(), legalMoves.end(), second_square) != legalMoves.end())
+    // 2. Création du coup tenté (incluant la promotion demandée)
+    Move attempted_move(first_square, second_square, promotion);
+
+    // 3. Validation : la case et la promotion doivent correspondre
+    if (std::find(legalMoves.begin(), legalMoves.end(), attempted_move) != legalMoves.end())
     {
         std::array<Square, 64> board_copy = this->board;
 
@@ -988,11 +1017,15 @@ bool Chessboard::movePieceSAN(std::string san)
                 if (orig_file_hint != -1 && i != orig_file_hint) continue;
                 if (orig_rank_hint != -1 && j != orig_rank_hint) continue;
 
-                std::vector<Square> legal_moves = this->getLegalMoves(i, j);
-                for (const Square& m : legal_moves)
+                std::vector<Move> legal_moves = this->getLegalMoves(i, j);
+                for (const Move& m : legal_moves)
                 {
-                    if (m.getFile() == dest_file && m.getRank() == dest_rank)
+                    if (m.getDestSquare().getFile() == dest_file && m.getDestSquare().getRank() == dest_rank)
                     {
+                        if (promotion_type != NONE && m.getPromotion() != promotion_type)
+                        {
+                            continue; // On passe au coup légal suivant (ex: on ignore e8=R si on cherche e8=Q)
+                        }
 
                         bool is_king_move = (p_type == KING);
 
@@ -1000,13 +1033,6 @@ bool Chessboard::movePieceSAN(std::string san)
                             if (this->turn == WHITE) { this->white_king_file = dest_file; this->white_king_rank = dest_rank; }
                             else { this->black_king_file = dest_file; this->black_king_rank = dest_rank; }
                         }
-
-                        //std::array<Square, 64> board_copy = this->board;
-
-                        //this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
-                        //this->board[j * 8 + i].setPiece(Piece());
-
-                        //bool leaves_king_in_check = this->checkForCheck();
 
                         std::array<Square, 64> board_copy = this->board;
 
