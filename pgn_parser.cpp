@@ -45,6 +45,15 @@ bool PgnParser::parseFiles(const std::string& filename)
         // 3. Séparer les tags et les coups
         if (line[0] == '[')
         {
+
+            if (!this->raw_moves.empty())
+            {
+                std::cerr << "Erreur : Le fichier PGN contient plusieurs parties. "
+                    << "Veuillez fournir un fichier avec une seule partie." << std::endl;
+                file.close();
+                return false;
+            }
+
             // Format attendu : [Cle "Valeur"]
             size_t space_pos = line.find(' ');
             size_t first_quote = line.find('"');

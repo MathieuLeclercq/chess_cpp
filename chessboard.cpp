@@ -950,9 +950,25 @@ bool Chessboard::movePieceSAN(std::string san)
                 {
                     if (m.getFile() == dest_file && m.getRank() == dest_rank)
                     {
-                        final_orig_file = i;
-                        final_orig_rank = j;
-                        match_count++;
+                        std::vector<std::vector<Square>> board_copy = this->board;
+
+                        // Simulation grossière du mouvement
+                        this->board[dest_file][dest_rank].setPiece(this->board[i][j].getPiece());
+                        this->board[i][j].setPiece(Piece());
+
+                        // Vérification du clouage
+                        bool leaves_king_in_check = this->checkForCheck();
+
+                        // Restauration du plateau
+                        this->board = board_copy;
+
+                        // Si le coup ne met pas notre roi en échec, c'est une origine valide
+                        if (!leaves_king_in_check)
+                        {
+                            final_orig_file = i;
+                            final_orig_rank = j;
+                            match_count++;
+                        }
                         break;
                     }
                 }

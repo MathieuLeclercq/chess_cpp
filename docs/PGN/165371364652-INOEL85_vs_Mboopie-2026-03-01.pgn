@@ -1,0 +1,23 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.03.01"]
+[Round "-"]
+[White "INOEL85"]
+[Black "Mboopie"]
+[Result "0-1"]
+[WhiteElo "1372"]
+[BlackElo "1404"]
+[TimeControl "600"]
+[EndTime "15:16:26 GMT+0000"]
+[Termination "Mboopie won by checkmate"]
+
+1. e4 d5 2. Nc3 d4 3. Nce2 e5 4. h3 Nc6 5. f4 Bd6 6. d3 Qf6 7. g3 Nge7 8. Nf3
+exf4 9. Bxf4 Bxf4 10. Nxf4 O-O 11. Qd2 g5 12. O-O-O gxf4 13. gxf4 Ng6 14. Rg1
+Kh8 15. f5 Nge5 16. Ng5 Bd7 17. Qe2 Rg8 18. h4 h6 19. Qh5 Rg7 20. Bh3 Rag8 21.
+Rg2 a5 22. Rdg1 a4 23. a3 b5 24. Nf3 Rxg2 25. Rxg2 Rxg2 26. Bxg2 Nxf3 27. Bxf3
+Ne5 28. Bd1 Be8 29. Kd2 Qg7 30. c3 dxc3+ 31. Kxc3 Qf8 32. Kd2 f6 33. Qe2 Bf7 34.
+Qg2 Qg7 35. Qxg7+ Kxg7 36. h5 c6 37. d4 Nc4+ 38. Kd3 Nxb2+ 39. Kc2 Nxd1 40. Kc1
+Bxh5 41. Kd2 Nb2 42. Kc3 Nc4 43. Kb4 Bf3 44. d5 cxd5 45. Kxb5 dxe4 46. Kxc4 e3
+47. Kd3 e2 48. Kd2 h5 49. Ke1 h4 50. Kf2 h3 51. Ke1 h2 52. Kf2 h1=Q 53. Ke3 Qh6+
+54. Kd4 e1=Q 55. Kc5 Qhc1+ 56. Kd6 Qcd1+ 57. Kc5 Qc3+ 58. Kb5 Qd5+ 59. Kb6 Qcc5+
+60. Ka6 Qdd6# 0-1
