@@ -15,6 +15,13 @@ class Chessboard
     const std::array<char, 8> files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
     const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
     std::array<Square, 64> board;
+
+    // utile pour checkForCheck() : pas besoin de chercher le roi à chaque fois
+    int white_king_file = 4;
+    int white_king_rank = 0;
+    int black_king_file = 4;
+    int black_king_rank = 7;
+
     Color turn = WHITE;
     bool short_castle_white = true;
     bool long_castle_white = true;

@@ -394,30 +394,12 @@ bool Chessboard::checkForCheck() const
     Color color = this->turn;
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
 
-    int king_file = -1;
-    int king_rank = -1;
-
-    // 1. Trouver les coordonnées de notre roi
-    for (int r = 0; r < 8; r++)
-    {
-        for (int f = 0; f < 8; f++)
-        {
-            const Piece& p = this->board[r * 8 + f].getPiece();
-            if (p.getType() == KING && p.getColor() == color)
-            {
-                king_rank = r;
-                king_file = f;
-                break;
-            }
-        }
-        if (king_rank != -1) break;
-    }
-
-    // Sécurité : si pas de roi trouvé, pas d'échec
-    if (king_rank == -1) return false;
+    // 1. Récupérer les coordonnées de notre roi
+    int king_file = (color == WHITE) ? this->white_king_file : this->black_king_file;
+    int king_rank = (color == WHITE) ? this->white_king_rank : this->black_king_rank;
 
     // 2. Vérifier les menaces de Cavaliers
-    int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
+    static constexpr int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
     for (int i = 0; i < 8; i++)
     {
         int r = king_rank + knight_moves[i][0];
@@ -431,7 +413,7 @@ bool Chessboard::checkForCheck() const
     }
 
     // 3. Vérifier les menaces de Pions
-    int pawn_direction = (color == WHITE) ? 1 : -1; // Les pions blancs attaquent vers le haut, les noirs vers le bas
+    int pawn_direction = (color == WHITE) ? 1 : -1;
     int pr = king_rank + pawn_direction;
     if (pr >= 0 && pr < 8)
     {
@@ -447,28 +429,28 @@ bool Chessboard::checkForCheck() const
         }
     }
 
-    // 4. Vérifier les menaces Lignes/Colonnes (Tour & Dame)
-    int orth_dirs[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+    // 4. Vérifier les menaces Lignes/Colonnes
+    static constexpr int orth_dirs[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
     for (int d = 0; d < 4; d++)
     {
         for (int i = 1; i < 8; i++)
         {
             int r = king_rank + orth_dirs[d][0] * i;
             int f = king_file + orth_dirs[d][1] * i;
-            if (r < 0 || r >= 8 || f < 0 || f >= 8) break; // Sortie de l'échiquier
+            if (r < 0 || r >= 8 || f < 0 || f >= 8) break;
 
             const Piece& p = this->board[r * 8 + f].getPiece();
             if (p.getType() != NONE)
             {
                 if (p.getColor() == oppositeColor && (p.getType() == ROOK || p.getType() == QUEEN))
                     return true;
-                break; // Bloqué par une autre pièce (amie ou ennemie inoffensive), on arrête d'explorer cette direction
+                break;
             }
         }
     }
 
-    // 5. Vérifier les menaces Diagonales (Fou & Dame)
-    int diag_dirs[4][2] = { {1, 1}, {1, -1}, {-1, -1}, {-1, 1} };
+    // 5. Vérifier les menaces Diagonales
+    static constexpr int diag_dirs[4][2] = { {1, 1}, {1, -1}, {-1, -1}, {-1, 1} };
     for (int d = 0; d < 4; d++)
     {
         for (int i = 1; i < 8; i++)
@@ -482,24 +464,24 @@ bool Chessboard::checkForCheck() const
             {
                 if (p.getColor() == oppositeColor && (p.getType() == BISHOP || p.getType() == QUEEN))
                     return true;
-                break; // Ligne de vue bloquée
+                break;
             }
         }
     }
 
-    // 6. Vérifier le Roi adverse (optionnel en théorie, mais obligatoire pour la robustesse des générations)
-    int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
-    for (int i = 0; i < 8; i++)
-    {
-        int r = king_rank + king_moves[i][0];
-        int f = king_file + king_moves[i][1];
-        if (r >= 0 && r < 8 && f >= 0 && f < 8)
-        {
-            const Piece& p = this->board[r * 8 + f].getPiece();
-            if (p.getType() == KING && p.getColor() == oppositeColor)
-                return true;
-        }
-    }
+    //// 6. Vérifier le Roi adverse (pas besoin normalement)
+    //static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
+    //for (int i = 0; i < 8; i++)
+    //{
+    //    int r = king_rank + king_moves[i][0];
+    //    int f = king_file + king_moves[i][1];
+    //    if (r >= 0 && r < 8 && f >= 0 && f < 8)
+    //    {
+    //        const Piece& p = this->board[r * 8 + f].getPiece();
+    //        if (p.getType() == KING && p.getColor() == oppositeColor)
+    //            return true;
+    //    }
+    //}
 
     return false;
 }
@@ -518,10 +500,19 @@ bool Chessboard::checkForCheckmate()
                 std::vector<Square> legalMoves = this->getLegalMoves(i, j);
                 for (int k = 0; k < legalMoves.size(); k++)
                 {
-                    std::array<Square, 64> board_copy = this->board;
 
                     int dest_file = legalMoves[k].getFile();
                     int dest_rank = legalMoves[k].getRank();
+
+                    bool is_king_move = (this->board[j * 8 + i].getPiece().getType() == KING);
+                    if (is_king_move) {
+                        if (color == WHITE) { this->white_king_file = dest_file; this->white_king_rank = dest_rank; }
+                        else { this->black_king_file = dest_file; this->black_king_rank = dest_rank; }
+                    }
+
+                    std::array<Square, 64> board_copy = this->board;
+
+
 
                     this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                     this->board[j * 8 + i].setPiece(Piece());
@@ -529,6 +520,11 @@ bool Chessboard::checkForCheckmate()
                     bool still_in_check = this->checkForCheck();
 
                     this->board = board_copy;
+
+                    if (is_king_move) {
+                        if (color == WHITE) { this->white_king_file = i; this->white_king_rank = j; }
+                        else { this->black_king_file = i; this->black_king_rank = j; }
+                    }
 
                     if (!still_in_check)
                     {
@@ -582,6 +578,11 @@ void Chessboard::Clear()
 
 void Chessboard::setStartupPieces()
 {
+    this->white_king_file = 4;
+    this->white_king_rank = 0;
+    this->black_king_file = 4;
+    this->black_king_rank = 7;
+
     for (int i = 0; i < 8; i++) // i = file index
     {
         for (int j = 0; j < 8; j++) // j = rank index
@@ -799,10 +800,32 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         second_square.setPiece(first_square.getPiece());
         first_square.setPiece(Piece());
 
+
+        // Mise à jour du cache si le roi bouge
+        if (second_square.getPiece().getType() == KING)
+        {
+            if (second_square.getPiece().getColor() == WHITE) {
+                this->white_king_file = file; this->white_king_rank = rank;
+            }
+            else {
+                this->black_king_file = file; this->black_king_rank = rank;
+            }
+        }
+
         if (this->checkForCheck())
         {
             std::cout << "Illegal move: your king is checked" << std::endl;
             this->setBoard(board_copy);
+
+            if (second_square.getPiece().getType() == KING)
+            {
+                if (second_square.getPiece().getColor() == WHITE) {
+                    this->white_king_file = orig_file; this->white_king_rank = orig_rank;
+                }
+                else {
+                    this->black_king_file = orig_file; this->black_king_rank = orig_rank;
+                }
+            }
             return false;
         }
 
@@ -918,6 +941,14 @@ bool Chessboard::movePieceSAN(std::string san)
                 {
                     if (m.getFile() == dest_file && m.getRank() == dest_rank)
                     {
+
+                        bool is_king_move = (p_type == KING);
+
+                        if (is_king_move) {
+                            if (this->turn == WHITE) { this->white_king_file = dest_file; this->white_king_rank = dest_rank; }
+                            else { this->black_king_file = dest_file; this->black_king_rank = dest_rank; }
+                        }
+
                         std::array<Square, 64> board_copy = this->board;
 
                         this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
@@ -926,6 +957,11 @@ bool Chessboard::movePieceSAN(std::string san)
                         bool leaves_king_in_check = this->checkForCheck();
 
                         this->board = board_copy;
+
+                        if (is_king_move) {
+                            if (this->turn == WHITE) { this->white_king_file = i; this->white_king_rank = j; }
+                            else { this->black_king_file = i; this->black_king_rank = j; }
+                        }
 
                         if (!leaves_king_in_check)
                         {
