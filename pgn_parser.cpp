@@ -1,6 +1,7 @@
 #include "pgn_parser.hpp"
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 //...............Constructors...............
 PgnParser::PgnParser()
@@ -36,7 +37,6 @@ bool PgnParser::parseFiles(const std::string& filename)
             line.pop_back();
         }
 
-        // Ignorer les lignes vides
         if (line.empty())
         {
             continue;
@@ -84,4 +84,30 @@ const std::unordered_map<std::string, std::string>& PgnParser::getTags() const
 std::string PgnParser::getRawMoves() const
 {
     return this->raw_moves;
+}
+
+
+std::vector<std::string> PgnParser::extractMoves() const
+{
+    std::vector<std::string> moves;
+    std::stringstream ss(this->raw_moves);
+    std::string token;
+
+    // L'opérateur >> extrait les mots séparés par des espaces ou sauts de ligne
+    while (ss >> token)
+    {
+        if (token.find('.') != std::string::npos)
+        {
+            continue;
+        }
+
+        if (token == "1-0" || token == "0-1" || token == "1/2-1/2" || token == "*")
+        {
+            continue;
+        }
+
+        moves.push_back(token);
+    }
+
+    return moves;
 }
