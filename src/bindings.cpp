@@ -63,7 +63,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("get_legal_moves", &Chessboard::getLegalMoves)
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType)>(&Chessboard::movePiece),
             py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE)
-        .def("check_for_checkmate", &Chessboard::checkForCheckmate)
+        .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)
         .def_property_readonly("turn", &Chessboard::getTurn)
         .def_property_readonly("game_state", &Chessboard::getGameState);
 }

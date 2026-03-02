@@ -20,7 +20,6 @@ IMAGES = {}
 
 def load_images():
     """Charge les images depuis gui/assets et les associe aux enums C++."""
-    # Fais correspondre tes noms de fichiers ici si nécessaire
     pieces = {
         (chess_engine.Color.WHITE, chess_engine.PieceType.PAWN): "white-pawn.png",
         (chess_engine.Color.WHITE, chess_engine.PieceType.ROOK): "white-rook.png",

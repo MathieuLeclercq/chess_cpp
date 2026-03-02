@@ -61,8 +61,8 @@ class Chessboard
         const std::vector<std::array<Square, 64>>& getBoardHistory() const;
         std::vector<std::array<Square, 64>>& getBoardHistory();
         void checkEnPassant();
-        bool checkForCheck() const;
-        bool checkForCheckmate();
+        bool isInCheck() const;
+        bool hasAnyLegalMove();
         Color getTurn() const;
         GameState getGameState() const;
 

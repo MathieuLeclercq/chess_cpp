@@ -414,7 +414,7 @@ std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
     return legalMoves;
 }
 
-bool Chessboard::checkForCheck() const
+bool Chessboard::isInCheck() const
 {
     Color color = this->turn;
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
@@ -494,25 +494,25 @@ bool Chessboard::checkForCheck() const
         }
     }
 
-    //// 6. Vérifier le Roi adverse (pas besoin normalement)
-    //static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
-    //for (int i = 0; i < 8; i++)
-    //{
-    //    int r = king_rank + king_moves[i][0];
-    //    int f = king_file + king_moves[i][1];
-    //    if (r >= 0 && r < 8 && f >= 0 && f < 8)
-    //    {
-    //        const Piece& p = this->board[r * 8 + f].getPiece();
-    //        if (p.getType() == KING && p.getColor() == oppositeColor)
-    //            return true;
-    //    }
-    //}
+    // 6. Vérifier le Roi adverse (pas besoin normalement)
+    static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
+    for (int i = 0; i < 8; i++)
+    {
+        int r = king_rank + king_moves[i][0];
+        int f = king_file + king_moves[i][1];
+        if (r >= 0 && r < 8 && f >= 0 && f < 8)
+        {
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() == KING && p.getColor() == oppositeColor)
+                return true;
+        }
+    }
 
     return false;
 }
 
 
-bool Chessboard::checkForCheckmate()
+bool Chessboard::hasAnyLegalMove()
 {
     Color color = this->turn;
 
@@ -548,7 +548,7 @@ bool Chessboard::checkForCheckmate()
                     this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                     this->board[j * 8 + i].setPiece(Piece());
 
-                    bool still_in_check = this->checkForCheck();
+                    bool still_in_check = this->isInCheck();
 
                     this->board = board_copy;
 
@@ -559,7 +559,7 @@ bool Chessboard::checkForCheckmate()
 
                     if (!still_in_check)
                     {
-                        return false;
+                        return true;
                     }
                 }
             }
@@ -567,7 +567,7 @@ bool Chessboard::checkForCheckmate()
     }
 
     this->current_state = CHECKMATE;
-    return true;
+    return false;
 }
 
 void Chessboard::checkEnPassant()
@@ -588,7 +588,7 @@ void Chessboard::printPly() const
     this->print();
     std::string color_str = (this->turn == WHITE) ? "White" : "Black";
     std::cout << color_str << " to move" << "\n\n" << std::endl;
-    bool check = this->checkForCheck();
+    bool check = this->isInCheck();
     if (check)
         std::cout << "Check!" << std::endl;
 }
@@ -821,7 +821,7 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
             this->black_king_file = current_file;
         }
 
-        bool is_checked = this->checkForCheck();
+        bool is_checked = this->isInCheck();
         if (this->turn == WHITE) {
             this->white_king_file = orig_file;
         }
@@ -875,6 +875,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     {
         std::array<Square, 64> board_copy = this->board;
 
+        Piece moving_piece = first_square.getPiece();
+        bool is_king_move = (moving_piece.getType() == KING);
+        Color moving_color = moving_piece.getColor();
+
         // si on veut castle: regarder si on est en échec, ou si le chemin est safe
         if (first_square.getPiece().getType() == KING && abs(orig_file - file) == 2)
         {
@@ -892,10 +896,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         first_square.setPiece(Piece());
 
 
-        // Mise à jour du cache si le roi bouge
-        if (second_square.getPiece().getType() == KING)
+        // maj du cache si le roi bouge
+        if (is_king_move)
         {
-            if (second_square.getPiece().getColor() == WHITE) {
+            if (moving_color == WHITE) {
                 this->white_king_file = file; this->white_king_rank = rank;
             }
             else {
@@ -903,14 +907,15 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             }
         }
 
-        if (this->checkForCheck())
+        if (this->isInCheck())
         {
-            std::cout << "Illegal move: your king is checked" << std::endl;
+            std::cout << "Illegal move." << std::endl;
             this->setBoard(board_copy);
 
-            if (second_square.getPiece().getType() == KING)
+            // Restauration du cache
+            if (is_king_move)
             {
-                if (second_square.getPiece().getColor() == WHITE) {
+                if (moving_color == WHITE) {
                     this->white_king_file = orig_file; this->white_king_rank = orig_rank;
                 }
                 else {
@@ -928,10 +933,18 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 
-        if (this->checkForCheck())
+        if (!this->hasAnyLegalMove())  // soit mat soit pat
         {
-            if (this->checkForCheckmate())
+            if (this->isInCheck())
+            {
+                this->current_state = CHECKMATE;
                 std::cout << "Checkmate!" << std::endl;
+            }
+            else
+            {
+                this->current_state = STALEMATE;
+                std::cout << "Stalemate!" << std::endl;
+            }
         }
 
         return true;
@@ -1059,7 +1072,7 @@ bool Chessboard::movePieceSAN(std::string san)
                         this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                         this->board[j * 8 + i].setPiece(Piece());
 
-                        bool leaves_king_in_check = this->checkForCheck();
+                        bool leaves_king_in_check = this->isInCheck();
 
 
                         this->board = board_copy;
