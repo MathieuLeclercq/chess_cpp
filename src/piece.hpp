@@ -38,6 +38,8 @@ class Piece
         Color getColor();
         int getValue() const;
 
+        bool operator==(const Piece& other) const;
+
         // setters
         void setType(PieceType type);
         void move(int file, int rank);

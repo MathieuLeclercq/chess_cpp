@@ -63,6 +63,26 @@ void Chessboard::print(std::array<Square, 64> some_board) const
     }
 }
 
+bool Chessboard::checkThreefoldRepetition() const
+{
+    if (this->boardHistory.size() < 5) return false;
+
+    int count = 0;
+    const std::array<Square, 64>& current_board = this->board;
+
+    for (const auto& past_board : this->boardHistory)
+    {
+        if (past_board == current_board)
+        {
+            count++;
+        }
+    }
+
+    // Le plateau actuel est déjà dans l'historique au moment où on l'appelle,
+    // on cherche donc au moins 3 occurrences.
+    return count >= 3;
+}
+
 const std::vector<Move>& Chessboard::getMoveHistory() const
 {
     return moveHistory;
@@ -603,15 +623,18 @@ void Chessboard::printPly() const
 void Chessboard::Clear()
 {
     this->board = std::array<Square, 64>();
-    for (int i = 0; i < 8; i++) // i = file
+    for (int i = 0; i < 8; i++)
     {
-        for (int j = 0; j < 8; j++) // j = rank
+        for (int j = 0; j < 8; j++)
         {
             this->board[j * 8 + i].setPosition(i, j);
         }
     }
     this->current_state = ONGOING;
     this->half_move_clock = 0;
+
+    this->moveHistory.clear();
+    this->boardHistory.clear();
 }
 
 void Chessboard::setStartupPieces()
@@ -689,6 +712,7 @@ void Chessboard::setStartupPieces()
             }
         }
     }
+    this->boardHistory.push_back(this->board);
 }
 
 void Chessboard::setBoard(std::array<Square, 64> some_board)
@@ -967,6 +991,18 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             }
         }
 
+        else if (this->checkThreefoldRepetition())
+        {
+            this->current_state = DRAW_REPETITION;
+            std::cout << "Draw by threefold repetition!" << std::endl;
+        }
+
+        else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
+        {
+            this->current_state = DRAW_50_MOVES;
+            std::cout << "Draw by 50-move rule!" << std::endl;
+        }
+
         return true;
     }
     else
@@ -974,6 +1010,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         std::cout << "Illegal move" << std::endl;
         return false;
     }
+
 }
 
 bool Chessboard::movePiece(std::string orig_square, std::string square)

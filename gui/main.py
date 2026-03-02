@@ -152,7 +152,7 @@ def main():
                         success = board.move_piece(orig_file, orig_rank, clicked_file, clicked_rank,
                                                    promotion_type)
                         print(board.game_state)
-
+                        print(board.half_move_clock)
 
                     # Peu importe le résultat du clic, on désélectionne
                     selected_square = None

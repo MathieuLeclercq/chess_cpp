@@ -97,7 +97,9 @@ Square& Square::operator=(const Square& other)
 
 bool Square::operator == (const Square& square) const
 {
-    return (this->file == square.file && this->rank == square.rank);
+    return (this->file == square.file &&
+        this->rank == square.rank &&
+        this->piece == square.piece);
 }
 
 //...............Setters...............

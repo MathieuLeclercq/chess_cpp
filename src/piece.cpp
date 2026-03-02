@@ -40,6 +40,11 @@ int Piece::getValue() const
     return value;
 }
 
+bool Piece::operator==(const Piece& other) const
+{
+    return (this->type == other.type && this->color == other.color);
+}
+
 //...............Setters...............
 void Piece::setType(PieceType type)
 {
