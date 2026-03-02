@@ -1,0 +1,21 @@
+[Event "Chess.com Bullet Open 2"]
+[Site "chess.com INT"]
+[Date "2020.12.19"]
+[Round "1"]
+[White "Rozovsky,Daniel"]
+[Black "Abdusattorov,Nodirbek"]
+[Result "0-1"]
+[WhiteElo "2085"]
+[BlackElo "2627"]
+[ECO "D00"]
+
+1.d4 d5 2.Bf4 Nf6 3.e3 c5 4.c3 Nc6 5.Nd2 Qb6 6.Qb3 c4 7.Qc2 g6 8.f3 Bf5 9.e4 Be6
+10.Ne2 Bg7 11.Bg3 O-O 12.Nf4 Qd8 13.exd5 Bxd5 14.Bxc4 e5 15.Nxd5 Nxd5 16.Bxd5 Qxd5
+17.dxe5 Bxe5 18.O-O-O Bg7 19.Kb1 Qb5 20.Ne4 Rad8 21.Nd6 Qb6 22.Rhe1 h5 23.Nc4 Qa6
+24.Ne3 b5 25.Nd5 b4 26.Nxb4 Nxb4 27.cxb4 Rc8 28.Qb3 Qf6 29.Be5 Qf5+ 30.Qd3 Qg5
+31.Bxg7 Kxg7 32.Qd4+ Kh7 33.g4 Rfd8 34.Qxa7 Kg7 35.Rxd8 Rxd8 36.Qe3 Qh4 37.Kc2 Qxh2+
+38.Re2 Qc7+ 39.Qc3+ Qxc3+ 40.bxc3 h4 41.Rh2 g5 42.a4 Kf6 43.a5 Ke5 44.Kb3 Kf4
+45.b5 Rd5 46.Rc2 Rxb5+ 47.Ka4 Rb8 48.c4 Kxf3 49.a6 Kxg4 50.Ka5 h3 51.a7 Rc8
+52.Kb6 Kf3 53.Kb7 Re8 54.a8=Q Rxa8 55.Kxa8 g4 56.c5 g3 57.c6 g2 58.Rc3+ Kg4
+59.Rc1 g1=Q 60.c7 Qxc1 61.c8=Q+ Qxc8+ 62.Ka7 h2 63.Kb6 h1=Q 64.Ka5 Qhb7 65.Ka4 Qca8+  0-1
+

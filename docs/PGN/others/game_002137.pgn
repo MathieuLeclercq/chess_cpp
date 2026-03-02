@@ -1,0 +1,24 @@
+[Event "chess.com SpeedChess 2022"]
+[Site "chess.com INT"]
+[Date "2022.12.08"]
+[Round "1.28"]
+[White "Abdusattorov,Nodirbek"]
+[Black "So,W"]
+[Result "0-1"]
+[WhiteElo "2713"]
+[BlackElo "2760"]
+[ECO "C65"]
+
+1.e4 e5 2.Nf3 Nc6 3.Bb5 Nf6 4.d3 Bc5 5.Bxc6 dxc6 6.Nbd2 Be6 7.O-O Bd6 8.b3 Nd7
+9.Nc4 Qe7 10.a4 a5 11.Ne3 g6 12.Kh1 b6 13.Nd2 O-O 14.Ndc4 Bc5 15.Bb2 f6 16.Qe1 Bb4
+17.Qe2 b5 18.Nd2 Bd6 19.Bc3 Bb4 20.Bxb4 axb4 21.axb5 cxb5 22.Rxa8 Rxa8 23.f4 exf4
+24.Rxf4 Qc5 25.Rf1 Ra2 26.h3 Kg7 27.Qf2 Qc3 28.d4 Ra1 29.Rxa1 Qxa1+ 30.Kh2 c5
+31.d5 Qe5+ 32.Kg1 Bf7 33.Qe2 Qd4 34.Kh2 Ne5 35.Ng4 c4 36.Nxe5 Qxe5+ 37.Kg1 Bxd5
+38.Qf2 Bf7 39.Qe3 Qc3 40.Kf2 g5 41.e5 Qxe5 42.Qxe5 fxe5 43.Ke3 c3 44.Ne4 Bg6
+45.g4 Bxe4 46.Kxe4 Kf6 47.Kd5 h6 48.Kc5 Ke6 49.Kxb4 Kd5 50.Kxc3 Ke4 51.Kd2 Kf3
+52.c4 Kf2 53.Kd3 Kf3 54.Kd2 Kf2 55.cxb5 e4 56.b6 e3+ 57.Kc2 e2 58.b7 e1=Q
+59.b8=Q Qe2+ 60.Kc3 Qe3+ 61.Kc4 Qxh3 62.Qf8+ Kg3 63.Qd6+ Kxg4 64.Qe6+ Kg3
+65.Qd6+ Kg2 66.b4 g4 67.Qd2+ Kg1 68.Qc1+ Qf1+ 69.Qxf1+ Kxf1 70.b5 g3 71.b6 g2
+72.b7 g1=Q 73.b8=Q Qg4+ 74.Kd3 Qf3+ 75.Kd4 Kg2 76.Qg8+ Kf2 77.Qa2+ Kg3 78.Qe6 Qg4+
+79.Qxg4+ Kxg4  0-1
+

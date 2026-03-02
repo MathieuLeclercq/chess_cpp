@@ -1,0 +1,22 @@
+[Event "Speed Chess GP3 KO 2021"]
+[Site "chess.com INT"]
+[Date "2021.10.02"]
+[Round "1.3"]
+[White "Abdusattorov,Nodirbek"]
+[Black "Perez Ponsa,F"]
+[Result "0-1"]
+[WhiteElo "2646"]
+[BlackElo "2554"]
+[ECO "E73"]
+
+1.c4 Nf6 2.Nc3 g6 3.e4 d6 4.d4 Bg7 5.Be2 O-O 6.Be3 c6 7.Nf3 e5 8.O-O exd4
+9.Nxd4 Re8 10.Bf3 Nbd7 11.Re1 Ne5 12.b3 Qa5 13.Bd2 Qb6 14.Be3 Qa5 15.Qc2 Nxf3+
+16.Nxf3 Bg4 17.Nd2 Be6 18.Bd4 Rad8 19.Rad1 Qh5 20.Nf1 Ng4 21.Bxg7 Kxg7 22.f3 Qc5+
+23.Ne3 Nxe3 24.Rxe3 Qxe3+ 25.Kf1 d5 26.Qb2 d4 27.Ne2 c5 28.Nc1 Qf4 29.Nd3 Qf6
+30.Nxc5 d3 31.Qd2 Qd4 32.Nxb7 Rb8 33.Na5 Red8 34.Nc6 Qd6 35.Nxd8 Rxd8 36.Qc3+ Kg8
+37.c5 Qxh2 38.Rxd3 Qh1+ 39.Kf2 Rc8 40.c6 Qh4+ 41.Kf1 Qe7 42.b4 Qc7 43.b5 Bxa2
+44.Qc5 Be6 45.Rc3 Rb8 46.Kg1 h5 47.Qd4 Qg3 48.c7 Rc8 49.b6 Kh7 50.Qd8 Rxd8
+51.cxd8=Q Qe1+ 52.Kh2 Qxc3 53.bxa7 Qe5+ 54.Kg1 Qc5+ 55.Kh2 Qxa7 56.Qf6 Qd7
+57.f4 Kg8 58.e5 Bf5 59.Qg5 Qe6 60.Qg3 Qe8 61.Qh4 Be6 62.Qf6 Qf8 63.Qg5 Qg7
+64.Qg3 f6 65.Qh4 g5 66.f5 gxh4 67.exf6 Qg3+ 68.Kh1 h3 69.Kg1 Qxg2+  0-1
+

@@ -1,0 +1,21 @@
+[Event "Chess.com RCC Wk20 Swiss"]
+[Site "chess.com INT"]
+[Date "2022.07.09"]
+[Round "1"]
+[White "Abdusattorov,Nodirbek"]
+[Black "Hakobyan,Aram"]
+[Result "1-0"]
+[WhiteElo "2688"]
+[BlackElo "2612"]
+[ECO "C50"]
+
+1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.d3 d6 5.O-O Nf6 6.Bg5 h6 7.Bh4 a6 8.c3 Ba7
+9.a4 g5 10.Bg3 Nh7 11.Nbd2 Nf8 12.b4 Ng6 13.b5 Na5 14.Bd5 c6 15.bxc6 bxc6
+16.Ba2 h5 17.h3 g4 18.hxg4 hxg4 19.Nh2 Qg5 20.Re1 Nf4 21.Ndf1 Nh5 22.d4 Nxg3
+23.Nxg3 Qg7 24.Nhf1 exd4 25.e5 d5 26.cxd4 Be6 27.Bb1 c5 28.Nf5 Qg5 29.N1g3 c4
+30.Bc2 Nc6 31.Rb1 Qf4 32.Rb7 Bxd4 33.Nxd4 Nxd4 34.Be4 Nb3 35.Bxd5 O-O-O 36.Rxb3 Rxd5
+37.Qc1 Rd2 38.Re2 Rxe2 39.Qxf4 Re1+ 40.Nf1 cxb3 41.Qd2 Rb1 42.Qc3+ Kb8 43.Qb4+ Ka7
+44.Qd4+ Kb8 45.Qb6+ Kc8 46.Qxa6+ Kb8 47.Qb6+ Ka8 48.Qa5+ Kb8 49.Qb4+ Ka7
+50.a5 Rxf1+ 51.Kxf1 Rb8 52.Qd4+ Ka6 53.Qd6+ Ka7 54.Qd4+ Ka6 55.Qb2 Kxa5 56.Ke2 Rc8
+57.Kd3 Rc2 58.Qa3+ Kb5 59.Qa7 Bf5+ 60.Kd4 Rc4+ 61.Ke3 Re4+ 62.Kd2 Rd4+ 63.Qxd4  1-0
+

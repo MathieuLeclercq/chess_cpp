@@ -1,0 +1,19 @@
+[Event "Chess.com Bullet Open 1"]
+[Site "chess.com INT"]
+[Date "2020.12.19"]
+[Round "21"]
+[White "Abdusattorov,Nodirbek"]
+[Black "Naroditsky,D"]
+[Result "0-1"]
+[WhiteElo "2627"]
+[BlackElo "2621"]
+[ECO "B13"]
+
+1.e4 c6 2.d4 d5 3.exd5 cxd5 4.Bd3 Nf6 5.c3 Nc6 6.Bf4 g6 7.Nf3 Bg7 8.O-O Bg4
+9.Nbd2 O-O 10.Re1 Nd7 11.h3 Bxf3 12.Nxf3 e6 13.Qb3 Qb6 14.Qxb6 Nxb6 15.a3 Rac8
+16.Nd2 Rfd8 17.Bg5 Re8 18.Bf4 Na5 19.h4 Na4 20.Rab1 a6 21.Bc2 b5 22.Bd3 Nc4
+23.Nxc4 bxc4 24.Bc2 Nb6 25.b3 cxb3 26.Rxb3 Na4 27.Bd2 Bf8 28.Reb1 Rc6 29.Bd3 Rec8
+30.h5 Nxc3 31.Rc1 Ne2+ 32.Bxe2 Rxc1+ 33.Bxc1 Rxc1+ 34.Kh2 gxh5 35.Bxa6 Bd6+
+36.g3 Rd1 37.Bd3 h4 38.Kh3 hxg3 39.fxg3 Rg1 40.g4 Rg3+ 41.Kh4 Kg7 42.a4 Rg1
+43.Kh3 Ra1 44.Bb5 Kf6 45.Rf3+ Kg5 46.Rxf7 Ra2 47.Rg7+ Kh6  0-1
+

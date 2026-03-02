@@ -1,0 +1,27 @@
+[Event "Chess.com Bullet Open 2"]
+[Site "chess.com INT"]
+[Date "2020.12.19"]
+[Round "12"]
+[White "Abdusattorov,Nodirbek"]
+[Black "Sadhwani,Raunak"]
+[Result "0-1"]
+[WhiteElo "2627"]
+[BlackElo "2545"]
+[ECO "B06"]
+
+1.e4 g6 2.d4 d6 3.Nc3 Bg7 4.f4 a6 5.Nf3 b5 6.Bd3 Bb7 7.Qe2 Nd7 8.e5 Nb6 9.Be4 Bxe4
+10.Nxe4 Nh6 11.O-O O-O 12.c3 Nd5 13.Be3 c6 14.a4 Qd7 15.h3 Nf5 16.Bd2 Nb6
+17.axb5 axb5 18.g4 Nh6 19.Kg2 Nc4 20.Rxa8 Rxa8 21.Bc1 d5 22.Nc5 Qc8 23.b3 Nb6
+24.Be3 f6 25.Qd2 Nf7 26.e6 Nd6 27.Qd3 Ra3 28.f5 g5 29.Bf2 b4 30.Bg3 bxc3
+31.Qxc3 Ne4 32.Qb4 Ra2+ 33.Bf2 Na8 34.Nd3 Bf8 35.Rc1 Ra6 36.Nc5 Ra2 37.Nxe4 dxe4
+38.Nd2 Qa6 39.Nxe4 Qe2 40.Re1 Qd3 41.Qc3 Qb5 42.Qc4 Qb7 43.Nc5 Qc7 44.Nd7 Nb6
+45.Qd3 Nxd7 46.exd7 Qxd7 47.Qc4+ Qd5+ 48.Qxd5+ cxd5 49.Rb1 Ra6 50.b4 Rb6
+51.b5 e6 52.fxe6 Bd6 53.Be1 Kf8 54.Ba5 Rb7 55.b6 Ke7 56.Rc1 Kxe6 57.Kf3 Kd7
+58.Re1 h6 59.Ke2 Kc6 60.Kd3 Kb5 61.Rf1 Kxa5 62.Rxf6 Rxb6 63.Rf5 Bf4 64.Kc2 Rb5
+65.Rf6 Kb4 66.Rxh6 Kc4 67.h4 Kxd4 68.h5 Rc5+ 69.Kd1 Rc3 70.Ke2 Rh3 71.Re6 Rh2+
+72.Kf3 Rh3+ 73.Kg2 Rh4 74.Ra6 Rxg4+ 75.Kf3 Rh4 76.Kf2 Ke5 77.Ra4 Rh2+ 78.Kf3 Rxh5
+79.Kg4 Rh4+ 80.Kf3 Rh3+ 81.Kg2 Re3 82.Kf1 Re4 83.Ra8 Rd4 84.Re8+ Kd6 85.Rf8 Kc5
+86.Re8 Kb4 87.Kg2 Kc3 88.Kf3 Kd3 89.Kg4 Re4 90.Rc8 Re3 91.Kf5 Be5 92.Rd8 Re4
+93.Rxd5+ Ke3 94.Rxe5 Rxe5+ 95.Kxe5 g4 96.Kf5 g3 97.Kg4 g2 98.Kf5 g1=Q 99.Kf6 Qf2+
+100.Ke7 Qf3 101.Ke8 Qe4+  0-1
+

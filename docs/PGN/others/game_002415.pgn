@@ -1,0 +1,22 @@
+[Event "chess.com SpeedChess 2023"]
+[Site "chess.com INT"]
+[Date "2023.09.11"]
+[Round "1.17"]
+[White "Caruana,F"]
+[Black "Abdusattorov,Nodirbek"]
+[Result "0-1"]
+[WhiteElo "2786"]
+[BlackElo "2716"]
+[ECO "C77"]
+
+1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.d3 d6 6.c3 Be7 7.O-O O-O 8.Re1 b5
+9.Bc2 Bb7 10.Nbd2 Nb8 11.Nf1 Nbd7 12.d4 Re8 13.Ng3 Bf8 14.a4 c5 15.d5 c4
+16.Bg5 h6 17.Be3 g6 18.h3 Qc7 19.Qe2 Reb8 20.Nd2 Nc5 21.Rec1 Bc8 22.a5 Bd7
+23.b4 cxb3 24.Bxb3 Rc8 25.Bd1 Rab8 26.c4 b4 27.Bxc5 dxc5 28.Ba4 Bxa4 29.Rxa4 h5
+30.Nb3 Ne8 31.Rd1 Nd6 32.Ra2 Qd7 33.Nf1 Rc7 34.Nh2 Re8 35.Nf3 Bh6 36.Re1 Kg7
+37.Qd3 Kh7 38.Rae2 f6 39.Kh2 Qa4 40.g3 Qd7 41.Kg2 Qc8 42.Ra2 Rce7 43.Ree2 f5
+44.Nfd2 f4 45.Nf3 Rf8 46.Ra1 g5 47.gxf4 Rxf4 48.Nh2 g4 49.hxg4 Rg7 50.Rh1 hxg4
+51.Nf1 Rf3 52.Qc2 Rgf7 53.Ng3 Kg6 54.Rh2 Qf8 55.Nxc5 b3 56.Nxb3 Bf4 57.Nc5 Bxg3
+58.fxg3 Nxc4 59.Nd3 Qc8 60.Nxe5+ Kg7 61.Qxc4 Qb8 62.Qd4 R7f6 63.d6 Qb1 64.Nxf3 gxf3+
+65.Kh3 fxe2 66.Rxe2 Qf1+ 67.Rg2 Kf8 68.Qg1 Qf3 69.Kh4 Rh6+ 70.Kg5 Rh5+ 71.Kg6 Qf7+  0-1
+

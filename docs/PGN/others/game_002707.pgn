@@ -1,0 +1,22 @@
+[Event "chess.com SpeedChess 2024"]
+[Site "chess.com INT"]
+[Date "2024.07.26"]
+[Round "1.13"]
+[White "Nepomniachtchi,I"]
+[Black "Abdusattorov,Nodirbek"]
+[Result "1-0"]
+[WhiteElo "2770"]
+[BlackElo "2769"]
+[ECO "A10"]
+
+1.c4 b6 2.Nc3 Bb7 3.d4 e6 4.a3 Nf6 5.Nf3 d5 6.cxd5 Nxd5 7.e3 Be7 8.Bd3 O-O
+9.O-O c5 10.e4 Nxc3 11.bxc3 Nd7 12.Re1 Rc8 13.h3 Qc7 14.Ra2 Rfd8 15.d5 c4
+16.Bb1 Nc5 17.Nd4 exd5 18.e5 Nd3 19.Bxd3 cxd3 20.e6 Bf6 21.exf7+ Qxf7 22.Qxd3 Re8
+23.Rae2 Re4 24.f3 Rxc3 25.Qxc3 Bxd4+ 26.Qxd4 Rxd4 27.Re8+ Qxe8 28.Rxe8+ Kf7
+29.Rb8 Bc6 30.Kf2 Rc4 31.Bd2 d4 32.Rd8 Bb5 33.h4 Ra4 34.Rd5 a6 35.Bb4 d3
+36.Ke3 Bc4 37.Rd4 Bb5 38.Rd5 g6 39.h5 Bc4 40.Rd7+ Ke6 41.Rd6+ Ke5 42.Rxb6 gxh5
+43.Rh6 a5 44.Rxh5+ Ke6 45.Rh6+ Kf5 46.Bd2 Bg8 47.g4+ Ke5 48.Bc1 Kd5 49.Rb6 Rc4
+50.Bd2 Bf7 51.Bxa5 Bg6 52.Bd2 Rc2 53.a4 Ra2 54.a5 Kc5 55.Rf6 Kb5 56.f4 Ra4
+57.f5 Be8 58.Re6 Bc6 59.Re5+ Ka6 60.g5 Rg4 61.f6 Rg3+ 62.Kd4 Rf3 63.Re7 Kb5
+64.Rxh7 Rf2 65.Kxd3 Rf3+ 66.Be3 Rf5 67.Re7 Rd5+ 68.Ke2  1-0
+
