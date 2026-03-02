@@ -59,8 +59,8 @@ class Chessboard
         void Clear();
         void setStartupPieces();
         void setBoard(std::vector<std::vector<Square>> some_board);
-        void movePiece(int orig_file,int orig_rank, int file, int rank);
-        void movePiece(std::string orig_square, std::string square);
+        bool movePiece(int orig_file,int orig_rank, int file, int rank);
+        bool movePiece(std::string orig_square, std::string square);
         void updateHistory(const Square& first_square, const Square& second_square);
         void updateCastleFlags();
         void checkPromotion(Square& second_square);

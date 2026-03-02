@@ -731,7 +731,7 @@ void Chessboard::checkPromotion(Square& second_square)
 
 }
 
-void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
+bool Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
 {
     Square& first_square = this->board[orig_file][orig_rank];
     Square& second_square = this->board[file][rank];
@@ -740,7 +740,7 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
     if (first_square.getPiece().getColor() != this ->turn) // check turn
     {
         std::cout<<"It is not your turn!"<<std::endl;
-        return;
+        return false;
     }
 
 
@@ -756,13 +756,17 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
             else if (file == 2) // queenside
                 this->board[orig_file-1][rank].setPiece(first_square.getPiece());
             else
-                std::cout<<"Invalid castling move!"<<std::endl; // should never happen
+            {
+                std::cout << "Invalid castling move!" << std::endl; // should never happen
+                return false;
+            }
+                
 
             if (this->checkForCheck())
                 {
                     std::cout<<"You cannot castle: there are threats on the way."<<std::endl;
                     this->setBoard(board_copy);
-                    return;
+                    return false;
                 }
             if (file == 6)
             {
@@ -796,7 +800,7 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
             this->print();
             std::cout<<"-------------------------"<<std::endl;  
             this->setBoard(board_copy); // put board back to original state
-            return;
+            return false;
         }
 
         this->checkPromotion(second_square); // check if pawn promotion is needed
@@ -814,19 +818,20 @@ void Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
         this->updateCastleFlags();
         this->checkEnPassant();
         
-        return;
+        return true;
     }
 
     else
     {
         std::cout << "Illegal move" << std::endl;
+        return false;
         // std::cout<<"-------------------------"<<std::endl;
         // this->print();
         // std::cout<<"-------------------------"<<std::endl;  
     }
 }
 
-void Chessboard::movePiece(std::string orig_square, std::string square)
+bool Chessboard::movePiece(std::string orig_square, std::string square)
 {
     // find index of orig_square
     int orig_file = std::find(files.begin(), files.end(), orig_square[0]) - files.begin();
@@ -836,5 +841,5 @@ void Chessboard::movePiece(std::string orig_square, std::string square)
     int file = std::find(files.begin(), files.end(), square[0]) - files.begin();
     int rank = std::find(ranks.begin(), ranks.end(), square[1]) - ranks.begin();
     // std::cout<<"orig_file: " << orig_file << " orig_rank: " << orig_rank << " file: " << file << " rank: " << rank << std::endl;
-    this->movePiece(orig_file, orig_rank, file, rank);
+    return this->movePiece(orig_file, orig_rank, file, rank);
 }
