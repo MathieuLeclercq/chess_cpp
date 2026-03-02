@@ -512,7 +512,14 @@ bool Chessboard::checkForCheckmate()
 
                     std::array<Square, 64> board_copy = this->board;
 
+                    // Gestion du pion capturé en passant lors de la simulation
+                    bool is_en_passant = (this->board[j * 8 + i].getPiece().getType() == PAWN &&
+                        abs(i - dest_file) == 1 &&
+                        this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
+                    if (is_en_passant) {
+                        this->board[j * 8 + dest_file].setPiece(Piece());
+                    }
 
                     this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                     this->board[j * 8 + i].setPiece(Piece());
@@ -757,15 +764,16 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         return false;
     }
 
+    // si la case d'arrivée est dans les legal moves
     if (std::find(legalMoves.begin(), legalMoves.end(), second_square) != legalMoves.end())
     {
         std::array<Square, 64> board_copy = this->board;
 
         if (first_square.getPiece().getType() == KING && abs(orig_file - file) == 2)
         {
-            if (file == 6)
+            if (file == 6) // short castle
                 this->board[rank * 8 + (orig_file + 1)].setPiece(first_square.getPiece());
-            else if (file == 2)
+            else if (file == 2) // long castle
                 this->board[rank * 8 + (orig_file - 1)].setPiece(first_square.getPiece());
             else
             {
@@ -780,18 +788,20 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
                 return false;
             }
 
-            if (file == 6)
+            // on est sûr que le castle est valide : on bouge la tour
+            if (file == 6) // short
             {
                 this->board[rank * 8 + 5].setPiece(Piece(this->turn, ROOK));
                 this->board[rank * 8 + 7].setPiece(Piece());
             }
-            else if (file == 2)
+            else if (file == 2) // long
             {
                 this->board[rank * 8 + 3].setPiece(Piece(first_square.getPiece().getColor(), ROOK));
                 this->board[rank * 8 + 0].setPiece(Piece());
             }
         }
 
+        // check si on a pris en passant
         if (second_square.getPiece().getType() == NONE && first_square.getPiece().getType() == PAWN && abs(orig_file - file) == 1)
         {
             this->board[orig_rank * 8 + file].setPiece(Piece());
@@ -831,6 +841,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         this->checkPromotion(second_square, promotion);
         this->updateHistory(first_square, second_square);
+
+        this->updateCastleFlags();
+        this->checkEnPassant();
+
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 
         if (this->checkForCheck())
@@ -838,9 +852,6 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             if (this->checkForCheckmate())
                 std::cout << "Checkmate!" << std::endl;
         }
-
-        this->updateCastleFlags();
-        this->checkEnPassant();
 
         return true;
     }
@@ -949,12 +960,29 @@ bool Chessboard::movePieceSAN(std::string san)
                             else { this->black_king_file = dest_file; this->black_king_rank = dest_rank; }
                         }
 
+                        //std::array<Square, 64> board_copy = this->board;
+
+                        //this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
+                        //this->board[j * 8 + i].setPiece(Piece());
+
+                        //bool leaves_king_in_check = this->checkForCheck();
+
                         std::array<Square, 64> board_copy = this->board;
+
+                        // Gestion du pion capturé en passant lors de la simulation
+                        bool is_en_passant = (this->board[j * 8 + i].getPiece().getType() == PAWN &&
+                            abs(i - dest_file) == 1 &&
+                            this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
+
+                        if (is_en_passant) {
+                            this->board[j * 8 + dest_file].setPiece(Piece());
+                        }
 
                         this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                         this->board[j * 8 + i].setPiece(Piece());
 
                         bool leaves_king_in_check = this->checkForCheck();
+
 
                         this->board = board_copy;
 
