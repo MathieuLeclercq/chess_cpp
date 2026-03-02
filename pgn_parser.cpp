@@ -105,16 +105,25 @@ std::vector<std::string> PgnParser::extractMoves() const
     // L'opérateur >> extrait les mots séparés par des espaces ou sauts de ligne
     while (ss >> token)
     {
-        if (token.find('.') != std::string::npos)
-        {
-            continue;
-        }
-
+        // 1. Ignorer les marqueurs de fin de partie
         if (token == "1-0" || token == "0-1" || token == "1/2-1/2" || token == "*")
         {
             continue;
         }
 
+        // 2. Traitement des jetons contenant un point ("1.", "1.Nf3", "12...Nxd5")
+        size_t dot_pos = token.find_last_of('.');
+        if (dot_pos != std::string::npos)
+        {
+            std::string actual_move = token.substr(dot_pos + 1);
+            if (!actual_move.empty())
+            {
+                moves.push_back(actual_move);
+            }
+            continue;
+        }
+
+        // 3. Ajouter le coup valide (sans point) à la liste
         moves.push_back(token);
     }
 

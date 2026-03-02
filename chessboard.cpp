@@ -468,34 +468,44 @@ bool Chessboard::checkForCheckmate()
 {
     Color color = this->turn;
 
-    std::cout.setstate(std::ios_base::failbit);
+    // Suppression de std::cout.setstate(std::ios_base::failbit); qui n'est plus nécessaire
+    // car on n'appelle plus movePiece() qui générait du texte dans la console.
 
-
-
-    // check if king is in checkmate
-    for (int i = 0; i<8; i++)
+    for (int i = 0; i < 8; i++)
     {
-        for (int j = 0; j<8; j++)
+        for (int j = 0; j < 8; j++)
         {
             if (this->board[i][j].getPiece().getColor() == color)
             {
-                std::vector<Square> legalMoves = this->getLegalMoves(i,j);
-                for (int k = 0; k<legalMoves.size(); k++)
+                std::vector<Square> legalMoves = this->getLegalMoves(i, j);
+                for (int k = 0; k < legalMoves.size(); k++)
                 {
-                    Chessboard temp = *this;
-                    temp.movePiece(i,j,legalMoves[k].getFile(),legalMoves[k].getRank());
-                    if (temp.checkForCheck() == false)
+                    // 1. Sauvegarde uniquement de la grille
+                    std::vector<std::vector<Square>> board_copy = this->board;
+
+                    // 2. Simulation basique du déplacement
+                    int dest_file = legalMoves[k].getFile();
+                    int dest_rank = legalMoves[k].getRank();
+
+                    this->board[dest_file][dest_rank].setPiece(this->board[i][j].getPiece());
+                    this->board[i][j].setPiece(Piece());
+
+                    // 3. Vérification de l'état
+                    bool still_in_check = this->checkForCheck();
+
+                    // 4. Restauration de la grille
+                    this->board = board_copy;
+
+                    // Si on a trouvé un coup qui sort le roi de l'échec, ce n'est pas un mat
+                    if (!still_in_check)
                     {
-                        std::cout.clear();
                         return false;
                     }
-                        
                 }
-
             }
         }
     }
-    std::cout.clear();
+
     checkmate = true;
     return true;
 }

@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <vector>
 #include <chrono>
+#include <string>
 #include "chessboard.hpp"
 #include "pgn_parser.hpp"
 
@@ -9,15 +10,14 @@ namespace fs = std::filesystem;
 
 int main()
 {
-    // Remplacer par le chemin absolu ou relatif correct vers ton dossier
     std::string folder_path = "C:/Users/M47h1/Documents/chess_cpp/docs/PGN";
 
     int success_count = 0;
     int error_count = 0;
+    std::vector<std::string> failed_files; // Ajout du conteneur
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
-    // Vérifier si le dossier existe
     if (!fs::exists(folder_path) || !fs::is_directory(folder_path))
     {
         std::cerr << "Erreur : Le dossier " << folder_path << " n'existe pas." << std::endl;
@@ -28,12 +28,11 @@ int main()
 
     for (const auto& entry : fs::directory_iterator(folder_path))
     {
-        // On ne traite que les fichiers avec l'extension .pgn
         if (entry.is_regular_file() && entry.path().extension() == ".pgn")
         {
-            std::cout << "--- Test du fichier : " << entry.path().filename().string() << " ---" << std::endl;
+            std::string current_file = entry.path().filename().string();
+            std::cout << "--- Test du fichier : " << current_file << " ---" << std::endl;
 
-            // Instanciation "fraîche" pour chaque partie
             Chessboard chessboard;
             chessboard.setStartupPieces();
             PgnParser pgnParser;
@@ -42,6 +41,7 @@ int main()
             {
                 std::cerr << "-> Echec de la lecture du fichier." << std::endl;
                 error_count++;
+                failed_files.push_back(current_file); // Enregistrement de l'échec
                 continue;
             }
 
@@ -66,6 +66,7 @@ int main()
             else
             {
                 error_count++;
+                failed_files.push_back(current_file); // Enregistrement de l'échec
             }
             std::cout << std::endl;
         }
@@ -79,6 +80,17 @@ int main()
     std::cout << "Parties reussies : " << success_count << std::endl;
     std::cout << "Parties echouees : " << error_count << std::endl;
     std::cout << "Temps total d'execution : " << elapsed_time_ms << " ms" << std::endl;
+
+    // Affichage des fichiers en erreur
+    if (!failed_files.empty())
+    {
+        std::cout << "----------------------------------------" << std::endl;
+        std::cout << "Fichiers ayant echoue :" << std::endl;
+        for (const std::string& file : failed_files)
+        {
+            std::cout << "- " << file << std::endl;
+        }
+    }
     std::cout << "========================================" << std::endl;
 
     return 0;
