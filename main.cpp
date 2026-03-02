@@ -2,6 +2,7 @@
 // #include "piece.hpp"
 // #include "square.hpp"
 #include "chessboard.hpp"
+#include "pgn_parser.hpp"
 
 #include <chrono>
 
@@ -93,6 +94,10 @@ int main()
     // chessboard.movePiece("f2","g1");
 
 
+    PgnParser pgnParser;
+    pgnParser.parseFiles("C:/Users/M47h1/Documents/chess_cpp/docs/dtwaldo_vs_Mboopie_2026.03.01.pgn");
+    std::string rawMoves = pgnParser.getRawMoves();
+    std::cout << "raw moves : " << rawMoves << "" << std::endl;
 
 
     while (true)
