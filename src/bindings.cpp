@@ -1,0 +1,59 @@
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // Indispensable pour la conversion des std::vector et std::array
+#include "chessboard.hpp"
+#include "piece.hpp"
+#include "move.hpp"
+#include "square.hpp"
+
+namespace py = pybind11;
+
+PYBIND11_MODULE(chess_engine, m) {
+    m.doc() = "Moteur d'échecs C++ bindé pour Python";
+
+    // --- Enums ---
+    py::enum_<Color>(m, "Color")
+        .value("WHITE", WHITE)
+        .value("BLACK", BLACK)
+        .value("NO_COLOR", NO_COLOR)
+        .export_values();
+
+    py::enum_<PieceType>(m, "PieceType")
+        .value("NONE", NONE)
+        .value("PAWN", PAWN)
+        .value("KNIGHT", KNIGHT)
+        .value("BISHOP", BISHOP)
+        .value("ROOK", ROOK)
+        .value("QUEEN", QUEEN)
+        .value("KING", KING)
+        .export_values();
+
+    // --- Classes ---
+    py::class_<Piece>(m, "Piece")
+        .def(py::init<>())
+        .def(py::init<Color, PieceType>())
+        .def("get_type", &Piece::getType)
+        .def("get_color", static_cast<const Color & (Piece::*)() const>(&Piece::getColor)); // Cast nécessaire à cause de la surcharge dans ton code
+
+    py::class_<Square>(m, "Square")
+        .def(py::init<>())
+        .def(py::init<int, int>())
+        .def("get_file", &Square::getFile)
+        .def("get_rank", &Square::getRank)
+        .def("get_piece", static_cast<const Piece & (Square::*)() const>(&Square::getPiece))
+        .def("is_occupied", &Square::CheckOccupied)
+        .def("get_name", &Square::getName);
+
+    py::class_<Move>(m, "Move")
+        .def("get_dest_square", static_cast<const Square & (Move::*)() const>(&Move::getDestSquare))
+        .def("get_orig_square", static_cast<const Square & (Move::*)() const>(&Move::getOrigSquare))
+        .def("get_promotion", &Move::getPromotion);
+
+    py::class_<Chessboard>(m, "Chessboard")
+        .def(py::init<>())
+        .def("set_startup_pieces", &Chessboard::setStartupPieces)
+        .def("get_square", static_cast<const Square & (Chessboard::*)(int, int) const>(&Chessboard::getSquare))
+        .def("get_legal_moves", &Chessboard::getLegalMoves)
+        .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType)>(&Chessboard::movePiece),
+            py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE)
+        .def("check_for_checkmate", &Chessboard::checkForCheckmate);
+}
