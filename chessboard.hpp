@@ -14,7 +14,7 @@ class Chessboard
     private:
     const std::array<char, 8> files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
     const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
-    std::vector<std::vector<Square>> board;
+    std::array<Square, 64> board;
     Color turn = WHITE;
     bool short_castle_white = true;
     bool long_castle_white = true;
@@ -28,7 +28,7 @@ class Chessboard
 
     
     std::vector<Move> moveHistory;
-    std::vector<std::vector<std::vector<Square>>> boardHistory;
+    std::vector<std::array<Square, 64>> boardHistory;
 
     public:
         // constructors
@@ -40,13 +40,13 @@ class Chessboard
         Square& getSquare(int file, int rank);
         int getNumberOfOccupiedSquares() const;
         void print() const;
-        void print(std::vector<std::vector<Square>> some_board) const;
+        void print(std::array<Square, 64> some_board) const;
         void printPly() const;
         std::vector<Square> getLegalMoves(int file, int rank) const;
         const std::vector<Move>& getMoveHistory() const;
         std::vector<Move>& getMoveHistory();
-        const std::vector<std::vector<std::vector<Square>>>& getBoardHistory() const;
-        std::vector<std::vector<std::vector<Square>>>& getBoardHistory();
+        const std::vector<std::array<Square, 64>>& getBoardHistory() const;
+        std::vector<std::array<Square, 64>>& getBoardHistory();
         void checkEnPassant();
         bool checkForCheck() const;
         bool checkForCheckmate();
@@ -59,7 +59,7 @@ class Chessboard
         // setters
         void Clear();
         void setStartupPieces();
-        void setBoard(std::vector<std::vector<Square>> some_board);
+        void setBoard(std::array<Square, 64> some_board);
         bool movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion = NONE);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
