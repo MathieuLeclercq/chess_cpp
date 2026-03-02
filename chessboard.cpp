@@ -391,26 +391,119 @@ std::vector<Square> Chessboard::getLegalMoves(int file, int rank) const
 
 bool Chessboard::checkForCheck() const
 {
-    Color oppositeColor = (this->turn == WHITE) ? BLACK : WHITE;
-    for (int i = 0; i < 8; i++) // i = file
+    Color color = this->turn;
+    Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
+
+    int king_file = -1;
+    int king_rank = -1;
+
+    // 1. Trouver les coordonnées de notre roi
+    for (int r = 0; r < 8; r++)
     {
-        for (int j = 0; j < 8; j++) // j = rank
+        for (int f = 0; f < 8; f++)
         {
-            if (this->board[j * 8 + i].getPiece().getColor() == oppositeColor)
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() == KING && p.getColor() == color)
             {
-                std::vector<Square> legalMoves = this->getLegalMoves(i, j);
-                for (int k = 0; k < legalMoves.size(); k++)
-                {
-                    if (legalMoves[k].getPiece().getType() == KING)
-                    {
-                        return true;
-                    }
-                }
+                king_rank = r;
+                king_file = f;
+                break;
+            }
+        }
+        if (king_rank != -1) break;
+    }
+
+    // Sécurité : si pas de roi trouvé, pas d'échec
+    if (king_rank == -1) return false;
+
+    // 2. Vérifier les menaces de Cavaliers
+    int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
+    for (int i = 0; i < 8; i++)
+    {
+        int r = king_rank + knight_moves[i][0];
+        int f = king_file + knight_moves[i][1];
+        if (r >= 0 && r < 8 && f >= 0 && f < 8)
+        {
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() == KNIGHT && p.getColor() == oppositeColor)
+                return true;
+        }
+    }
+
+    // 3. Vérifier les menaces de Pions
+    int pawn_direction = (color == WHITE) ? 1 : -1; // Les pions blancs attaquent vers le haut, les noirs vers le bas
+    int pr = king_rank + pawn_direction;
+    if (pr >= 0 && pr < 8)
+    {
+        if (king_file - 1 >= 0)
+        {
+            const Piece& p = this->board[pr * 8 + (king_file - 1)].getPiece();
+            if (p.getType() == PAWN && p.getColor() == oppositeColor) return true;
+        }
+        if (king_file + 1 < 8)
+        {
+            const Piece& p = this->board[pr * 8 + (king_file + 1)].getPiece();
+            if (p.getType() == PAWN && p.getColor() == oppositeColor) return true;
+        }
+    }
+
+    // 4. Vérifier les menaces Lignes/Colonnes (Tour & Dame)
+    int orth_dirs[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+    for (int d = 0; d < 4; d++)
+    {
+        for (int i = 1; i < 8; i++)
+        {
+            int r = king_rank + orth_dirs[d][0] * i;
+            int f = king_file + orth_dirs[d][1] * i;
+            if (r < 0 || r >= 8 || f < 0 || f >= 8) break; // Sortie de l'échiquier
+
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() != NONE)
+            {
+                if (p.getColor() == oppositeColor && (p.getType() == ROOK || p.getType() == QUEEN))
+                    return true;
+                break; // Bloqué par une autre pièce (amie ou ennemie inoffensive), on arrête d'explorer cette direction
             }
         }
     }
+
+    // 5. Vérifier les menaces Diagonales (Fou & Dame)
+    int diag_dirs[4][2] = { {1, 1}, {1, -1}, {-1, -1}, {-1, 1} };
+    for (int d = 0; d < 4; d++)
+    {
+        for (int i = 1; i < 8; i++)
+        {
+            int r = king_rank + diag_dirs[d][0] * i;
+            int f = king_file + diag_dirs[d][1] * i;
+            if (r < 0 || r >= 8 || f < 0 || f >= 8) break;
+
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() != NONE)
+            {
+                if (p.getColor() == oppositeColor && (p.getType() == BISHOP || p.getType() == QUEEN))
+                    return true;
+                break; // Ligne de vue bloquée
+            }
+        }
+    }
+
+    // 6. Vérifier le Roi adverse (optionnel en théorie, mais obligatoire pour la robustesse des générations)
+    int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
+    for (int i = 0; i < 8; i++)
+    {
+        int r = king_rank + king_moves[i][0];
+        int f = king_file + king_moves[i][1];
+        if (r >= 0 && r < 8 && f >= 0 && f < 8)
+        {
+            const Piece& p = this->board[r * 8 + f].getPiece();
+            if (p.getType() == KING && p.getColor() == oppositeColor)
+                return true;
+        }
+    }
+
     return false;
 }
+
 
 bool Chessboard::checkForCheckmate()
 {
