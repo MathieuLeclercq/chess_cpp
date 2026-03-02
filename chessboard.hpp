@@ -1,8 +1,9 @@
 #pragma once
 #include <iostream>
 #include <vector>
-#include <unordered_map>
+#include <string>
 #include <algorithm>
+#include <unordered_map>
 #include "piece.hpp"
 #include "square.hpp"
 #include "move.hpp"
@@ -59,9 +60,10 @@ class Chessboard
         void Clear();
         void setStartupPieces();
         void setBoard(std::vector<std::vector<Square>> some_board);
-        bool movePiece(int orig_file,int orig_rank, int file, int rank);
+        bool movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion = NONE);
         bool movePiece(std::string orig_square, std::string square);
+        bool movePieceSAN(std::string san);
         void updateHistory(const Square& first_square, const Square& second_square);
         void updateCastleFlags();
-        void checkPromotion(Square& second_square);
+        void checkPromotion(Square& second_square, PieceType force_promotion = NONE);
 };

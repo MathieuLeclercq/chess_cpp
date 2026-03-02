@@ -1,6 +1,7 @@
 #include "chessboard.hpp"
 #include <assert.h>
 
+
 //...............Constructors...............
 
 Chessboard::Chessboard()
@@ -686,7 +687,7 @@ void Chessboard::updateCastleFlags()
     // std::cout<<"size of move history: "<<size<<std::endl;
 }
 
-void Chessboard::checkPromotion(Square& second_square)
+void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion)
 {
     // check if pawn reached end of board
     // if so, ask user what piece to promote to
@@ -694,11 +695,24 @@ void Chessboard::checkPromotion(Square& second_square)
 
     PieceType type_piece = second_square.getPiece().getType();
     Color color_piece = second_square.getPiece().getColor();
+
+    // cas 1 : force promotion. pas besoin de check 
+    if (force_promotion != NONE)
+    {
+        second_square.setPiece(Piece(color_piece, force_promotion));
+        return;
+
+    }
+
     int rank = second_square.getRank();
     if (type_piece == PAWN)
     {
         if (rank == 0 || rank == 7)
         {
+
+
+            // cas 2 : l'utilisateur rentre le truc
+
             std::cout << "Pawn reached end of board. What piece would you like to promote to?" << std::endl;
             std::cout << "1. Queen" << std::endl;
             std::cout << "2. Rook" << std::endl;
@@ -731,7 +745,7 @@ void Chessboard::checkPromotion(Square& second_square)
 
 }
 
-bool Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank)
+bool Chessboard::movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion)
 {
     Square& first_square = this->board[orig_file][orig_rank];
     Square& second_square = this->board[file][rank];
@@ -842,4 +856,120 @@ bool Chessboard::movePiece(std::string orig_square, std::string square)
     int rank = std::find(ranks.begin(), ranks.end(), square[1]) - ranks.begin();
     // std::cout<<"orig_file: " << orig_file << " orig_rank: " << orig_rank << " file: " << file << " rank: " << rank << std::endl;
     return this->movePiece(orig_file, orig_rank, file, rank);
+}
+
+bool Chessboard::movePieceSAN(std::string san)
+{
+    // 1. Nettoyage
+    san.erase(std::remove(san.begin(), san.end(), '+'), san.end());
+    san.erase(std::remove(san.begin(), san.end(), '#'), san.end());
+    san.erase(std::remove(san.begin(), san.end(), '!'), san.end());
+    san.erase(std::remove(san.begin(), san.end(), '?'), san.end());
+
+    // 2. Traitement immédiat des Roques
+    if (san == "O-O" || san == "O-O-O")
+    {
+        int rank = (this->turn == WHITE) ? 0 : 7;
+        int orig_file = 4; // Colonne e
+        int dest_file = (san == "O-O") ? 6 : 2; // Colonne g (petit roque) ou c (grand roque)
+
+        
+        return this->movePiece(orig_file, rank, dest_file, rank);;
+    }
+
+    // 3. Détection et extraction de la Promotion
+    PieceType promotion_type = NONE;
+    size_t equal_pos = san.find('=');
+    if (equal_pos != std::string::npos)
+    {
+        char p = san.back();
+        if (p == 'Q') promotion_type = QUEEN;
+        else if (p == 'R') promotion_type = ROOK;
+        else if (p == 'B') promotion_type = BISHOP;
+        else if (p == 'N') promotion_type = KNIGHT;
+
+        san = san.substr(0, equal_pos); // On coupe la partie "=Q"
+    }
+
+    // Sécurité anti-crash
+    if (san.length() < 2) return false;
+
+    // 4. Identification de la case de destination
+    char dest_f_char = san[san.length() - 2];
+    char dest_r_char = san[san.length() - 1];
+    int dest_file = dest_f_char - 'a';
+    int dest_rank = dest_r_char - '1';
+    san = san.substr(0, san.length() - 2); // On retire la destination
+
+    // 5. Déduction du type de pièce et gestion de la capture
+    PieceType p_type = PAWN;
+    if (!san.empty() && isupper(san[0])) // isupper nécessite <cctype> mais souvent inclus via <iostream>
+    {
+        char p = san[0];
+        if (p == 'K') p_type = KING;
+        else if (p == 'Q') p_type = QUEEN;
+        else if (p == 'R') p_type = ROOK;
+        else if (p == 'B') p_type = BISHOP;
+        else if (p == 'N') p_type = KNIGHT;
+        san = san.substr(1); // On retire la lettre de la pièce
+    }
+
+    if (!san.empty() && san.back() == 'x')
+    {
+        san.pop_back(); // On retire le 'x' de la prise
+    }
+
+    // 6. Extraction des indices de désambiguïsation
+    int orig_file_hint = -1;
+    int orig_rank_hint = -1;
+    for (char c : san)
+    {
+        if (c >= 'a' && c <= 'h') orig_file_hint = c - 'a';
+        if (c >= '1' && c <= '8') orig_rank_hint = c - '1';
+    }
+
+    // 7. Résolution via le moteur
+    int final_orig_file = -1;
+    int final_orig_rank = -1;
+    int match_count = 0;
+
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            const Square& sq = this->board[i][j];
+            if (sq.CheckOccupied() && sq.getPiece().getColor() == this->turn && sq.getPiece().getType() == p_type)
+            {
+                // Application des filtres de désambiguïsation
+                if (orig_file_hint != -1 && i != orig_file_hint) continue;
+                if (orig_rank_hint != -1 && j != orig_rank_hint) continue;
+
+                // Vérification des mouvements légaux
+                std::vector<Square> legal_moves = this->getLegalMoves(i, j);
+                for (const Square& m : legal_moves)
+                {
+                    if (m.getFile() == dest_file && m.getRank() == dest_rank)
+                    {
+                        final_orig_file = i;
+                        final_orig_rank = j;
+                        match_count++;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 8. Exécution
+    if (match_count == 1)
+    {
+        return this->movePiece(final_orig_file, final_orig_rank, dest_file, dest_rank);
+
+        // TODO: Gérer l'application de 'promotion_type' ici si la pièce était un pion
+    }
+    else
+    {
+        std::cerr << "Erreur SAN : " << match_count << " origines trouvées pour le coup " << san << std::endl;
+        return false;
+    }
 }
