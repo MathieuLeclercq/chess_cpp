@@ -4,10 +4,10 @@
 #include <string>
 #include <algorithm>
 #include <unordered_map>
+#include <array>
 #include "piece.hpp"
 #include "square.hpp"
 #include "move.hpp"
-
 
 class Chessboard
 {

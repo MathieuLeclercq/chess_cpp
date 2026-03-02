@@ -64,7 +64,17 @@ Returns an integer between + and 7 representing the rank of the square
 
 std::string Square::getName() const
 {
-    std::string square_name = this->files[this->file] + this->ranks[this->rank];
+    // Sécurité au cas où la case n'est pas initialisée (file/rank à -1)
+    if (this->file < 0 || this->rank < 0)
+    {
+        return "Invalid";
+    }
+
+    std::string square_name = "";
+    // On convertit l'index (0-7) en caractère ASCII ('a'-'h' et '1'-'8')
+    square_name += (char)('a' + this->file);
+    square_name += (char)('1' + this->rank);
+
     return square_name;
 }
 
