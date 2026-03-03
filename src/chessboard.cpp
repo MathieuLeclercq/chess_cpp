@@ -883,7 +883,53 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     return true;
 }
 
-bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion)
+void Chessboard::createAndPushSnapshot()
+{
+    StateSnapshot snapshot;
+    snapshot.short_castle_white = this->short_castle_white;
+    snapshot.long_castle_white = this->long_castle_white;
+    snapshot.short_castle_black = this->short_castle_black;
+    snapshot.long_castle_black = this->long_castle_black;
+    snapshot.en_passant = this->en_passant;
+    snapshot.en_passant_file = this->en_passant_file;
+    snapshot.half_move_clock = this->half_move_clock;
+    snapshot.current_state = this->current_state;
+    snapshot.white_king_file = this->white_king_file;
+    snapshot.white_king_rank = this->white_king_rank;
+    snapshot.black_king_file = this->black_king_file;
+    snapshot.black_king_rank = this->black_king_rank;
+
+    this->snapshotHistory.push_back(snapshot);
+}
+
+void Chessboard::evaluateGameState()
+{
+    if (!this->hasAnyLegalMove())  // soit mat soit pat
+    {
+        if (this->isInCheck())
+        {
+            this->current_state = CHECKMATE;
+            std::cout << "Checkmate!" << std::endl;
+        }
+        else
+        {
+            this->current_state = STALEMATE;
+            std::cout << "Stalemate!" << std::endl;
+        }
+    }
+    else if (this->checkThreefoldRepetition())
+    {
+        this->current_state = DRAW_REPETITION;
+        std::cout << "Draw by threefold repetition!" << std::endl;
+    }
+    else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
+    {
+        this->current_state = DRAW_50_MOVES;
+        std::cout << "Draw by 50-move rule!" << std::endl;
+    }
+}
+
+bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion, bool check_game_end)
 {
     Square& first_square = this->board[orig_rank * 8 + orig_file];
     Square& second_square = this->board[rank * 8 + file];
@@ -896,10 +942,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         return false;
     }
 
-    // 2. Création du coup tenté (incluant la promotion demandée)
+    // 2. Création du coup tenté
     Move attempted_move(first_square, second_square, promotion);
 
-    // 3. Validation : la case et la promotion doivent correspondre
+    // 3. Validation
     if (std::find(legalMoves.begin(), legalMoves.end(), attempted_move) != legalMoves.end())
     {
         std::array<Square, 64> board_copy = this->board;
@@ -908,22 +954,21 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         bool is_king_move = (moving_piece.getType() == KING);
         Color moving_color = moving_piece.getColor();
 
-        bool is_en_passant_capture = (second_square.getPiece().getType() == NONE && 
-                                      moving_piece.getType() == PAWN && 
-                                      abs(orig_file - file) == 1);
+        bool is_en_passant_capture = (second_square.getPiece().getType() == NONE &&
+            moving_piece.getType() == PAWN &&
+            abs(orig_file - file) == 1);
         bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
         bool is_pawn_move = (moving_piece.getType() == PAWN);
 
-        // si on veut castle: regarder si on est en échec, ou si le chemin est safe
-        if (first_square.getPiece().getType() == KING && abs(orig_file - file) == 2)
+        // Roque
+        if (is_king_move && abs(orig_file - file) == 2)
         {
             if (!this->isCastlePossible(orig_file, orig_rank, file, rank, board_copy))
                 return false;
         }
 
-
-        // check si on a pris en passant
-        if (second_square.getPiece().getType() == NONE && first_square.getPiece().getType() == PAWN && abs(orig_file - file) == 1)
+        // Prise en passant
+        if (is_en_passant_capture)
         {
             this->board[orig_rank * 8 + file].setPiece(Piece());
         }
@@ -931,8 +976,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         second_square.setPiece(first_square.getPiece());
         first_square.setPiece(Piece());
 
-
-        // maj du cache si le roi bouge
+        // Mise à jour du cache si le roi bouge
         if (is_king_move)
         {
             if (moving_color == WHITE) {
@@ -961,22 +1005,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             return false;
         }
 
-        StateSnapshot snapshot;
-        snapshot.short_castle_white = this->short_castle_white;
-        snapshot.long_castle_white = this->long_castle_white;
-        snapshot.short_castle_black = this->short_castle_black;
-        snapshot.long_castle_black = this->long_castle_black;
-        snapshot.en_passant_file = this->en_passant_file;
-        snapshot.half_move_clock = this->half_move_clock;
-        snapshot.current_state = this->current_state;
-        snapshot.white_king_file = this->white_king_file;
-        snapshot.white_king_rank = this->white_king_rank;
-        snapshot.black_king_file = this->black_king_file;
-        snapshot.black_king_rank = this->black_king_rank;
-
-        this->snapshotHistory.push_back(snapshot);
-
-
+        this->createAndPushSnapshot();
 
         this->checkPromotion(second_square, promotion);
         this->updateHistory(attempted_move);
@@ -986,7 +1015,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 
-        // maj du compteur de la règle des 50 coups une fois que le coup est validé
+        // maj du compteur de la règle des 50 coups
         if (is_capture || is_pawn_move) {
             this->half_move_clock = 0;
         }
@@ -994,30 +1023,9 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             this->half_move_clock++;
         }
 
-        if (!this->hasAnyLegalMove())  // soit mat soit pat
+        if (check_game_end)
         {
-            if (this->isInCheck())
-            {
-                this->current_state = CHECKMATE;
-                std::cout << "Checkmate!" << std::endl;
-            }
-            else
-            {
-                this->current_state = STALEMATE;
-                std::cout << "Stalemate!" << std::endl;
-            }
-        }
-
-        else if (this->checkThreefoldRepetition())
-        {
-            this->current_state = DRAW_REPETITION;
-            std::cout << "Draw by threefold repetition!" << std::endl;
-        }
-
-        else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
-        {
-            this->current_state = DRAW_50_MOVES;
-            std::cout << "Draw by 50-move rule!" << std::endl;
+            this->evaluateGameState();
         }
 
         return true;
@@ -1027,7 +1035,6 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         std::cout << "Illegal move" << std::endl;
         return false;
     }
-
 }
 
 bool Chessboard::movePiece(std::string orig_square, std::string square)
@@ -1199,6 +1206,7 @@ void Chessboard::undoMove()
     this->long_castle_white = snapshot.long_castle_white;
     this->short_castle_black = snapshot.short_castle_black;
     this->long_castle_black = snapshot.long_castle_black;
+    this->en_passant = snapshot.en_passant;
     this->en_passant_file = snapshot.en_passant_file;
     this->half_move_clock = snapshot.half_move_clock;
     this->current_state = snapshot.current_state;

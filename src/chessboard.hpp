@@ -20,6 +20,7 @@ struct StateSnapshot {
     bool long_castle_white;
     bool short_castle_black;
     bool long_castle_black;
+    bool en_passant;
     int en_passant_file;
     int half_move_clock;
     GameState current_state;
@@ -60,6 +61,8 @@ class Chessboard
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy);
     bool checkThreefoldRepetition() const;
+    void createAndPushSnapshot();
+    void evaluateGameState();
 
     public:
         // constructors
@@ -89,7 +92,7 @@ class Chessboard
         void Clear();
         void setStartupPieces();
         void setBoard(std::array<Square, 64> some_board);
-        bool movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion = NONE);
+        bool movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion = NONE, bool check_game_end = true);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
         void undoMove();
