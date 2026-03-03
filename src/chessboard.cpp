@@ -590,8 +590,6 @@ bool Chessboard::hasAnyLegalMove()
             }
         }
     }
-
-    this->current_state = CHECKMATE;
     return false;
 }
 
