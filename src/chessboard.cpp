@@ -633,6 +633,7 @@ void Chessboard::Clear()
 
     this->moveHistory.clear();
     this->boardHistory.clear();
+    this->snapshotHistory.clear();
 }
 
 void Chessboard::setStartupPieces()
@@ -920,6 +921,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
                 return false;
         }
 
+
         // check si on a pris en passant
         if (second_square.getPiece().getType() == NONE && first_square.getPiece().getType() == PAWN && abs(orig_file - file) == 1)
         {
@@ -958,6 +960,23 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             }
             return false;
         }
+
+        StateSnapshot snapshot;
+        snapshot.short_castle_white = this->short_castle_white;
+        snapshot.long_castle_white = this->long_castle_white;
+        snapshot.short_castle_black = this->short_castle_black;
+        snapshot.long_castle_black = this->long_castle_black;
+        snapshot.en_passant_file = this->en_passant_file;
+        snapshot.half_move_clock = this->half_move_clock;
+        snapshot.current_state = this->current_state;
+        snapshot.white_king_file = this->white_king_file;
+        snapshot.white_king_rank = this->white_king_rank;
+        snapshot.black_king_file = this->black_king_file;
+        snapshot.black_king_rank = this->black_king_rank;
+
+        this->snapshotHistory.push_back(snapshot);
+
+
 
         this->checkPromotion(second_square, promotion);
         this->updateHistory(attempted_move);
@@ -1158,6 +1177,38 @@ bool Chessboard::movePieceSAN(std::string san)
         std::cerr << "Erreur SAN : " << match_count << " origines trouvées pour le coup " << san << std::endl;
         return false;
     }
+}
+
+void Chessboard::undoMove()
+{
+    if (this->moveHistory.empty()) return;
+
+    // 1. Retrait du dernier coup
+    this->moveHistory.pop_back();
+    this->boardHistory.pop_back();
+
+    // La position précédente est maintenant le dernier élément de boardHistory
+    // (car l'état initial est indexé en 0 par setStartupPieces)
+    this->board = this->boardHistory.back();
+
+    // 2. Restauration des métadonnées via le snapshot
+    StateSnapshot snapshot = this->snapshotHistory.back();
+    this->snapshotHistory.pop_back();
+
+    this->short_castle_white = snapshot.short_castle_white;
+    this->long_castle_white = snapshot.long_castle_white;
+    this->short_castle_black = snapshot.short_castle_black;
+    this->long_castle_black = snapshot.long_castle_black;
+    this->en_passant_file = snapshot.en_passant_file;
+    this->half_move_clock = snapshot.half_move_clock;
+    this->current_state = snapshot.current_state;
+    this->white_king_file = snapshot.white_king_file;
+    this->white_king_rank = snapshot.white_king_rank;
+    this->black_king_file = snapshot.black_king_file;
+    this->black_king_rank = snapshot.black_king_rank;
+
+    // 3. Restitution du trait
+    this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 }
 
 std::vector<float> Chessboard::getAlphaZeroTensor() const

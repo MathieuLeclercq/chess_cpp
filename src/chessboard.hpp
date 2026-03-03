@@ -15,6 +15,20 @@ enum GameState
     DRAW_50_MOVES
 };
 
+struct StateSnapshot {
+    bool short_castle_white;
+    bool long_castle_white;
+    bool short_castle_black;
+    bool long_castle_black;
+    int en_passant_file;
+    int half_move_clock;
+    GameState current_state;
+    int white_king_file;
+    int white_king_rank;
+    int black_king_file;
+    int black_king_rank;
+};
+
 class Chessboard
 {
     private:
@@ -42,6 +56,7 @@ class Chessboard
 
     std::vector<Move> moveHistory;
     std::vector<std::array<Square, 64>> boardHistory;
+    std::vector<StateSnapshot> snapshotHistory;
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy);
     bool checkThreefoldRepetition() const;
@@ -77,6 +92,7 @@ class Chessboard
         bool movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion = NONE);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
+        void undoMove();
         void updateHistory(const Move& move);
         void updateCastleFlags();
         void checkPromotion(Square& second_square, PieceType force_promotion = NONE);
