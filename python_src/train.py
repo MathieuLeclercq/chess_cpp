@@ -53,10 +53,9 @@ class AlphaZeroLightning(L.LightningModule):
 if __name__ == "__main__":
     # --- Configuration ---
     PGN_DIR = "../training_data/clean_pgns"
-    BATCH_SIZE = 256
+    BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
-    # Il te demandera ton API key lors du premier lancement dans la console
     wandb_logger = WandbLogger(project="alphazero-chess", name="supervised_phase_1")
 
     # --- Préparation des Données ---
@@ -68,8 +67,9 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/",
         filename="alphazero-supervised-{step}",
-        every_n_train_steps=5000,  # Sauvegarde régulière des poids
-        save_top_k=-1
+        every_n_train_steps=3000,  # Sauvegarde régulière des poids
+        save_top_k=-1,
+        save_last=True
     )
 
     # --- Instanciation ---
@@ -78,11 +78,15 @@ if __name__ == "__main__":
     # --- Entraînement ---
     trainer = L.Trainer(
         max_epochs=1,
-        limit_train_batches=1000,
+        # limit_train_batches=1000,
         logger=wandb_logger,
         callbacks=[checkpoint_callback],
         precision="16-mixed",
         log_every_n_steps=50
     )
 
-    trainer.fit(model, train_dataloaders=dataloader)
+    trainer.fit(
+        model,
+        train_dataloaders=dataloader,
+        ckpt_path=r"checkpoints\alphazero-supervised-step=5000.ckpt"
+    )

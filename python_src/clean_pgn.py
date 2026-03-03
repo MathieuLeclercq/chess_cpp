@@ -3,8 +3,8 @@ import re
 import hashlib
 
 # Dossiers d'entrée et de sortie
-INPUT_DIR = r"C:\Users\M47h1\Documents\chess_cpp\training_data\raw_pgns"
-OUTPUT_DIR = r"C:\Users\M47h1\Documents\chess_cpp\training_data\clean_pgns"
+INPUT_DIR = r"..\training_data\raw_pgns"
+OUTPUT_DIR = r"..\training_data\clean_pgns"
 
 
 def sanitize_filename(name):
