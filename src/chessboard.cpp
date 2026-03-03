@@ -1190,11 +1190,9 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
             for (int file = 0; file < 8; file++)
             {
                 const Piece& piece = hist_board[rank * 8 + file].getPiece();
-
-
                 // Calcul des coordonnées inversées si c'est aux Noirs de jouer
                 int tensor_rank = flip ? (7 - rank) : rank;
-                int flat_idx = rank * 8 + file;
+                int flat_idx = tensor_rank * 8 + file;
 
                 if (piece.getType() != NONE)
                 {
