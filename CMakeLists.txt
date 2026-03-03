@@ -39,6 +39,6 @@ FetchContent_MakeAvailable(pybind11)
 pybind11_add_module(chess_engine src/bindings.cpp)
 target_link_libraries(chess_engine PRIVATE chess_core)
 
-# Force CMake à exporter le module compilé dans le dossier gui/
-set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/gui)
-set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/gui)
+# Force CMake à exporter le module compilé dans le dossier python_src/
+set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python_src)
+set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/python_src)

@@ -3,6 +3,6 @@ out/
 build/
 .vscode/
 .vs/
-gui/.idea
+python_src/.idea
 docs/PGN/all
 training_data/
