@@ -5,3 +5,4 @@ build/
 .vs/
 gui/.idea
 docs/PGN/all
+training_data/
