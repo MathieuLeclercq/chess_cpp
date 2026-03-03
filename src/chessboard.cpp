@@ -1168,6 +1168,8 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
     Color p1_color = this->turn;
     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
 
+    bool flip = (p1_color == BLACK);
+
     // Remplissage de l'historique (112 premiers plans)
     for (int t = 0; t < 8; t++)
     {
@@ -1188,6 +1190,10 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
             for (int file = 0; file < 8; file++)
             {
                 const Piece& piece = hist_board[rank * 8 + file].getPiece();
+
+
+                // Calcul des coordonnées inversées si c'est aux Noirs de jouer
+                int tensor_rank = flip ? (7 - rank) : rank;
                 int flat_idx = rank * 8 + file;
 
                 if (piece.getType() != NONE)
