@@ -1161,3 +1161,92 @@ bool Chessboard::movePieceSAN(std::string san)
         return false;
     }
 }
+
+std::vector<float> Chessboard::getAlphaZeroTensor() const
+{
+    // Allocation d'un vecteur plat de 7616 valeurs (119 plans * 8 rangées * 8 colonnes), initialisé à 0
+    std::vector<float> tensor(119 * 64, 0.0f);
+
+    Color p1_color = this->turn;
+    Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
+
+    // Remplissage de l'historique (112 premiers plans)
+    for (int t = 0; t < 8; t++)
+    {
+        int history_idx = this->boardHistory.size() - 1 - t;
+        if (history_idx < 0) break; // Padding implicite (les plans resteront à zéro si la partie a moins de 8 coups)
+
+        const std::array<Square, 64>& hist_board = this->boardHistory[history_idx];
+        int plane_offset = t * 14 * 64;
+
+        // Calcul des répétitions à cet instant précis du passé
+        int rep_count = 0;
+        for (int i = 0; i <= history_idx; i++) {
+            if (this->boardHistory[i] == hist_board) rep_count++;
+        }
+
+        for (int rank = 0; rank < 8; rank++)
+        {
+            for (int file = 0; file < 8; file++)
+            {
+                const Piece& piece = hist_board[rank * 8 + file].getPiece();
+                int flat_idx = rank * 8 + file;
+
+                if (piece.getType() != NONE)
+                {
+                    int piece_idx = -1;
+                    switch (piece.getType()) {
+                    case PAWN:   piece_idx = 0; break;
+                    case KNIGHT: piece_idx = 1; break;
+                    case BISHOP: piece_idx = 2; break;
+                    case ROOK:   piece_idx = 3; break;
+                    case QUEEN:  piece_idx = 4; break;
+                    case KING:   piece_idx = 5; break;
+                    default: break;
+                    }
+
+                    // P1 = 0 à 5, P2 = 6 à 11
+                    if (piece.getColor() == p1_color) {
+                        tensor[plane_offset + piece_idx * 64 + flat_idx] = 1.0f;
+                    }
+                    else {
+                        tensor[plane_offset + (6 + piece_idx) * 64 + flat_idx] = 1.0f;
+                    }
+                }
+
+                // Plans 12 et 13 : Répétitions
+                if (rep_count == 2) {
+                    tensor[plane_offset + 12 * 64 + flat_idx] = 1.0f;
+                }
+                else if (rep_count >= 3) {
+                    tensor[plane_offset + 13 * 64 + flat_idx] = 1.0f;
+                }
+            }
+        }
+    }
+
+    // Remplissage des 7 plans de contexte (Offset = 112 * 64 = 7168)
+    int constant_offset = 112 * 64;
+
+    float color_val = (this->turn == WHITE) ? 1.0f : 0.0f;
+    // Normalisation des compteurs pour le réseau de neurones (sur une base arbitraire de 100)
+    float total_moves_val = std::min(1.0f, (float)(this->boardHistory.size() / 2) / 100.0f);
+    float p1_castle_k = (p1_color == WHITE) ? (this->short_castle_white ? 1.0f : 0.0f) : (this->short_castle_black ? 1.0f : 0.0f);
+    float p1_castle_q = (p1_color == WHITE) ? (this->long_castle_white ? 1.0f : 0.0f) : (this->long_castle_black ? 1.0f : 0.0f);
+    float p2_castle_k = (p2_color == WHITE) ? (this->short_castle_white ? 1.0f : 0.0f) : (this->short_castle_black ? 1.0f : 0.0f);
+    float p2_castle_q = (p2_color == WHITE) ? (this->long_castle_white ? 1.0f : 0.0f) : (this->long_castle_black ? 1.0f : 0.0f);
+    float no_progress_val = (float)this->half_move_clock / 100.0f;
+
+    for (int i = 0; i < 64; i++)
+    {
+        tensor[constant_offset + 0 * 64 + i] = color_val;
+        tensor[constant_offset + 1 * 64 + i] = total_moves_val;
+        tensor[constant_offset + 2 * 64 + i] = p1_castle_k;
+        tensor[constant_offset + 3 * 64 + i] = p1_castle_q;
+        tensor[constant_offset + 4 * 64 + i] = p2_castle_k;
+        tensor[constant_offset + 5 * 64 + i] = p2_castle_q;
+        tensor[constant_offset + 6 * 64 + i] = no_progress_val;
+    }
+
+    return tensor;
+}

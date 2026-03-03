@@ -1,3 +1,7 @@
 https://medium.com/oracledevs/lessons-from-implementing-alphazero-7e36e9054191
 
 https://www.youtube.com/watch?v=UXW2yZndl7U
+
+https://lczero.org/blog/2018/09/a-standard-dataset/
+
+https://arxiv.org/pdf/1712.01815

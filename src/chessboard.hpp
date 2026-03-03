@@ -68,6 +68,7 @@ class Chessboard
         bool hasAnyLegalMove();
         Color getTurn() const;
         GameState getGameState() const;
+        std::vector<float> getAlphaZeroTensor() const;
 
         // setters
         void Clear();

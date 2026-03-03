@@ -4,6 +4,7 @@
 #include "piece.hpp"
 #include "move.hpp"
 #include "square.hpp"
+#include <pybind11/numpy.h>
 
 namespace py = pybind11;
 
@@ -66,5 +67,14 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)
         .def_property_readonly("turn", &Chessboard::getTurn)
         .def_property_readonly("game_state", &Chessboard::getGameState)
-        .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock);
+        .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock)
+        .def("get_alphazero_tensor", [](const Chessboard& cb) {
+        std::vector<float> tensor = cb.getAlphaZeroTensor();
+        // On le transforme instantanément en un tableau NumPy 3D (119, 8, 8)
+        // py::array_t va allouer l'objet NumPy et copier très rapidement ce bloc de 30 Ko en mémoire.
+        return py::array_t<float>(
+            { 119, 8, 8 },      // Dimensions de l'architecture AlphaZero
+            tensor.data()     // Pointeur vers les données C++ brutes
+        );
+            });
 }
