@@ -80,8 +80,22 @@ class ChessDataset(IterableDataset):
                           f.endswith('.pgn')]
 
     def __iter__(self):
-        for pgn_file in self.pgn_files:
-            # Récupération de l'issue de la partie (le "Value Target")
+        # 1. Gestion du multi-processing PyTorch
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            # Processus unique (num_workers=0) : on prend tout
+            files_to_process = self.pgn_files
+        else:
+            # Multi-processus : on découpe la liste des fichiers
+            per_worker = len(self.pgn_files) // worker_info.num_workers
+            start = worker_info.id * per_worker
+            # Le dernier worker prend l'éventuel reste de la division
+            end = start + per_worker if worker_info.id < worker_info.num_workers - 1 else len(
+                self.pgn_files)
+            files_to_process = self.pgn_files[start:end]
+
+        # 2. Boucle sur la portion de fichiers assignée à ce processus
+        for pgn_file in files_to_process:
             game_result = extract_result_from_pgn(pgn_file)
             if game_result is None:
                 continue
@@ -107,13 +121,11 @@ class ChessDataset(IterableDataset):
 
                 target_move_index = encode_move(orig_f, orig_r, dest_f, dest_r, promo, is_black)
                 if target_move_index == -1:
-                    break  # Ignorer le reste de la partie si un coup est mathématiquement erroné
+                    break
 
                 y_policy = torch.tensor(target_move_index, dtype=torch.long)
 
-                # Ajustement du résultat selon le point de vue du joueur au trait
                 current_player_result = game_result if not is_black else -game_result
                 y_value = torch.tensor([current_player_result], dtype=torch.float32)
 
-                # On yield le triplet : État, Coup à jouer, Résultat de la position
                 yield x, y_policy, y_value

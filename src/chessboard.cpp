@@ -909,23 +909,23 @@ void Chessboard::evaluateGameState()
         if (this->isInCheck())
         {
             this->current_state = CHECKMATE;
-            std::cout << "Checkmate!" << std::endl;
+            //std::cout << "Checkmate!" << std::endl;
         }
         else
         {
             this->current_state = STALEMATE;
-            std::cout << "Stalemate!" << std::endl;
+            //std::cout << "Stalemate!" << std::endl;
         }
     }
     else if (this->checkThreefoldRepetition())
     {
         this->current_state = DRAW_REPETITION;
-        std::cout << "Draw by threefold repetition!" << std::endl;
+        //std::cout << "Draw by threefold repetition!" << std::endl;
     }
     else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
     {
         this->current_state = DRAW_50_MOVES;
-        std::cout << "Draw by 50-move rule!" << std::endl;
+        //std::cout << "Draw by 50-move rule!" << std::endl;
     }
 }
 
@@ -938,7 +938,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
     if (first_square.getPiece().getColor() != this->turn)
     {
-        std::cout << "It is not your turn!" << std::endl;
+        //std::cout << "It is not your turn!" << std::endl;
         return false;
     }
 
@@ -989,7 +989,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         if (this->isInCheck())
         {
-            std::cout << "Illegal move." << std::endl;
+            //std::cout << "Illegal move." << std::endl;
             this->setBoard(board_copy);
 
             // Restauration du cache
@@ -1032,7 +1032,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     }
     else
     {
-        std::cout << "Illegal move" << std::endl;
+        //std::cout << "Illegal move" << std::endl;
         return false;
     }
 }

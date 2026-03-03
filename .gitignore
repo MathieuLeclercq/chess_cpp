@@ -4,5 +4,7 @@ build/
 .vscode/
 .vs/
 python_src/.idea
+python_src/wandb
+python_src/__pycache__
 docs/PGN/all
 training_data/

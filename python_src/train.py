@@ -8,6 +8,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from dataset import ChessDataset
 from model import ChessNet
 
+torch.set_float32_matmul_precision('medium')
+
 
 class AlphaZeroLightning(L.LightningModule):
     def __init__(self, learning_rate=1e-3, num_res_blocks=10, num_filters=128):
@@ -50,7 +52,7 @@ class AlphaZeroLightning(L.LightningModule):
 
 if __name__ == "__main__":
     # --- Configuration ---
-    PGN_DIR = "clean_pgns"  # Dossier contenant tes ~56 000 fichiers PGN
+    PGN_DIR = "../training_data/clean_pgns"
     BATCH_SIZE = 256
 
     # --- Initialisation de WandB ---
@@ -60,8 +62,7 @@ if __name__ == "__main__":
     # --- Préparation des Données ---
     dataset = ChessDataset(PGN_DIR)
 
-    # Attention: num_workers=0 est défini intentionnellement ici.
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, num_workers=4)
 
     # --- Callbacks ---
     checkpoint_callback = ModelCheckpoint(
@@ -76,7 +77,8 @@ if __name__ == "__main__":
 
     # --- Entraînement ---
     trainer = L.Trainer(
-        max_epochs=1,  # Une seule itération sur 4,5M de positions est amplement suffisante
+        max_epochs=1,
+        limit_train_batches=1000,
         logger=wandb_logger,
         callbacks=[checkpoint_callback],
         precision="16-mixed",
