@@ -77,7 +77,7 @@ class Chessboard
         bool movePiece(int orig_file,int orig_rank, int file, int rank, PieceType promotion = NONE);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
-        void updateHistory(const Square& first_square, const Square& second_square);
+        void updateHistory(const Move& move);
         void updateCastleFlags();
         void checkPromotion(Square& second_square, PieceType force_promotion = NONE);
 };

@@ -5,7 +5,7 @@
 //...............Constructors...............
 Move::Move(Square orig_square, Square dest_square, PieceType promotion)
 {
-    this->piece = dest_square.getPiece();
+    this->piece = orig_square.getPiece();
     this->orig_square = orig_square;
     this->dest_square = dest_square;
     this->promotion = promotion;

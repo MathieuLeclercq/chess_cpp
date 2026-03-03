@@ -718,9 +718,9 @@ void Chessboard::setBoard(std::array<Square, 64> some_board)
     this->board = some_board;
 }
 
-void Chessboard::updateHistory(const Square& first_square, const Square& second_square)
+void Chessboard::updateHistory(const Move& move)
 {
-    this->moveHistory.push_back(Move(first_square, second_square));
+    this->moveHistory.push_back(move);
     this->boardHistory.push_back(this->board);
 }
 
@@ -960,7 +960,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         }
 
         this->checkPromotion(second_square, promotion);
-        this->updateHistory(first_square, second_square);
+        this->updateHistory(attempted_move);
 
         this->updateCastleFlags();
         this->checkEnPassant();
