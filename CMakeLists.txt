@@ -21,10 +21,10 @@ target_include_directories(chess_core PUBLIC src)
 add_executable(chess_tests src/main.cpp)
 target_link_libraries(chess_tests PRIVATE chess_core)
 
-# On force le chemin exact (tout en majuscules pour pybind11)
-set(PYTHON_EXECUTABLE "C:/Users/M47h1/.conda/envs/perso/python.exe" CACHE FILEPATH "Chemin vers Python Conda" FORCE)
-# On force pybind11 à cibler cette version précise
-set(PYBIND11_PYTHON_VERSION "3.13" CACHE STRING "Version Python pour pybind11" FORCE)
+# On force le chemin exact vers ton nouvel environnement avec CUDA
+set(PYTHON_EXECUTABLE "C:/Users/M47h1/.conda/envs/xrayto3d_311/python.exe" CACHE FILEPATH "Chemin vers Python Conda" FORCE)
+# On force pybind11 à cibler la bonne version
+set(PYBIND11_PYTHON_VERSION "3.11" CACHE STRING "Version Python pour pybind11" FORCE)
 
 # 3. Récupération de pybind11
 include(FetchContent)
