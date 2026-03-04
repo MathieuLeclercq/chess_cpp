@@ -71,17 +71,12 @@ PYBIND11_MODULE(chess_engine, m) {
         .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock)
         .def("get_alphazero_tensor", [](const Chessboard& cb) {
         std::vector<float> tensor = cb.getAlphaZeroTensor();
-        return py::array_t<float>(
-            { 119, 8, 8 },      // Dimensions de l'architecture AlphaZero
-            tensor.data()     // Pointeur vers les données C++ brutes
-        );
+        return py::array_t<float>({ 119, 8, 8 }, tensor.data());
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
-
-        // Nouvelle méthode pour récupérer les coordonnées du dernier coup
+        .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
         .def("get_last_move_data", [](const Chessboard& cb) {
         if (cb.getMoveHistory().empty()) return py::make_tuple(-1, -1, -1, -1, NONE);
-
         const Move& last_move = cb.getMoveHistory().back();
         return py::make_tuple(
             last_move.getOrigSquare().getFile(),
@@ -91,5 +86,4 @@ PYBIND11_MODULE(chess_engine, m) {
             last_move.getPromotion()
         );
             });
-
 }

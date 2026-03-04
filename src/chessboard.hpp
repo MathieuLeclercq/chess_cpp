@@ -88,6 +88,10 @@ class Chessboard
         GameState getGameState() const;
         std::vector<float> getAlphaZeroTensor() const;
 
+        int encodeMove(const Move& move) const;
+        std::vector<Move> getAllLegalMoves();
+        std::vector<int> getLegalMoveIndices();
+
         // setters
         void Clear();
         void setStartupPieces();

@@ -67,7 +67,7 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints/",
         filename="alphazero-supervised-{step}",
-        every_n_train_steps=3000,  # Sauvegarde régulière des poids
+        every_n_train_steps=3000,
         save_top_k=-1,
         save_last=True
     )
