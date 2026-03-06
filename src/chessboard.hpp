@@ -90,6 +90,8 @@ class Chessboard
         std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         std::vector<Move> getAllLegalMoves();
         std::vector<Move> getLegalMovesForSquare(int file, int rank);
+        void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
+            int filter_dest_file = -1, int filter_dest_rank = -1);
         std::vector<int> getLegalMoveIndices();
 
         // setters

@@ -126,7 +126,7 @@ def move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo):
                         continue
                     if sq.get_piece().get_type() != p_type or sq.get_piece().get_color() != piece.get_color():
                         continue
-                    for m in board.get_naive_legal_moves(f, r):
+                    for m in board.get_legal_moves(f, r):
                         if m.get_dest_square().get_file() == dest_f and m.get_dest_square().get_rank() == dest_r:
                             if f == orig_f:
                                 need_rank = True

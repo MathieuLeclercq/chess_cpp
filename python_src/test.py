@@ -18,7 +18,7 @@ def main():
 
     # 3. Récupération des coups légaux pour ce pion
     print("\nRecherche des coups légaux pour e2...")
-    moves = board.get_naive_legal_moves(4, 1)
+    moves = board.get_legal_moves(4, 1)
     
     for i, move in enumerate(moves):
         dest = move.get_dest_square()
