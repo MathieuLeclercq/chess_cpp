@@ -61,7 +61,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def(py::init<>())
         .def("set_startup_pieces", &Chessboard::setStartupPieces)
         .def("get_square", static_cast<const Square & (Chessboard::*)(int, int) const>(&Chessboard::getSquare))
-        .def("get_legal_moves", &Chessboard::getLegalMoves)
+        .def("get_naive_legal_moves", &Chessboard::getNaiveLegalMoves)
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType, bool)>(&Chessboard::movePiece),
             py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE, py::arg("check_game_end") = true)
         .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)

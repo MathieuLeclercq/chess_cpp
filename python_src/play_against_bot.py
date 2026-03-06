@@ -165,7 +165,8 @@ def main():
                     sq = board.get_square(clicked_file, clicked_rank)
                     if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
                         selected_square = (clicked_file, clicked_rank)
-                        current_legal_moves = board.get_legal_moves(clicked_file, clicked_rank)
+                        current_legal_moves = board.get_naive_legal_moves(
+                            clicked_file, clicked_rank)
                 else:
                     valid_move = None
                     promotion_type = chess_engine.PieceType.NONE

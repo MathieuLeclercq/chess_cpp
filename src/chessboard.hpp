@@ -76,7 +76,7 @@ class Chessboard
         void print() const;
         void print(std::array<Square, 64> some_board) const;
         void printPly() const;
-        std::vector<Move> getLegalMoves(int file, int rank) const;
+        std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         const std::vector<Move>& getMoveHistory() const;
         std::vector<Move>& getMoveHistory();
         const std::vector<std::array<Square, 64>>& getBoardHistory() const;

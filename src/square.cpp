@@ -40,8 +40,7 @@ Piece& Square::getPiece()
 
 bool Square::CheckOccupied() const
 {
-    bool occupied = this->piece.getType() != NONE;
-    return occupied;
+    return this->piece.getType() != NONE;
 }
 
 int Square::getFile() const

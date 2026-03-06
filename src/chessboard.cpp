@@ -28,7 +28,6 @@ int Chessboard::getNumberOfOccupiedSquares() const
     {
         for (int j = 0; j < 8; j++)
         {
-            // i = rank, j = file pour rester cohérent, ou l'inverse, l'essentiel est de balayer les 64 cases
             if (board[i * 8 + j].CheckOccupied())
             {
                 count++;
@@ -44,7 +43,6 @@ void Chessboard::print() const
     {
         for (int j = 0; j < 8; j++)
         {
-            // i = rank, j = file
             std::cout << this->board[i * 8 + j].getPiece().getValue() << " ";
         }
         std::cout << std::endl;
@@ -118,8 +116,12 @@ GameState Chessboard::getGameState() const
     return this->current_state;
 }
 
-std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
+std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
 {
+    // pour une case, retourne la liste des cases de déplacement dispos.
+    // C'est un check naïf : il ne repère pas les clouages.
+    // Il ne check pas non plus si le roque est safe
+
     Square orig_square = board[rank * 8 + file];
     std::vector<Move> legalMoves;
     PieceType type = orig_square.getPiece().getType();
@@ -149,7 +151,7 @@ std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
         if (color == WHITE && rank < 7 && this->board[(rank + 1) * 8 + file].CheckOccupied() == false)
         {
             addMove(this->board[(rank + 1) * 8 + file]);
-            if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false)
+            if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false) // peut avancer de 2 au premier coup
             {
                 addMove(this->board[(rank + 2) * 8 + file]);
             }
@@ -157,7 +159,7 @@ std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
         else if (color == BLACK && rank > 0 && this->board[(rank - 1) * 8 + file].CheckOccupied() == false)
         {
             addMove(this->board[(rank - 1) * 8 + file]);
-            if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)
+            if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)  // peut avancer de 2 au premier coup
             {
                 addMove(this->board[(rank - 2) * 8 + file]);
             }
@@ -429,9 +431,11 @@ std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
         if (color == BLACK && this->short_castle_black == true && this->board[7 * 8 + 5].CheckOccupied() == false && this->board[7 * 8 + 6].CheckOccupied() == false)
             addMove(this->board[7 * 8 + 6]);
         // long castle
-        if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false && this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
+        if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false && 
+            this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
             addMove(this->board[0 * 8 + 2]);
-        if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false && this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
+        if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false && 
+            this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
             addMove(this->board[7 * 8 + 2]);
         break;
     }
@@ -441,6 +445,8 @@ std::vector<Move> Chessboard::getLegalMoves(int file, int rank) const
 
 bool Chessboard::isInCheck() const
 {
+    // On part du roi et on regarde si des pièces le menacent
+
     Color color = this->turn;
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
 
@@ -519,7 +525,7 @@ bool Chessboard::isInCheck() const
         }
     }
 
-    // 6. Vérifier le Roi adverse (pas besoin normalement)
+    // 6. Vérifier le Roi adverse
     static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
     for (int i = 0; i < 8; i++)
     {
@@ -549,7 +555,7 @@ std::vector<Move> Chessboard::getAllLegalMoves()
             if (this->board[j * 8 + i].getPiece().getColor() != color)
                 continue;
 
-            std::vector<Move> pseudo_moves = this->getLegalMoves(i, j);
+            std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(i, j);
             for (const Move& move : pseudo_moves)
             {
                 int dest_file = move.getDestSquare().getFile();
@@ -581,7 +587,7 @@ std::vector<Move> Chessboard::getAllLegalMoves()
                     this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
                 if (is_en_passant)
-                    this->board[j * 8 + dest_file].setPiece(Piece());
+                    this->board[j * 8 + dest_file].setPiece(Piece()); // supprime le pion (colonne d'arrivée, ligne de départ)
 
                 this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
                 this->board[j * 8 + i].setPiece(Piece());
@@ -595,7 +601,7 @@ std::vector<Move> Chessboard::getAllLegalMoves()
                     else { this->black_king_file = i; this->black_king_rank = j; }
                 }
 
-                if (!in_check)
+                if (!in_check) // on autorise pas le coup si ça met notre propre roi en échec
                     result.push_back(move);
             }
         }
@@ -823,48 +829,13 @@ void Chessboard::updateHistory(const Move& move)
     this->boardHistory.push_back(this->board);
 }
 
-//void Chessboard::updateCastleFlags()
-//{
-//    Move lastMove = this->moveHistory.back();
-//    if (lastMove.getPiece().getType() == KING)
-//    {
-//        if (lastMove.getPiece().getColor() == WHITE)
-//        {
-//            this->short_castle_white = false;
-//            this->long_castle_white = false;
-//        }
-//        else if (lastMove.getPiece().getColor() == BLACK)
-//        {
-//            this->short_castle_black = false;
-//            this->long_castle_black = false;
-//        }
-//    }
-//    else if (lastMove.getPiece().getType() == ROOK)
-//    {
-//        if (lastMove.getPiece().getColor() == WHITE)
-//        {
-//            if (lastMove.getOrigSquare().getFile() == 0)
-//                this->long_castle_white = false;
-//            else if (lastMove.getOrigSquare().getFile() == 7)
-//                this->short_castle_white = false;
-//        }
-//        else if (lastMove.getPiece().getColor() == BLACK)
-//        {
-//            if (lastMove.getOrigSquare().getFile() == 0)
-//                this->long_castle_black = false;
-//            else if (lastMove.getOrigSquare().getFile() == 7)
-//                this->short_castle_black = false;
-//        }
-//    }
-//}
-
-
 void Chessboard::updateCastleFlags()
 {
     // 3 cas à gérer : 
     // roi a bougé
     // tour a bougé
     // tour capturée (sans forcément avoir bougé avant)
+
     Move lastMove = this->moveHistory.back();
 
     // 1. Perte des deux droits si le roi bouge
@@ -917,12 +888,13 @@ void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion
 
 bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy)
 {
+    // check si le roque est safe (pas d'attaques de pièces sur le chemin).
+    // pas possible non plus de roquer si on est en échec
     bool short_castle = (file == 6);
     bool long_castle = (file == 2);
 
     if (!short_castle && !long_castle)
     {
-        //std::cout << "Invalid castling move!" << std::endl;
         return false;
     }
 
@@ -1032,7 +1004,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     Square& first_square = this->board[orig_rank * 8 + orig_file];
     Square& second_square = this->board[rank * 8 + file];
 
-    const std::vector<Move> legalMoves = this->getLegalMoves(orig_file, orig_rank);
+    const std::vector<Move> legalMoves = this->getNaiveLegalMoves(orig_file, orig_rank);
 
     if (first_square.getPiece().getColor() != this->turn)
     {
