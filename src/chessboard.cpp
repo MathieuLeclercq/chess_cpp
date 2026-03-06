@@ -542,68 +542,74 @@ bool Chessboard::isInCheck() const
     return false;
 }
 
+std::vector<Move> Chessboard::getLegalMovesForSquare(int file, int rank)
+{
+    std::vector<Move> result;
+    Color color = this->turn;
+
+    if (this->board[rank * 8 + file].getPiece().getColor() != color)
+        return result;
+
+    std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(file, rank);
+    for (const Move& move : pseudo_moves)
+    {
+        int dest_file = move.getDestSquare().getFile();
+        int dest_rank = move.getDestSquare().getRank();
+        PieceType p_type = this->board[rank * 8 + file].getPiece().getType();
+        bool is_king_move = (p_type == KING);
+
+        if (is_king_move && std::abs(file - dest_file) == 2)
+        {
+            std::array<Square, 64> board_copy = this->board;
+            if (!this->isCastlePossible(file, rank, dest_file, dest_rank, board_copy))
+                continue;
+            this->board = board_copy;
+        }
+
+        if (is_king_move) {
+            if (color == WHITE) { white_king_file = dest_file; white_king_rank = dest_rank; }
+            else { black_king_file = dest_file; black_king_rank = dest_rank; }
+        }
+
+        std::array<Square, 64> board_copy = this->board;
+
+        bool is_en_passant = (p_type == PAWN &&
+            std::abs(file - dest_file) == 1 &&
+            this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
+
+        if (is_en_passant)
+            this->board[rank * 8 + dest_file].setPiece(Piece());
+
+        this->board[dest_rank * 8 + dest_file].setPiece(this->board[rank * 8 + file].getPiece());
+        this->board[rank * 8 + file].setPiece(Piece());
+
+        bool in_check = this->isInCheck();
+        this->board = board_copy;
+
+        if (is_king_move) {
+            if (color == WHITE) { white_king_file = file; white_king_rank = rank; }
+            else { black_king_file = file; black_king_rank = rank; }
+        }
+
+        if (!in_check)
+            result.push_back(move);
+    }
+    return result;
+}
+
 
 std::vector<Move> Chessboard::getAllLegalMoves()
 {
     std::vector<Move> result;
     Color color = this->turn;
-
-    for (int i = 0; i < 8; i++) // file
+    for (int i = 0; i < 8; i++)
     {
-        for (int j = 0; j < 8; j++) // rank
+        for (int j = 0; j < 8; j++)
         {
             if (this->board[j * 8 + i].getPiece().getColor() != color)
                 continue;
-
-            std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(i, j);
-            for (const Move& move : pseudo_moves)
-            {
-                int dest_file = move.getDestSquare().getFile();
-                int dest_rank = move.getDestSquare().getRank();
-                PieceType p_type = this->board[j * 8 + i].getPiece().getType();
-                bool is_king_move = (p_type == KING);
-
-                // Roque : vérification dédiée
-                if (is_king_move && std::abs(i - dest_file) == 2)
-                {
-                    std::array<Square, 64> board_copy = this->board;
-                    if (!this->isCastlePossible(i, j, dest_file, dest_rank, board_copy))
-                        continue;
-
-                    // Restaurer car isCastlePossible a déplacé la tour sur this->board
-                    this->board = board_copy;
-                }
-
-                // Simulation du coup
-                if (is_king_move) {
-                    if (color == WHITE) { this->white_king_file = dest_file; this->white_king_rank = dest_rank; }
-                    else { this->black_king_file = dest_file; this->black_king_rank = dest_rank; }
-                }
-
-                std::array<Square, 64> board_copy = this->board;
-
-                bool is_en_passant = (p_type == PAWN &&
-                    std::abs(i - dest_file) == 1 &&
-                    this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
-
-                if (is_en_passant)
-                    this->board[j * 8 + dest_file].setPiece(Piece()); // supprime le pion (colonne d'arrivée, ligne de départ)
-
-                this->board[dest_rank * 8 + dest_file].setPiece(this->board[j * 8 + i].getPiece());
-                this->board[j * 8 + i].setPiece(Piece());
-
-                bool in_check = this->isInCheck();
-
-                this->board = board_copy;
-
-                if (is_king_move) {
-                    if (color == WHITE) { this->white_king_file = i; this->white_king_rank = j; }
-                    else { this->black_king_file = i; this->black_king_rank = j; }
-                }
-
-                if (!in_check) // on autorise pas le coup si ça met notre propre roi en échec
-                    result.push_back(move);
-            }
+            std::vector<Move> moves = this->getLegalMovesForSquare(i, j);
+            result.insert(result.end(), moves.begin(), moves.end());
         }
     }
     return result;

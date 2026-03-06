@@ -76,7 +76,6 @@ class Chessboard
         void print() const;
         void print(std::array<Square, 64> some_board) const;
         void printPly() const;
-        std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         const std::vector<Move>& getMoveHistory() const;
         std::vector<Move>& getMoveHistory();
         const std::vector<std::array<Square, 64>>& getBoardHistory() const;
@@ -87,9 +86,10 @@ class Chessboard
         Color getTurn() const;
         GameState getGameState() const;
         std::vector<float> getAlphaZeroTensor() const;
-
         int encodeMove(const Move& move) const;
+        std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         std::vector<Move> getAllLegalMoves();
+        std::vector<Move> getLegalMovesForSquare(int file, int rank);
         std::vector<int> getLegalMoveIndices();
 
         // setters
