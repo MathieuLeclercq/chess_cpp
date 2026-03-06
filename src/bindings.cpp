@@ -65,6 +65,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType, bool)>(&Chessboard::movePiece),
             py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE, py::arg("check_game_end") = true)
         .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)
+        .def("is_in_check", &Chessboard::isInCheck)
         .def("undo_move", &Chessboard::undoMove)
         .def_property_readonly("turn", &Chessboard::getTurn)
         .def_property_readonly("game_state", &Chessboard::getGameState)

@@ -4,16 +4,12 @@ Utilise le moteur C++ via pybind11 + le réseau de neurones pour l'IA.
 """
 
 import warnings
-
-from lib import decode_move_index
-
-# from lib_gui import load_images, draw_board, draw_last_move, draw_highlights, draw_pieces, \
-#     draw_game_over
-
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated")
-
+warnings.filterwarnings("ignore", message=".*weights_only=False.*")
 import pygame
 import sys
+import os
+
 import numpy as np
 import torch
 
@@ -25,6 +21,7 @@ from lib_gui import (
     load_images,
     rendu
 )
+from lib import decode_move_index, move_to_san, print_pgn
 
 # ============================================================
 #                     CONFIGURATION
@@ -51,6 +48,7 @@ TEMPERATURE = 0.1
 
 def load_model(checkpoint_path, num_res_blocks, num_filters):
     """Charge le modèle depuis un checkpoint Lightning."""
+    os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     lit_model = AlphaZeroLightning.load_from_checkpoint(
@@ -142,6 +140,7 @@ def main():
     # Initialisation du plateau
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
+    san_moves = []
 
     running = True
     selected_square = None
@@ -181,8 +180,19 @@ def main():
 
                     if valid_move is not None:
                         orig_f, orig_r = selected_square
-                        board.move_piece(orig_f, orig_r, clicked_file, clicked_rank, promotion_type)
+                        san = move_to_san(board, orig_f, orig_r, clicked_file, clicked_rank,
+                                          promotion_type)
+                        success = board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
+                                                   promotion_type)
+                        if success:
+                            if board.game_state == chess_engine.GameState.CHECKMATE:
+                                san += "#"
+                            elif board.is_in_check():
+                                san += "+"
+                            san_moves.append(san)
 
+                            if board.game_state != chess_engine.GameState.ONGOING:
+                                game_over = True
                         if board.game_state != chess_engine.GameState.ONGOING:
                             game_over = True
 
@@ -194,10 +204,13 @@ def main():
             result = ai_pick_move(board, model, device, TEMPERATURE)
             if result is not None:
                 orig_f, orig_r, dest_f, dest_r, promo = result
+                san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)
                 board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
-
-                if board.game_state != chess_engine.GameState.ONGOING:
-                    game_over = True
+                if board.game_state == chess_engine.GameState.CHECKMATE:
+                    san += "#"
+                elif board.is_in_check():
+                    san += "+"
+                san_moves.append(san)
 
         # Rendu
         clock = rendu(
@@ -208,6 +221,7 @@ def main():
             clock
         )
 
+    print_pgn(board, san_moves)
     pygame.quit()
     sys.exit()
 

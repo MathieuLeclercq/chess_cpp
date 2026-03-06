@@ -979,23 +979,19 @@ void Chessboard::evaluateGameState()
         if (this->isInCheck())
         {
             this->current_state = CHECKMATE;
-            //std::cout << "Checkmate!" << std::endl;
         }
         else
         {
             this->current_state = STALEMATE;
-            //std::cout << "Stalemate!" << std::endl;
         }
     }
     else if (this->checkThreefoldRepetition())
     {
         this->current_state = DRAW_REPETITION;
-        //std::cout << "Draw by threefold repetition!" << std::endl;
     }
     else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
     {
         this->current_state = DRAW_50_MOVES;
-        //std::cout << "Draw by 50-move rule!" << std::endl;
     }
 }
 
@@ -1008,7 +1004,6 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
     if (first_square.getPiece().getColor() != this->turn)
     {
-        //std::cout << "It is not your turn!" << std::endl;
         return false;
     }
 
@@ -1022,13 +1017,12 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         Piece moving_piece = first_square.getPiece();
         bool is_king_move = (moving_piece.getType() == KING);
+        bool is_pawn_move = (moving_piece.getType() == PAWN);
         Color moving_color = moving_piece.getColor();
 
-        bool is_en_passant_capture = (second_square.getPiece().getType() == NONE &&
-            moving_piece.getType() == PAWN &&
-            abs(orig_file - file) == 1);
+        bool is_en_passant_capture = (is_pawn_move && second_square.getPiece().getType() == NONE &&
+            abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
         bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
-        bool is_pawn_move = (moving_piece.getType() == PAWN);
 
         // Roque
         if (is_king_move && abs(orig_file - file) == 2)
@@ -1200,7 +1194,7 @@ bool Chessboard::movePieceSAN(std::string san)
         PieceType move_p_type = m.getPiece().getType();
 
         // Filtrage successif pour trouver le match exact
-        if (move_p_type != p_type) continue;
+        if (move_p_type != p_type) continue; // même type de pièce ?
         if (d_f != dest_file || d_r != dest_rank) continue;
         if (orig_file_hint != -1 && o_f != orig_file_hint) continue;
         if (orig_rank_hint != -1 && o_r != orig_rank_hint) continue;

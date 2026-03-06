@@ -87,3 +87,94 @@ def decode_move_index(index, is_black):
         dest_r = 7 - dest_r
 
     return orig_f, orig_r, dest_f, dest_r, promotion
+
+
+def move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo):
+    """Génère la notation SAN d'un coup AVANT qu'il soit joué sur le board."""
+    piece = board.get_square(orig_f, orig_r).get_piece()
+    p_type = piece.get_type()
+
+    # Roque
+    if p_type == chess_engine.PieceType.KING and abs(orig_f - dest_f) == 2:
+        san = "O-O" if dest_f == 6 else "O-O-O"
+    else:
+        san = ""
+        piece_letters = {
+            chess_engine.PieceType.KNIGHT: "N",
+            chess_engine.PieceType.BISHOP: "B",
+            chess_engine.PieceType.ROOK: "R",
+            chess_engine.PieceType.QUEEN: "Q",
+            chess_engine.PieceType.KING: "K",
+        }
+
+        is_capture = board.get_square(dest_f, dest_r).is_occupied()
+        # En passant
+        if p_type == chess_engine.PieceType.PAWN and abs(orig_f - dest_f) == 1 and not is_capture:
+            is_capture = True
+
+        if p_type != chess_engine.PieceType.PAWN:
+            san += piece_letters[p_type]
+
+            # Désambiguïsation
+            need_file, need_rank = False, False
+            for f in range(8):
+                for r in range(8):
+                    if f == orig_f and r == orig_r:
+                        continue
+                    sq = board.get_square(f, r)
+                    if not sq.is_occupied():
+                        continue
+                    if sq.get_piece().get_type() != p_type or sq.get_piece().get_color() != piece.get_color():
+                        continue
+                    for m in board.get_naive_legal_moves(f, r):
+                        if m.get_dest_square().get_file() == dest_f and m.get_dest_square().get_rank() == dest_r:
+                            if f == orig_f:
+                                need_rank = True
+                            else:
+                                need_file = True
+
+            if need_file:
+                san += chr(ord('a') + orig_f)
+            if need_rank:
+                san += chr(ord('1') + orig_r)
+        else:
+            if is_capture:
+                san += chr(ord('a') + orig_f)
+
+        if is_capture:
+            san += "x"
+
+        san += chr(ord('a') + dest_f) + chr(ord('1') + dest_r)
+
+        # Promotion
+        promo_letters = {
+            chess_engine.PieceType.QUEEN: "Q",
+            chess_engine.PieceType.ROOK: "R",
+            chess_engine.PieceType.BISHOP: "B",
+            chess_engine.PieceType.KNIGHT: "N",
+        }
+        if promo in promo_letters:
+            san += "=" + promo_letters[promo]
+
+    return san
+
+
+def print_pgn(board, san_move_list):
+    # Après la boucle while, avant pygame.quit()
+    pgn = ""
+    for i, san in enumerate(san_move_list):
+        if i % 2 == 0:
+            pgn += f"{i // 2 + 1}. "
+        pgn += san + " "
+
+    results = {
+        chess_engine.GameState.CHECKMATE: "1-0" if board.turn == chess_engine.Color.BLACK else "0-1",
+        chess_engine.GameState.STALEMATE: "1/2-1/2",
+        chess_engine.GameState.DRAW_REPETITION: "1/2-1/2",
+        chess_engine.GameState.DRAW_50_MOVES: "1/2-1/2",
+    }
+    pgn += results.get(board.game_state, "*")
+
+    print("\n===== PGN =====")
+    print(pgn)
+    print("===============\n")
