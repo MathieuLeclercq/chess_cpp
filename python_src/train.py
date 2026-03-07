@@ -78,7 +78,7 @@ if __name__ == "__main__":
     # --- Entraînement ---
     trainer = L.Trainer(
         max_epochs=1,
-        # limit_train_batches=1000,
+        # limit_train_batches=100,
         logger=wandb_logger,
         callbacks=[checkpoint_callback],
         precision="16-mixed",
@@ -88,5 +88,5 @@ if __name__ == "__main__":
     trainer.fit(
         model,
         train_dataloaders=dataloader,
-        ckpt_path=r"checkpoints\alphazero-supervised-step=5000.ckpt"
+        # ckpt_path=r"checkpoints\alphazero-supervised-step=5000.ckpt"
     )
