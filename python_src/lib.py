@@ -36,11 +36,10 @@ def encode_move(orig_f, orig_r, dest_f, dest_r, promotion_type, is_black_turn):
 
         return plane * 64 + orig_r * 8 + orig_f
     except ValueError:
-        # Si le tuple de direction n'existe pas (ex: coup illégal échappé)
         return -1
 
 
-def decode_move_index(index, is_black):
+def decode_move_index(board, index, is_black):
     """Inverse de encodeMove : transforme un index (0-4671) en coordonnées de coup."""
     plane = index // 64
     remainder = index % 64
@@ -86,6 +85,7 @@ def decode_move_index(index, is_black):
         orig_r = 7 - orig_r
         dest_r = 7 - dest_r
 
+    promotion = gestion_promo_dame(board, orig_f, orig_r, dest_r, promotion)
     return orig_f, orig_r, dest_f, dest_r, promotion
 
 
@@ -178,3 +178,13 @@ def print_pgn(board, san_move_list):
     print("\n===== PGN =====")
     print(pgn)
     print("===============\n")
+
+
+def gestion_promo_dame(board, orig_f, orig_r, dest_r, promo):
+    # Promotion dame implicite (convention AlphaZero)
+    piece = board.get_square(orig_f, orig_r).get_piece()
+    if (piece.get_type() == chess_engine.PieceType.PAWN
+            and promo == chess_engine.PieceType.NONE
+            and (dest_r == 0 or dest_r == 7)):
+        promo = chess_engine.PieceType.QUEEN
+    return promo

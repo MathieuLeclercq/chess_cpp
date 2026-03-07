@@ -32,7 +32,7 @@ from lib import decode_move_index, move_to_san, print_pgn
 HUMAN_COLOR = chess_engine.Color.WHITE
 
 # Chemin vers le checkpoint Lightning
-CHECKPOINT_PATH = "checkpoints/last.ckpt"
+CHECKPOINT_PATH = "checkpoints/supervised_best_03_07.ckpt"
 
 # Architecture (doit correspondre à l'entraînement)
 NUM_RES_BLOCKS = 10
@@ -112,14 +112,7 @@ def ai_pick_move(board, model, device, temperature=0.1):
 
     # Décodage
     is_black = (board.turn == chess_engine.Color.BLACK)
-    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(best_idx, is_black)
-
-    # Promotion dame implicite (convention AlphaZero)
-    piece = board.get_square(orig_f, orig_r).get_piece()
-    if (piece.get_type() == chess_engine.PieceType.PAWN
-            and promo == chess_engine.PieceType.NONE
-            and (dest_r == 0 or dest_r == 7)):
-        promo = chess_engine.PieceType.QUEEN
+    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, best_idx, is_black)
 
     print(f"IA joue: ({orig_f},{orig_r}) -> ({dest_f},{dest_r}), promo={promo}, value={value:.3f}")
 

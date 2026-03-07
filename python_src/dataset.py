@@ -46,8 +46,7 @@ class ChessDataset(IterableDataset):
         # 1. Gestion du multi-processing PyTorch
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
-            # Processus unique (num_workers=0) : on prend tout
-            files_to_process = self.pgn_files
+            files_to_process = self.pgn_files  # num_workers=0 : on prend tout
         else:
             # Multi-processus : on découpe la liste des fichiers
             per_worker = len(self.pgn_files) // worker_info.num_workers

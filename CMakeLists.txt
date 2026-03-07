@@ -39,6 +39,15 @@ FetchContent_MakeAvailable(pybind11)
 pybind11_add_module(chess_engine src/bindings.cpp)
 target_link_libraries(chess_engine PRIVATE chess_core)
 
+add_custom_command(TARGET chess_engine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${CMAKE_SOURCE_DIR}/python_src" 
+            ${PYTHON_EXECUTABLE} -m pybind11_stubgen chess_engine 
+            --enum-class-locations "PieceType:chess_engine"
+            --output-dir "${CMAKE_SOURCE_DIR}/python_src"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/python_src"
+    COMMENT "Génération des stubs pour l'IDE (chess_engine.pyi)..."
+)
+
 # Force CMake à exporter le module compilé dans le dossier python_src/
 set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python_src)
 set_target_properties(chess_engine PROPERTIES LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/python_src)

@@ -41,7 +41,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def(py::init<>())
         .def(py::init<Color, PieceType>())
         .def("get_type", &Piece::getType)
-        .def("get_color", static_cast<const Color & (Piece::*)() const>(&Piece::getColor)); // Cast nécessaire à cause de la surcharge dans ton code
+        .def("get_color", static_cast<const Color & (Piece::*)() const>(&Piece::getColor));
 
     py::class_<Square>(m, "Square")
         .def(py::init<>())
