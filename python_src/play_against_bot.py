@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 import chess_engine
-from train import AlphaZeroLightning
+from train_supervised import AlphaZeroLightning
 from lib_gui import (
     SQUARE_SIZE,
     pygame_init,

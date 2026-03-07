@@ -2,15 +2,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-import lightning as L
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from torch.cuda.amp import GradScaler, autocast
+import wandb
+import os
 
 import chess_engine
 from lib import decode_move_index
 from mcts import MCTS
 from model import ChessNet
-from train import AlphaZeroLightning
 
 
 # ============================================================
@@ -29,44 +28,8 @@ class SelfPlayDataset(Dataset):
         return (
             torch.from_numpy(tensor_np).float(),
             torch.from_numpy(pi).float(),
-            torch.tensor([value], dtype=torch.float32)
+            torch.tensor([value], dtype=torch.float32),
         )
-
-
-# ============================================================
-#                     MODULE LIGHTNING
-# ============================================================
-
-class AlphaZeroSelfPlay(L.LightningModule):
-    def __init__(self, learning_rate=1e-3, num_res_blocks=10, num_filters=128):
-        super().__init__()
-        self.save_hyperparameters()
-        self.model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
-
-    def forward(self, x):
-        return self.model(x)
-
-    def training_step(self, batch, batch_idx):
-        x, target_pi, y_value = batch
-        p_logits, v_pred = self(x)
-
-        # Policy : cross-entropie avec le vecteur de probabilités MCTS
-        log_probs = F.log_softmax(p_logits, dim=1)
-        policy_loss = -torch.sum(target_pi * log_probs, dim=1).mean()
-
-        # Value : MSE
-        value_loss = F.mse_loss(v_pred, y_value)
-
-        loss = policy_loss + value_loss
-
-        self.log("train/loss", loss, prog_bar=True)
-        self.log("train/policy_loss", policy_loss)
-        self.log("train/value_loss", value_loss)
-
-        return loss
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
 
 # ============================================================
@@ -82,9 +45,8 @@ def self_play_game(model, device, num_simulations=200, max_moves=300):
 
     while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
         tensor_np = board.get_alphazero_tensor()
-        pi, _ = MCTS.mcts_search(board, model, device, num_simulations)
+        pi, _ = MCTS.mcts_search(board, model, device, num_simulations, add_dirichlet=True)
 
-        # Température : échantillonner les 30 premiers coups, greedy après
         if move_num < 30:
             probs = pi.copy()
             probs /= probs.sum()
@@ -99,10 +61,9 @@ def self_play_game(model, device, num_simulations=200, max_moves=300):
         board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
         move_num += 1
 
-    # Résultat
     z = 0.0
     if board.game_state == chess_engine.GameState.CHECKMATE:
-        z = -1.0  # le joueur au trait est maté
+        z = 1.0  # history[-1] est la position du gagnant
 
     dataset = []
     for i, (tensor_np, pi) in enumerate(history):
@@ -113,7 +74,6 @@ def self_play_game(model, device, num_simulations=200, max_moves=300):
 
 
 def generate_games(model, device, num_games, num_simulations):
-    """Génère plusieurs parties et retourne les données + métriques."""
     all_data = []
     total_moves = 0
     results = {"checkmate": 0, "draw": 0, "ongoing": 0}
@@ -137,46 +97,95 @@ def generate_games(model, device, num_games, num_simulations):
 
 
 # ============================================================
+#                     TRAINING
+# ============================================================
+
+def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
+                    epochs=10, batch_size=256, global_step=0):
+    model.train()
+    dataset = SelfPlayDataset(replay_buffer)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    for epoch in range(epochs):
+        epoch_loss = 0.0
+        num_batches = 0
+
+        for x, target_pi, y_value in loader:
+            x = x.to(device)
+            target_pi = target_pi.to(device)
+            y_value = y_value.to(device)
+
+            optimizer.zero_grad()
+
+            with autocast(device_type="cuda", enabled=(device.type == "cuda")):
+                p_logits, v_pred = model(x)
+                log_probs = F.log_softmax(p_logits, dim=1)
+                policy_loss = -torch.sum(target_pi * log_probs, dim=1).mean()
+                value_loss = F.mse_loss(v_pred, y_value)
+                loss = policy_loss + value_loss
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            epoch_loss += loss.item()
+            num_batches += 1
+            global_step += 1
+
+            if num_batches % 20 == 0:
+                wandb.log({
+                    "train/loss": loss.item(),
+                    "train/policy_loss": policy_loss.item(),
+                    "train/value_loss": value_loss.item(),
+                    "train/global_step": global_step,
+                })
+
+        avg_loss = epoch_loss / max(num_batches, 1)
+        print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
+
+    return global_step
+
+
+# ============================================================
 #                     PIPELINE
 # ============================================================
 
 def pipeline(
-        num_iterations=10,
-        games_per_iter=20,
-        num_simulations=200,
-        train_epochs=10,
-        batch_size=256,
-        learning_rate=1e-3,
-        num_res_blocks=10,
-        num_filters=128,
-        max_buffer_size=200_000,
-        checkpoint_path=None,
+    num_iterations=10,
+    games_per_iter=20,
+    num_simulations=200,
+    train_epochs=10,
+    batch_size=256,
+    learning_rate=1e-3,
+    num_res_blocks=10,
+    num_filters=128,
+    max_buffer_size=200_000,
+    checkpoint_path=None,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialisation du module Lightning
-    lit_model = AlphaZeroSelfPlay(
-        learning_rate=learning_rate,
-        num_res_blocks=num_res_blocks,
-        num_filters=num_filters,
-    )
+    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
 
     # Chargement optionnel du checkpoint supervisé
-    if checkpoint_path:
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        from train_supervised import AlphaZeroLightning
         pretrained = AlphaZeroLightning.load_from_checkpoint(
             checkpoint_path,
             num_res_blocks=num_res_blocks,
             num_filters=num_filters,
         )
-        lit_model.model.load_state_dict(pretrained.model.state_dict())
+        model.load_state_dict(pretrained.model.state_dict())
         print(f"Checkpoint supervisé chargé: {checkpoint_path}")
 
-    raw_model = lit_model.model.to(device)
+    # Persistants entre les itérations — jamais recréés
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scaler = GradScaler(enabled=(device.type == "cuda"))
 
-    # WandB
-    wandb_logger = WandbLogger(project="alphazero-chess", name="self_play")
+    wandb.init(project="alphazero-chess", name="self_play")
+    wandb.watch(model, log="gradients", log_freq=100)
 
     replay_buffer = []
+    global_step = 0
 
     for iteration in range(num_iterations):
         print(f"\n{'=' * 50}")
@@ -184,17 +193,16 @@ def pipeline(
         print(f"{'=' * 50}")
 
         # ── 1. Self-play ──
-        raw_model.eval()
+        model.eval()
         new_data, results, avg_length = generate_games(
-            raw_model, device, games_per_iter, num_simulations
+            model, device, games_per_iter, num_simulations
         )
 
         replay_buffer.extend(new_data)
         if len(replay_buffer) > max_buffer_size:
             replay_buffer = replay_buffer[-max_buffer_size:]
 
-        # Log des métriques de self-play
-        wandb_logger.experiment.log({
+        wandb.log({
             "selfplay/buffer_size": len(replay_buffer),
             "selfplay/new_positions": len(new_data),
             "selfplay/avg_game_length": avg_length,
@@ -210,31 +218,24 @@ def pipeline(
         print(f"  Longueur moyenne: {avg_length:.0f} coups")
 
         # ── 2. Training ──
-        dataset = SelfPlayDataset(replay_buffer)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-        checkpoint_callback = ModelCheckpoint(
-            dirpath="checkpoints/",
-            filename=f"selfplay-iter{iteration + 1}-{{step}}",
-            every_n_train_steps=500,
-            save_top_k=-1,
+        global_step = train_on_buffer(
+            model, optimizer, scaler, device, replay_buffer,
+            epochs=train_epochs, batch_size=batch_size, global_step=global_step,
         )
 
-        trainer = L.Trainer(
-            max_epochs=train_epochs,
-            logger=wandb_logger,
-            callbacks=[checkpoint_callback],
-            precision="16-mixed",
-            log_every_n_steps=20,
-            enable_progress_bar=True,
-        )
-
-        trainer.fit(lit_model, train_dataloaders=dataloader)
-
-        # Sauvegarde explicite de fin d'itération
-        save_path = f"checkpoints/selfplay_iter{iteration + 1}.ckpt"
-        trainer.save_checkpoint(save_path)
+        # ── 3. Sauvegarde ──
+        save_path = f"checkpoints/selfplay_iter{iteration + 1}.pt"
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scaler_state_dict": scaler.state_dict(),
+            "iteration": iteration + 1,
+            "global_step": global_step,
+            "buffer_size": len(replay_buffer),
+        }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
+
+    wandb.finish()
 
 
 if __name__ == "__main__":
