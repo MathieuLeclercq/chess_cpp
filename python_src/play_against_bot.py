@@ -8,20 +8,18 @@ warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources i
 warnings.filterwarnings("ignore", message=".*weights_only=False.*")
 import pygame
 import sys
-import os
-
-import numpy as np
-import torch
 
 import chess_engine
-from train_supervised import AlphaZeroLightning
 from lib_gui import (
     SQUARE_SIZE,
     pygame_init,
     load_images,
     rendu
 )
-from lib import decode_move_index, move_to_san, print_pgn
+from lib import (
+    move_to_san, print_pgn, load_supervised_model,
+    ai_pick_move_instant)
+
 
 # ============================================================
 #                     CONFIGURATION
@@ -41,84 +39,6 @@ NUM_FILTERS = 128
 # Température pour le sampling (0 = déterministe, 0.5 = léger aléa)
 TEMPERATURE = 0.1
 
-
-# ============================================================
-#                     CHARGEMENT DU MODÈLE
-# ============================================================
-
-def load_model(checkpoint_path, num_res_blocks, num_filters):
-    """Charge le modèle depuis un checkpoint Lightning."""
-    os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    lit_model = AlphaZeroLightning.load_from_checkpoint(
-        checkpoint_path,
-        num_res_blocks=num_res_blocks,
-        num_filters=num_filters,
-    )
-    model = lit_model.model
-    model.to(device)
-    model.eval()
-    print(f"Modèle chargé depuis {checkpoint_path} (device: {device})")
-    return model, device
-
-
-# ============================================================
-#                     LOGIQUE DE L'IA
-# ============================================================
-
-def ai_pick_move(board, model, device, temperature=0.1):
-    """
-    Utilise le réseau pour choisir un coup.
-    1. Encode la position en tensor 119×8×8
-    2. Forward pass → policy logits + value
-    3. Masque les coups illégaux
-    4. Sélectionne le meilleur coup (avec température optionnelle)
-    5. Décode l'index en coordonnées
-    """
-    # Tensor d'entrée
-    tensor_np = board.get_alphazero_tensor()
-    x = torch.from_numpy(tensor_np).float().unsqueeze(0).to(device)  # [1, 119, 8, 8]
-
-    # Indices des coups légaux (déjà encodés par le moteur C++)
-    legal_indices = board.get_legal_move_indices()
-    if not legal_indices:
-        return None
-
-    # Inférence
-    with torch.no_grad():
-        p_logits, v_pred = model(x)
-
-    p_logits = p_logits.squeeze(0).cpu().numpy()  # [4672]
-    value = v_pred.item()
-
-    # Masquage : on met -inf partout sauf les coups légaux
-    mask = np.full(4672, -np.inf)
-    for idx in legal_indices:
-        mask[idx] = p_logits[idx]
-
-    # Sélection du coup
-    if temperature <= 0:
-        best_idx = legal_indices[np.argmax(mask[legal_indices])]
-    else:
-        # Softmax avec température sur les coups légaux uniquement
-        legal_logits = np.array([p_logits[i] for i in legal_indices])
-        legal_logits = legal_logits / temperature
-        legal_logits -= legal_logits.max()  # stabilité numérique
-        probs = np.exp(legal_logits)
-        probs /= probs.sum()
-        chosen = np.random.choice(len(legal_indices), p=probs)
-        best_idx = legal_indices[chosen]
-
-    # Décodage
-    is_black = (board.turn == chess_engine.Color.BLACK)
-    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, best_idx, is_black)
-
-    print(f"IA joue: ({orig_f},{orig_r}) -> ({dest_f},{dest_r}), promo={promo}, value={value:.3f}")
-
-    return orig_f, orig_r, dest_f, dest_r, promo
-
-
 # ============================================================
 #                     BOUCLE PRINCIPALE
 # ============================================================
@@ -128,7 +48,8 @@ def main():
     load_images()
 
     # Chargement du modèle
-    model, device = load_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS)
+    device = "cuda"
+    model = load_supervised_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS, device)
 
     # Initialisation du plateau
     board = chess_engine.Chessboard()
@@ -194,7 +115,7 @@ def main():
 
         # Tour de l'IA
         if not is_human_turn and not game_over:
-            result = ai_pick_move(board, model, device, TEMPERATURE)
+            result = ai_pick_move_instant(board, model, device, TEMPERATURE)
             if result is not None:
                 orig_f, orig_r, dest_f, dest_r, promo = result
                 san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)

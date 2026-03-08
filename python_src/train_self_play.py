@@ -269,7 +269,7 @@ if __name__ == "__main__":
     pipeline(
         num_iterations=15,
         games_per_iter=6,
-        num_simulations=200,
+        num_simulations=500,
         train_epochs=3,
         batch_size=1024,
         checkpoint_path="checkpoints/selfplay_iter4_20260308_145240.pt",

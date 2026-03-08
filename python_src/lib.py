@@ -1,4 +1,49 @@
+import os
+import torch
+import torch.nn.functional as F
+import lightning as L
+
 import chess_engine
+from model import ChessNet
+
+
+class AlphaZeroLightning(L.LightningModule):
+    def __init__(self, learning_rate=1e-3, num_res_blocks=10, num_filters=128):
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
+
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+        x, y_policy, y_value = batch
+
+        # Forward pass
+        p_logits, v_pred = self(x)
+
+        # 1. Perte de la Policy (Stratégie)
+        # p_logits sort de ta couche Linear sans Softmax, on utilise donc cross_entropy
+        policy_loss = F.cross_entropy(p_logits, y_policy)
+
+        # 2. Perte de la Value (Évaluation)
+        # v_pred sort d'une activation Tanh (entre -1 et 1), on utilise l'erreur quadratique moyenne
+        value_loss = F.mse_loss(v_pred, y_value)
+
+        # Perte totale
+        loss = policy_loss + value_loss
+
+        # Logging dynamique vers WandB
+        self.log("train/loss", loss, prog_bar=True)
+        self.log("train/policy_loss", policy_loss)
+        self.log("train/value_loss", value_loss)
+
+        return loss
+
+    def configure_optimizers(self):
+        # L'optimiseur Adam est très robuste pour ce type de phase supervisée
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        return optimizer
 
 
 def encode_move(orig_f, orig_r, dest_f, dest_r, promotion_type, is_black_turn):
@@ -65,10 +110,10 @@ def decode_move_index(board, index, is_black):
     else:
         sub_idx = plane - 64
         dir_idx = sub_idx // 3  # 0=gauche, 1=tout droit, 2=droite
-        p_idx = sub_idx % 3     # 0=knight, 1=bishop, 2=rook
+        p_idx = sub_idx % 3  # 0=knight, 1=bishop, 2=rook
 
         df = dir_idx - 1  # -1, 0, +1
-        dr = 1             # Toujours avance d'un rang (du point de vue du joueur)
+        dr = 1  # Toujours avance d'un rang (du point de vue du joueur)
 
         if p_idx == 0:
             promotion = chess_engine.PieceType.KNIGHT
@@ -188,3 +233,94 @@ def gestion_promo_dame(board, orig_f, orig_r, dest_r, promo):
             and (dest_r == 0 or dest_r == 7)):
         promo = chess_engine.PieceType.QUEEN
     return promo
+
+
+def load_supervised_model(checkpoint_path, num_res_blocks, num_filters, device):
+    """Charge le modèle depuis un checkpoint Lightning."""
+    os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
+    device = torch.device(device)
+
+    lit_model = AlphaZeroLightning.load_from_checkpoint(
+        checkpoint_path,
+        num_res_blocks=num_res_blocks,
+        num_filters=num_filters,
+    )
+    model = lit_model.model
+    model.to(device)
+    model.eval()
+    print(f"Modèle chargé depuis {checkpoint_path} (device: {device})")
+    return model
+
+
+def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters):
+    """Charge le modèle depuis un checkpoint standard PyTorch."""
+    os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 1. Instanciation de l'architecture vide
+    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
+
+    # 2. Chargement du fichier
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+    # 3. Injection des poids
+    # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    model.to(device)
+    model.eval()
+
+    print(f"Modèle chargé depuis {checkpoint_path} (device: {device})")
+    return model, device
+
+
+def ai_pick_move_instant(board, model, device, temperature=0.1):
+    """
+    Utilise le réseau pour choisir un coup.
+    1. Encode la position en tensor 119×8×8
+    2. Forward pass → policy logits + value
+    3. Masque les coups illégaux
+    4. Sélectionne le meilleur coup (avec température optionnelle)
+    5. Décode l'index en coordonnées
+    """
+    # Tensor d'entrée
+    tensor_np = board.get_alphazero_tensor()
+    x = torch.from_numpy(tensor_np).float().unsqueeze(0).to(device)  # [1, 119, 8, 8]
+
+    # Indices des coups légaux (déjà encodés par le moteur C++)
+    legal_indices = board.get_legal_move_indices()
+    if not legal_indices:
+        return None
+
+    # Inférence
+    with torch.no_grad():
+        p_logits, v_pred = model(x)
+
+    p_logits = p_logits.squeeze(0).cpu().numpy()  # [4672]
+    value = v_pred.item()
+
+    # Masquage : on met -inf partout sauf les coups légaux
+    mask = np.full(4672, -np.inf)
+    for idx in legal_indices:
+        mask[idx] = p_logits[idx]
+
+    # Sélection du coup
+    if temperature <= 0:
+        best_idx = legal_indices[np.argmax(mask[legal_indices])]
+    else:
+        # Softmax avec température sur les coups légaux uniquement
+        legal_logits = np.array([p_logits[i] for i in legal_indices])
+        legal_logits = legal_logits / temperature
+        legal_logits -= legal_logits.max()  # stabilité numérique
+        probs = np.exp(legal_logits)
+        probs /= probs.sum()
+        chosen = np.random.choice(len(legal_indices), p=probs)
+        best_idx = legal_indices[chosen]
+
+    # Décodage
+    is_black = (board.turn == chess_engine.Color.BLACK)
+    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, best_idx, is_black)
+
+    print(f"IA joue: ({orig_f},{orig_r}) -> ({dest_f},{dest_r}), promo={promo}, value={value:.3f}")
+
+    return orig_f, orig_r, dest_f, dest_r, promo

@@ -4,21 +4,19 @@ warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources i
 warnings.filterwarnings("ignore", message=".*weights_only=False.*")
 import pygame
 import sys
-import os
 
 import numpy as np
-import torch
 
 import chess_engine
-from model import ChessNet
-from mcts import MCTS  # NOUVEL IMPORT
+from mcts import MCTS
 from lib_gui import (
     SQUARE_SIZE,
     pygame_init,
     load_images,
     rendu
 )
-from lib import decode_move_index, move_to_san, print_pgn
+from lib import (decode_move_index, move_to_san, print_pgn,
+                 load_unsupervised_model, load_supervised_model)
 
 # ============================================================
 #                     CONFIGURATION
@@ -27,67 +25,13 @@ from lib import decode_move_index, move_to_san, print_pgn
 HUMAN_COLOR = chess_engine.Color.WHITE
 
 # Met à jour ce chemin vers ton checkpoint issu du self-play
-CHECKPOINT_PATH = "checkpoints/selfplay_iter3.pt"
+CHECKPOINT_PATH = "checkpoints/supervised_best_03_07.ckpt"
 
 NUM_RES_BLOCKS = 10
 NUM_FILTERS = 128
 
 # Règle le nombre de simulations selon la puissance de ton CPU/GPU
-NUM_SIMULATIONS = 400
-
-
-# ============================================================
-#                     CHARGEMENT DU MODÈLE
-# ============================================================
-
-def load_model(checkpoint_path, num_res_blocks, num_filters):
-    """Charge le modèle depuis un checkpoint standard PyTorch."""
-    os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # 1. Instanciation de l'architecture vide
-    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
-
-    # 2. Chargement du fichier
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    # 3. Injection des poids
-    # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"
-    model.load_state_dict(checkpoint["model_state_dict"])
-
-    model.to(device)
-    model.eval()
-
-    print(f"Modèle chargé depuis {checkpoint_path} (device: {device})")
-    return model, device
-
-
-# ============================================================
-#                     LOGIQUE DE L'IA
-# ============================================================
-
-def ai_pick_move(board, model, device, num_simulations):
-    """
-    Utilise le MCTS pour choisir un coup.
-    """
-    legal_indices = board.get_legal_move_indices()
-    if not legal_indices:
-        return None
-
-    # Lancement de l'arbre de recherche. add_dirichlet=False pour l'inférence.
-    pi, _ = MCTS.mcts_search(
-        board, model, device, num_simulations=num_simulations, add_dirichlet=False)
-
-    # En mode compétition, on joue toujours le coup le plus exploré par le MCTS
-    best_idx = np.argmax(pi)
-
-    # Décodage
-    is_black = (board.turn == chess_engine.Color.BLACK)
-    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, best_idx, is_black)
-
-    print(f"IA joue: ({orig_f},{orig_r}) -> ({dest_f},{dest_r}), promo={promo}")
-
-    return orig_f, orig_r, dest_f, dest_r, promo
+NUM_SIMULATIONS = 1000
 
 
 # ============================================================
@@ -99,7 +43,9 @@ def main():
     load_images()
 
     # Chargement du modèle
-    model, device = load_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS)
+    device = "cuda"
+    # model, device = load_unsupervised_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS)
+    model = load_supervised_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS, device)
 
     # Initialisation du plateau
     board = chess_engine.Chessboard()
@@ -166,7 +112,7 @@ def main():
         # Tour de l'IA
         if not is_human_turn and not game_over:
 
-            result = ai_pick_move(board, model, device, NUM_SIMULATIONS)
+            result = MCTS.ai_pick_move_mcts(board, model, device, NUM_SIMULATIONS)
             if result is not None:
                 orig_f, orig_r, dest_f, dest_r, promo = result
                 san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)

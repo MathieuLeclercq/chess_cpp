@@ -4,7 +4,7 @@ import numpy as np
 
 import chess_engine
 
-from lib import decode_move_index
+from lib import decode_move_index, move_to_san
 
 
 class MCTSNode:
@@ -56,9 +56,9 @@ class MCTS:
             orig_f, orig_r, dest_f, dest_r, promo = child.move
             success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo, False)
             if not success:
-                # Coup invalide — ne devrait plus arriver, mais on se protège
-                del node.children[best_idx]
-                return node, moves_played, True  # aborted
+                # Coup invalide — ne devrait plus arriver
+                raise Exception("problème lors de la génération du coup")
+
             node = child
             moves_played += 1
 
@@ -117,7 +117,7 @@ class MCTS:
 
     @staticmethod
     def mcts_search(board, model, device, num_simulations=200, c_puct=1.4,
-                    add_dirichlet=False, batch_size=16):
+                    add_dirichlet=False, batch_size=1):
         """
         MCTS avec évaluation par batch.
         Collecte plusieurs feuilles, fait UN forward pass, puis expand + backup.
@@ -218,3 +218,49 @@ class MCTS:
             pi /= s
 
         return pi, root
+
+    @staticmethod
+    def ai_pick_move_mcts(board, model, device, num_simulations):
+        """
+        Utilise le MCTS pour choisir un coup et affiche l'analyse détaillée des meilleurs coups.
+        """
+        legal_indices = board.get_legal_move_indices()
+        if not legal_indices:
+            return None
+
+        # 1. Lancement de la recherche
+        pi, root = MCTS.mcts_search(
+            board, model, device, num_simulations=num_simulations, add_dirichlet=False,
+            batch_size=16)
+
+        # 2. Trier les indices par nombre de visites (décroissant)
+        # pi contient les probabilités (visites / total_visites)
+        top_indices = np.argsort(pi)[::-1][:3]
+
+        print(f"\n--- Analyse MCTS ({num_simulations} sims) ---")
+
+        is_black = (board.turn == chess_engine.Color.BLACK)
+
+        for i, idx in enumerate(top_indices):
+            if pi[idx] == 0: continue  # On n'affiche pas les coups non visités
+
+            child = root.children[idx]
+            # Décodage pour l'affichage
+            f_o, r_o, f_d, r_d, promo = child.move
+            san = move_to_san(board, f_o, r_o, f_d, r_d, promo)
+
+            # Valeur du point de vue de l'IA (-q_value car l'enfant est le point de vue adverse)
+            val = -child.q_value()
+            prob = pi[idx] * 100
+            visites = child.visit_count
+
+            rank_str = f"#{i + 1}"
+            print(f"{rank_str:3} | {san:6} | Prob: {prob:5.1f}% | Value: {val:+.3f} | N: {visites}")
+
+        # 3. Le meilleur coup reste celui avec l'index 0 du tri (ou l'argmax de pi)
+        best_idx = top_indices[0]
+        best_move = root.children[best_idx].move
+
+        print(f"Coup sélectionné : {move_to_san(board, *best_move)}\n")
+
+        return best_move
