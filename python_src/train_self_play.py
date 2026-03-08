@@ -190,14 +190,22 @@ def pipeline(
 
     # Chargement optionnel du checkpoint supervisé
     if checkpoint_path:
-        from train_supervised import AlphaZeroLightning
-        pretrained = AlphaZeroLightning.load_from_checkpoint(
-            checkpoint_path,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-        )
-        model.load_state_dict(pretrained.model.state_dict())
-        print(f"Checkpoint supervisé chargé: {checkpoint_path}")
+        # from train_supervised import AlphaZeroLightning
+        # pretrained = AlphaZeroLightning.load_from_checkpoint(
+        #     checkpoint_path,
+        #     num_res_blocks=num_res_blocks,
+        #     num_filters=num_filters,
+        # )
+        # model.load_state_dict(pretrained.model.state_dict())
+        # print(f"Checkpoint supervisé chargé: {checkpoint_path}")
+
+        # 2. Chargement du fichier
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+        # 3. Injection des poids
+        # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print(f"Checkpoint non supervisé chargé : {checkpoint_path}")
 
     # Persistants entre les itérations — jamais recréés
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -263,9 +271,9 @@ def pipeline(
 if __name__ == "__main__":
     pipeline(
         num_iterations=15,
-        games_per_iter=10,
-        num_simulations=50,
+        games_per_iter=6,
+        num_simulations=200,
         train_epochs=3,
         batch_size=1024,
-        checkpoint_path="checkpoints/supervised_best_03_07.ckpt",
+        checkpoint_path="checkpoints/selfplay_iter3.pt",
     )
