@@ -5,7 +5,7 @@ import lightning as L
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
-from dataset import ChessDataset
+from dataset import ShardedChessDataset
 from lib import AlphaZeroLightning
 
 torch.set_float32_matmul_precision('medium')
@@ -13,16 +13,21 @@ torch.set_float32_matmul_precision('medium')
 
 if __name__ == "__main__":
     # --- Configuration ---
-    PGN_DIR = "../training_data/clean_pgns"
+    SHARD_DIR = r"D:\dataset_cpp_chess\dataset_shards"
     BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
     wandb_logger = WandbLogger(project="alphazero-chess", name="supervised_phase_1")
 
     # --- Préparation des Données ---
-    dataset = ChessDataset(PGN_DIR)
+    dataset = ShardedChessDataset(SHARD_DIR, shuffle=True)
 
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, num_workers=4)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=4,
+        pin_memory=True
+    )
 
     # --- Callbacks ---
     checkpoint_callback = ModelCheckpoint(
