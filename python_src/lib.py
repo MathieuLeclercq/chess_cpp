@@ -23,12 +23,16 @@ class AlphaZeroLightning(L.LightningModule):
         p_logits, v_pred = self(x)
 
         # 1. Perte de la Policy (Stratégie)
-        # p_logits sort de ta couche Linear sans Softmax, on utilise donc cross_entropy
         policy_loss = F.cross_entropy(p_logits, y_policy)
 
         # 2. Perte de la Value (Évaluation)
-        # v_pred sort d'une activation Tanh (entre -1 et 1), on utilise l'erreur quadratique moyenne
         value_loss = F.mse_loss(v_pred, y_value)
+
+        # 3. Précision Top-1
+        # On extrait l'index du coup ayant la plus forte probabilité (dim=1)
+        preds = torch.argmax(p_logits, dim=1)
+        # On calcule la moyenne des prédictions correctes
+        acc = (preds == y_policy).float().mean()
 
         # Perte totale
         loss = policy_loss + value_loss
@@ -37,6 +41,8 @@ class AlphaZeroLightning(L.LightningModule):
         self.log("train/loss", loss, prog_bar=True)
         self.log("train/policy_loss", policy_loss)
         self.log("train/value_loss", value_loss)
+        # Logging de la précision dans la barre de progression
+        self.log("train/policy_acc", acc, prog_bar=True)
 
         return loss
 

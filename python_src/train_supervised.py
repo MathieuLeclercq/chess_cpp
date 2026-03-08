@@ -5,7 +5,7 @@ import lightning as L
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
-from dataset import ShardedChessDataset
+from sharded_dataset import ShardedChessDataset
 from lib import AlphaZeroLightning
 
 torch.set_float32_matmul_precision('medium')
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
-    wandb_logger = WandbLogger(project="alphazero-chess", name="supervised_phase_1")
+    wandb_logger = WandbLogger(project="alphazero-chess", name="supervised_phase_2_lichess")
 
     # --- Préparation des Données ---
     dataset = ShardedChessDataset(SHARD_DIR, shuffle=True)
@@ -39,7 +39,13 @@ if __name__ == "__main__":
     )
 
     # --- Instanciation ---
-    model = AlphaZeroLightning(learning_rate=1e-3, num_res_blocks=10, num_filters=128)
+    # model = AlphaZeroLightning(learning_rate=1e-3, num_res_blocks=10, num_filters=128)
+    model = AlphaZeroLightning.load_from_checkpoint(
+        "checkpoints/supervised_best_03_07.ckpt",
+        learning_rate=1e-3,
+        num_res_blocks=10,
+        num_filters=128
+    )
 
     # --- Entraînement ---
     trainer = L.Trainer(
@@ -54,5 +60,4 @@ if __name__ == "__main__":
     trainer.fit(
         model,
         train_dataloaders=dataloader,
-        # ckpt_path=r"checkpoints\alphazero-supervised-step=5000.ckpt"
     )
