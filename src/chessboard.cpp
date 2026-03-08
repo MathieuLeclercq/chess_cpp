@@ -116,332 +116,6 @@ GameState Chessboard::getGameState() const
     return this->current_state;
 }
 
-std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
-{
-    // pour une case, retourne la liste des cases de déplacement dispos.
-    // C'est un check naïf : il ne repère pas les clouages.
-    // Il ne check pas non plus si le roque est safe
-
-    Square orig_square = board[rank * 8 + file];
-    std::vector<Move> legalMoves;
-    PieceType type = orig_square.getPiece().getType();
-    Color color = orig_square.getPiece().getColor();
-
-    Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
-
-    // Fonction lambda pour gérer automatiquement les sous-promotions
-    auto addMove = [&](const Square& target_square) {
-        if (type == PAWN && (target_square.getRank() == 0 || target_square.getRank() == 7))
-        {
-            legalMoves.push_back(Move(orig_square, target_square, QUEEN));
-            legalMoves.push_back(Move(orig_square, target_square, ROOK));
-            legalMoves.push_back(Move(orig_square, target_square, BISHOP));
-            legalMoves.push_back(Move(orig_square, target_square, KNIGHT));
-        }
-        else
-        {
-            legalMoves.push_back(Move(orig_square, target_square, NONE));
-        }
-        };
-
-    switch (type)
-    {
-    case PAWN:
-    {
-        if (color == WHITE && rank < 7 && this->board[(rank + 1) * 8 + file].CheckOccupied() == false)
-        {
-            addMove(this->board[(rank + 1) * 8 + file]);
-            if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false) // peut avancer de 2 au premier coup
-            {
-                addMove(this->board[(rank + 2) * 8 + file]);
-            }
-        }
-        else if (color == BLACK && rank > 0 && this->board[(rank - 1) * 8 + file].CheckOccupied() == false)
-        {
-            addMove(this->board[(rank - 1) * 8 + file]);
-            if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)  // peut avancer de 2 au premier coup
-            {
-                addMove(this->board[(rank - 2) * 8 + file]);
-            }
-        }
-
-        if (color == WHITE && rank < 7)
-        {
-            if (file < 7 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + 1) * 8 + (file + 1)]);
-            }
-            if (file > 0 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + 1) * 8 + (file - 1)]);
-            }
-            if (this->en_passant && rank == 4 && abs(file - this->en_passant_file) == 1)
-            {
-                addMove(this->board[(rank + 1) * 8 + this->en_passant_file]);
-            }
-        }
-        else if (color == BLACK && rank > 0)
-        {
-            if (file < 7 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - 1) * 8 + (file + 1)]);
-            }
-            if (file > 0 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - 1) * 8 + (file - 1)]);
-            }
-            if (this->en_passant && rank == 3 && abs(file - this->en_passant_file) == 1)
-            {
-                addMove(this->board[(rank - 1) * 8 + this->en_passant_file]);
-            }
-        }
-        break;
-    }
-    case ROOK:
-    {
-        for (int i = rank + 1; i < 8; i++) // top
-        {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[i * 8 + file]);
-                break;
-            }
-            else break;
-        }
-        for (int i = rank - 1; i > -1; i--) // bottom
-        {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[i * 8 + file]);
-                break;
-            }
-            else break;
-        }
-        for (int i = file + 1; i < 8; i++) // right
-        {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[rank * 8 + i]);
-                break;
-            }
-            else break;
-        }
-        for (int i = file - 1; i > -1; i--) // left
-        {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[rank * 8 + i]);
-                break;
-            }
-            else break;
-        }
-        break;
-    }
-    case KNIGHT:
-    {
-        if (file + 2 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file + 2)]);
-        if (file + 2 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file + 2)]);
-        if (file - 2 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file - 2)]);
-        if (file - 2 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file - 2)]);
-        if (file + 1 < 8 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 2) * 8 + (file + 1)]);
-        if (file + 1 < 8 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 2) * 8 + (file + 1)]);
-        if (file - 1 > -1 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 2) * 8 + (file - 1)]);
-        if (file - 1 > -1 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 2) * 8 + (file - 1)]);
-        break;
-    }
-    case BISHOP:
-    {
-        for (int i = 1; i < 8; i++) // up right
-        {
-            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // up left
-        {
-            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // down right
-        {
-            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // down left
-        {
-            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-                break;
-            }
-            else break;
-        }
-        break;
-    }
-    case QUEEN:
-    {
-        // Combinaison des logiques ROOK et BISHOP
-        for (int i = rank + 1; i < 8; i++)  // up
-        {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[i * 8 + file]);
-                break;
-            }
-            else break;
-        }
-        for (int i = rank - 1; i > -1; i--) // down
-        {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[i * 8 + file]);
-                break;
-            }
-            else break;
-        }
-        for (int i = file + 1; i < 8; i++) // right
-        {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[rank * 8 + i]);
-                break;
-            }
-            else break;
-        }
-        for (int i = file - 1; i > -1; i--) // left
-        {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[rank * 8 + i]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // up right
-        {
-            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // up left
-        {
-            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // down right
-        {
-            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-                break;
-            }
-            else break;
-        }
-        for (int i = 1; i < 8; i++) // down left
-        {
-            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
-            {
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-                break;
-            }
-            else break;
-        }
-        break;
-    }
-    case KING:
-    {
-        if (file + 1 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file + 1)]);
-        if (file + 1 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file + 1)]);
-        if (file - 1 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file - 1)]);
-        if (file - 1 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file - 1)]);
-        if (file + 1 < 8 && this->board[rank * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[rank * 8 + (file + 1)]);
-        if (file - 1 > -1 && this->board[rank * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[rank * 8 + (file - 1)]);
-        if (rank + 1 < 8 && this->board[(rank + 1) * 8 + file].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + file]);
-        if (rank - 1 > -1 && this->board[(rank - 1) * 8 + file].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + file]);
-
-        // short castle
-        if (color == WHITE && this->short_castle_white == true && this->board[0 * 8 + 5].CheckOccupied() == false && this->board[0 * 8 + 6].CheckOccupied() == false)
-            addMove(this->board[0 * 8 + 6]);
-        if (color == BLACK && this->short_castle_black == true && this->board[7 * 8 + 5].CheckOccupied() == false && this->board[7 * 8 + 6].CheckOccupied() == false)
-            addMove(this->board[7 * 8 + 6]);
-        // long castle
-        if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false &&
-            this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
-            addMove(this->board[0 * 8 + 2]);
-        if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false &&
-            this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
-            addMove(this->board[7 * 8 + 2]);
-        break;
-    }
-    }
-    return legalMoves;
-}
 
 bool Chessboard::isInCheck() const
 {
@@ -961,6 +635,8 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
 
     for (int i = 0; i <= 2; i++)
     {
+
+        this->setBoard(original_board);
         int current_file = orig_file + (i * dir);
 
         this->board[orig_rank * 8 + current_file].setPiece(king_piece);
@@ -984,25 +660,6 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     }
     this->setBoard(original_board);
     return true;
-}
-
-void Chessboard::createAndPushSnapshot()
-{
-    StateSnapshot snapshot;
-    snapshot.short_castle_white = this->short_castle_white;
-    snapshot.long_castle_white = this->long_castle_white;
-    snapshot.short_castle_black = this->short_castle_black;
-    snapshot.long_castle_black = this->long_castle_black;
-    snapshot.en_passant = this->en_passant;
-    snapshot.en_passant_file = this->en_passant_file;
-    snapshot.half_move_clock = this->half_move_clock;
-    snapshot.current_state = this->current_state;
-    snapshot.white_king_file = this->white_king_file;
-    snapshot.white_king_rank = this->white_king_rank;
-    snapshot.black_king_file = this->black_king_file;
-    snapshot.black_king_rank = this->black_king_rank;
-
-    this->snapshotHistory.push_back(snapshot);
 }
 
 void Chessboard::evaluateGameState()
@@ -1039,6 +696,21 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     {
         return false;
     }
+
+    // 1. CAPTURE DE L'ÉTAT AVANT TOUTE MODIFICATION
+    StateSnapshot snapshot_before_move;
+    snapshot_before_move.short_castle_white = this->short_castle_white;
+    snapshot_before_move.long_castle_white = this->long_castle_white;
+    snapshot_before_move.short_castle_black = this->short_castle_black;
+    snapshot_before_move.long_castle_black = this->long_castle_black;
+    snapshot_before_move.en_passant = this->en_passant;
+    snapshot_before_move.en_passant_file = this->en_passant_file;
+    snapshot_before_move.half_move_clock = this->half_move_clock;
+    snapshot_before_move.current_state = this->current_state;
+    snapshot_before_move.white_king_file = this->white_king_file;
+    snapshot_before_move.white_king_rank = this->white_king_rank;
+    snapshot_before_move.black_king_file = this->black_king_file;
+    snapshot_before_move.black_king_rank = this->black_king_rank;
 
     // 2. Création du coup tenté
     Move attempted_move(first_square, second_square, promotion);
@@ -1094,8 +766,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
         if (this->isInCheck())
         {
-            //std::cout << "Illegal move." << std::endl;
-            
+            //std::cout << "Illegal move." << std::endl
 
             // Restauration du cache
             if (is_king_move)
@@ -1112,7 +783,8 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             return false;
         }
 
-        this->createAndPushSnapshot();
+        // A PARTIR D'ICI LE COUP EST VALIDE
+        this->snapshotHistory.push_back(snapshot_before_move);
 
         this->checkPromotion(second_square, promotion);
         this->updateHistory(attempted_move);
@@ -1387,4 +1059,332 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
     }
 
     return tensor;
+}
+
+
+std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
+{
+    // pour une case, retourne la liste des cases de déplacement dispos.
+    // C'est un check naïf : il ne repère pas les clouages.
+    // Il ne check pas non plus si le roque est safe
+
+    Square orig_square = board[rank * 8 + file];
+    std::vector<Move> legalMoves;
+    PieceType type = orig_square.getPiece().getType();
+    Color color = orig_square.getPiece().getColor();
+
+    Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
+
+    // Fonction lambda pour gérer automatiquement les sous-promotions
+    auto addMove = [&](const Square& target_square) {
+        if (type == PAWN && (target_square.getRank() == 0 || target_square.getRank() == 7))
+        {
+            legalMoves.push_back(Move(orig_square, target_square, QUEEN));
+            legalMoves.push_back(Move(orig_square, target_square, ROOK));
+            legalMoves.push_back(Move(orig_square, target_square, BISHOP));
+            legalMoves.push_back(Move(orig_square, target_square, KNIGHT));
+        }
+        else
+        {
+            legalMoves.push_back(Move(orig_square, target_square, NONE));
+        }
+        };
+
+    switch (type)
+    {
+    case PAWN:
+    {
+        if (color == WHITE && rank < 7 && this->board[(rank + 1) * 8 + file].CheckOccupied() == false)
+        {
+            addMove(this->board[(rank + 1) * 8 + file]);
+            if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false) // peut avancer de 2 au premier coup
+            {
+                addMove(this->board[(rank + 2) * 8 + file]);
+            }
+        }
+        else if (color == BLACK && rank > 0 && this->board[(rank - 1) * 8 + file].CheckOccupied() == false)
+        {
+            addMove(this->board[(rank - 1) * 8 + file]);
+            if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)  // peut avancer de 2 au premier coup
+            {
+                addMove(this->board[(rank - 2) * 8 + file]);
+            }
+        }
+
+        if (color == WHITE && rank < 7)
+        {
+            if (file < 7 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + 1) * 8 + (file + 1)]);
+            }
+            if (file > 0 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + 1) * 8 + (file - 1)]);
+            }
+            if (this->en_passant && rank == 4 && abs(file - this->en_passant_file) == 1)
+            {
+                addMove(this->board[(rank + 1) * 8 + this->en_passant_file]);
+            }
+        }
+        else if (color == BLACK && rank > 0)
+        {
+            if (file < 7 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - 1) * 8 + (file + 1)]);
+            }
+            if (file > 0 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - 1) * 8 + (file - 1)]);
+            }
+            if (this->en_passant && rank == 3 && abs(file - this->en_passant_file) == 1)
+            {
+                addMove(this->board[(rank - 1) * 8 + this->en_passant_file]);
+            }
+        }
+        break;
+    }
+    case ROOK:
+    {
+        for (int i = rank + 1; i < 8; i++) // top
+        {
+            if (this->board[i * 8 + file].CheckOccupied() == false)
+                addMove(this->board[i * 8 + file]);
+            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[i * 8 + file]);
+                break;
+            }
+            else break;
+        }
+        for (int i = rank - 1; i > -1; i--) // bottom
+        {
+            if (this->board[i * 8 + file].CheckOccupied() == false)
+                addMove(this->board[i * 8 + file]);
+            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[i * 8 + file]);
+                break;
+            }
+            else break;
+        }
+        for (int i = file + 1; i < 8; i++) // right
+        {
+            if (this->board[rank * 8 + i].CheckOccupied() == false)
+                addMove(this->board[rank * 8 + i]);
+            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[rank * 8 + i]);
+                break;
+            }
+            else break;
+        }
+        for (int i = file - 1; i > -1; i--) // left
+        {
+            if (this->board[rank * 8 + i].CheckOccupied() == false)
+                addMove(this->board[rank * 8 + i]);
+            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[rank * 8 + i]);
+                break;
+            }
+            else break;
+        }
+        break;
+    }
+    case KNIGHT:
+    {
+        if (file + 2 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 2)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 1) * 8 + (file + 2)]);
+        if (file + 2 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 2)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 1) * 8 + (file + 2)]);
+        if (file - 2 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 2)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 1) * 8 + (file - 2)]);
+        if (file - 2 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 2)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 1) * 8 + (file - 2)]);
+        if (file + 1 < 8 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 2) * 8 + (file + 1)]);
+        if (file + 1 < 8 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 2) * 8 + (file + 1)]);
+        if (file - 1 > -1 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 2) * 8 + (file - 1)]);
+        if (file - 1 > -1 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 2) * 8 + (file - 1)]);
+        break;
+    }
+    case BISHOP:
+    {
+        for (int i = 1; i < 8; i++) // up right
+        {
+            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // up left
+        {
+            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // down right
+        {
+            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // down left
+        {
+            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
+                break;
+            }
+            else break;
+        }
+        break;
+    }
+    case QUEEN:
+    {
+        // Combinaison des logiques ROOK et BISHOP
+        for (int i = rank + 1; i < 8; i++)  // up
+        {
+            if (this->board[i * 8 + file].CheckOccupied() == false)
+                addMove(this->board[i * 8 + file]);
+            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[i * 8 + file]);
+                break;
+            }
+            else break;
+        }
+        for (int i = rank - 1; i > -1; i--) // down
+        {
+            if (this->board[i * 8 + file].CheckOccupied() == false)
+                addMove(this->board[i * 8 + file]);
+            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[i * 8 + file]);
+                break;
+            }
+            else break;
+        }
+        for (int i = file + 1; i < 8; i++) // right
+        {
+            if (this->board[rank * 8 + i].CheckOccupied() == false)
+                addMove(this->board[rank * 8 + i]);
+            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[rank * 8 + i]);
+                break;
+            }
+            else break;
+        }
+        for (int i = file - 1; i > -1; i--) // left
+        {
+            if (this->board[rank * 8 + i].CheckOccupied() == false)
+                addMove(this->board[rank * 8 + i]);
+            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[rank * 8 + i]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // up right
+        {
+            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + i) * 8 + (file + i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // up left
+        {
+            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank + i) * 8 + (file - i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // down right
+        {
+            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - i) * 8 + (file + i)]);
+                break;
+            }
+            else break;
+        }
+        for (int i = 1; i < 8; i++) // down left
+        {
+            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            {
+                addMove(this->board[(rank - i) * 8 + (file - i)]);
+                break;
+            }
+            else break;
+        }
+        break;
+    }
+    case KING:
+    {
+        if (file + 1 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 1) * 8 + (file + 1)]);
+        if (file + 1 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 1) * 8 + (file + 1)]);
+        if (file - 1 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank + 1) * 8 + (file - 1)]);
+        if (file - 1 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(this->board[(rank - 1) * 8 + (file - 1)]);
+        if (file + 1 < 8 && this->board[rank * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(this->board[rank * 8 + (file + 1)]);
+        if (file - 1 > -1 && this->board[rank * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(this->board[rank * 8 + (file - 1)]);
+        if (rank + 1 < 8 && this->board[(rank + 1) * 8 + file].getPiece().getColor() != color)
+            addMove(this->board[(rank + 1) * 8 + file]);
+        if (rank - 1 > -1 && this->board[(rank - 1) * 8 + file].getPiece().getColor() != color)
+            addMove(this->board[(rank - 1) * 8 + file]);
+
+        // short castle
+        if (color == WHITE && this->short_castle_white == true && this->board[0 * 8 + 5].CheckOccupied() == false && this->board[0 * 8 + 6].CheckOccupied() == false)
+            addMove(this->board[0 * 8 + 6]);
+        if (color == BLACK && this->short_castle_black == true && this->board[7 * 8 + 5].CheckOccupied() == false && this->board[7 * 8 + 6].CheckOccupied() == false)
+            addMove(this->board[7 * 8 + 6]);
+        // long castle
+        if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false &&
+            this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
+            addMove(this->board[0 * 8 + 2]);
+        if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false &&
+            this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
+            addMove(this->board[7 * 8 + 2]);
+        break;
+    }
+    }
+    return legalMoves;
 }

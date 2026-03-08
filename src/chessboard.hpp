@@ -61,7 +61,6 @@ class Chessboard
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
     bool checkThreefoldRepetition() const;
-    void createAndPushSnapshot();
     void evaluateGameState();
 
     public:
