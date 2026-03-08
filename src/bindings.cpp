@@ -76,6 +76,7 @@ PYBIND11_MODULE(chess_engine, m) {
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
+        .def("get_board_history", static_cast<const std::vector<std::array<Square, 64>>&(Chessboard::*)() const>(&Chessboard::getBoardHistory))
         .def("get_last_move_data", [](const Chessboard& cb) {
         if (cb.getMoveHistory().empty()) return py::make_tuple(-1, -1, -1, -1, NONE);
         const Move& last_move = cb.getMoveHistory().back();

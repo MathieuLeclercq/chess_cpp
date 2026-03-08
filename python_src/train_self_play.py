@@ -250,8 +250,8 @@ def pipeline(
 
         # ── 3. Sauvegarde ──
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"checkpoints/selfplay_iter{iteration + 1}_{timestamp}.pt"
+        timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
+        save_path = f"checkpoints/{timestamp}_selfplay_iter{iteration + 1}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -272,5 +272,5 @@ if __name__ == "__main__":
         num_simulations=200,
         train_epochs=3,
         batch_size=1024,
-        checkpoint_path="checkpoints/selfplay_iter1.pt",
+        checkpoint_path="checkpoints/selfplay_iter4_20260308_145240.pt",
     )

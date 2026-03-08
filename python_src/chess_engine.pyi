@@ -3,12 +3,15 @@ Moteur d'échecs C++ bindé pour Python
 """
 from __future__ import annotations
 import numpy
+import pybind11_stubgen.typing_ext
 import typing
 __all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
 class Chessboard:
     def __init__(self) -> None:
         ...
     def get_alphazero_tensor(self) -> numpy.ndarray[numpy.float32]:
+        ...
+    def get_board_history(self) -> list[typing.Annotated[list[Square], pybind11_stubgen.typing_ext.FixedSize(64)]]:
         ...
     def get_last_move_data(self) -> tuple:
         ...
