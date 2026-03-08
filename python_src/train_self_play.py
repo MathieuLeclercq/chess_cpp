@@ -2,12 +2,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
 import wandb
 import os
 
 import chess_engine
-from lib import decode_move_index
+from lib import decode_move_index, move_to_san, print_pgn
 from mcts import MCTS
 from model import ChessNet
 
@@ -28,7 +28,7 @@ class SelfPlayDataset(Dataset):
         return (
             torch.from_numpy(tensor_np).float(),
             torch.from_numpy(pi).float(),
-            torch.tensor([value], dtype=torch.float32),
+            torch.tensor(value, dtype=torch.float32)
         )
 
 
@@ -36,11 +36,12 @@ class SelfPlayDataset(Dataset):
 #                     SELF-PLAY
 # ============================================================
 
-def self_play_game(model, device, num_simulations=200, max_moves=300):
+def self_play_game(model, device, num_simulations=200, max_moves=100):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
 
     history = []
+    san_moves = []
     move_num = 0
 
     while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
@@ -58,9 +59,30 @@ def self_play_game(model, device, num_simulations=200, max_moves=300):
 
         is_black = (board.turn == chess_engine.Color.BLACK)
         orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, chosen_idx, is_black)
-        board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
+
+        # Debug : vérifier que la pièce existe
+        piece = board.get_square(orig_f, orig_r).get_piece()
+        if piece.get_type() == chess_engine.PieceType.NONE:
+            print(f"BUG: case vide à ({orig_f},{orig_r}), index={chosen_idx}, is_black={is_black}")
+            print(f"  plane={chosen_idx // 64}, remainder={chosen_idx % 64}")
+            print(f"  legal_indices={board.get_legal_move_indices()}")
+            print(f"  chosen_idx in legal: {chosen_idx in board.get_legal_move_indices()}")
+            break
+
+        san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)
+        success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
+        if not success:
+            print(f"SELF-PLAY ERROR: move failed ({orig_f},{orig_r})->({dest_f},{dest_r})")
+            break
+
+        if board.game_state == chess_engine.GameState.CHECKMATE:
+            san += "#"
+        elif board.is_in_check():
+            san += "+"
+        san_moves.append(san)
         move_num += 1
 
+    print_pgn(board, san_moves)
     z = 0.0
     if board.game_state == chess_engine.GameState.CHECKMATE:
         z = 1.0  # history[-1] est la position du gagnant
@@ -117,11 +139,11 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 
             optimizer.zero_grad()
 
-            with autocast(device_type="cuda", enabled=(device.type == "cuda")):
+            with torch.autocast(device_type="cuda", enabled=(device.type == "cuda")):
                 p_logits, v_pred = model(x)
                 log_probs = F.log_softmax(p_logits, dim=1)
                 policy_loss = -torch.sum(target_pi * log_probs, dim=1).mean()
-                value_loss = F.mse_loss(v_pred, y_value)
+                value_loss = F.mse_loss(v_pred.view(-1), y_value)
                 loss = policy_loss + value_loss
 
             scaler.scale(loss).backward()
@@ -167,7 +189,7 @@ def pipeline(
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
 
     # Chargement optionnel du checkpoint supervisé
-    if checkpoint_path and os.path.exists(checkpoint_path):
+    if checkpoint_path:
         from train_supervised import AlphaZeroLightning
         pretrained = AlphaZeroLightning.load_from_checkpoint(
             checkpoint_path,
@@ -240,10 +262,10 @@ def pipeline(
 
 if __name__ == "__main__":
     pipeline(
-        num_iterations=10,
-        games_per_iter=20,
-        num_simulations=200,
-        train_epochs=10,
-        batch_size=256,
-        checkpoint_path="checkpoints/last.ckpt",
+        num_iterations=15,  # Un peu plus d'itérations
+        games_per_iter=10,  # BEAUCOUP plus de parties pour la diversité des données
+        num_simulations=50,  # OK pour l'instant
+        train_epochs=3,  # Moins d'epochs pour ne pas overfitter sur le nouveau buffer
+        batch_size=512,
+        checkpoint_path="checkpoints/supervised_best_03_07.ckpt",
     )

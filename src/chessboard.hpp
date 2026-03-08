@@ -59,7 +59,7 @@ class Chessboard
     std::vector<std::array<Square, 64>> boardHistory;
     std::vector<StateSnapshot> snapshotHistory;
 
-    bool isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy);
+    bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
     bool checkThreefoldRepetition() const;
     void createAndPushSnapshot();
     void evaluateGameState();

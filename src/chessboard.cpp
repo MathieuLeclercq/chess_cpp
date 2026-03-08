@@ -565,10 +565,8 @@ void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& r
 
         if (is_king_move && std::abs(file - dest_file) == 2)
         {
-            std::array<Square, 64> board_copy = this->board;
-            if (!this->isCastlePossible(file, rank, dest_file, dest_rank, board_copy))
+            if (!this->isCastlePossible(file, rank, dest_file, dest_rank))
                 continue;
-            this->board = board_copy;
         }
 
         if (is_king_move) {
@@ -640,10 +638,9 @@ bool Chessboard::hasAnyLegalMove()
 
                 if (is_king_move && std::abs(i - dest_file) == 2)
                 {
-                    std::array<Square, 64> board_copy = this->board;
-                    if (!this->isCastlePossible(i, j, dest_file, dest_rank, board_copy))
+                    if (!this->isCastlePossible(i, j, dest_file, dest_rank))
                         continue;
-                    this->board = board_copy;
+                    //this->board = board_copy;
                 }
 
                 if (is_king_move) {
@@ -951,17 +948,13 @@ void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion
     }
 }
 
-bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int rank, const std::array<Square, 64>& board_copy)
+bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int rank)
 {
-    // check si le roque est safe (pas d'attaques de pièces sur le chemin).
-    // pas possible non plus de roquer si on est en échec
+    std::array<Square, 64> original_board = this->board;
     bool short_castle = (file == 6);
     bool long_castle = (file == 2);
 
-    if (!short_castle && !long_castle)
-    {
-        return false;
-    }
+    if (!short_castle && !long_castle) return false;
 
     int dir = short_castle ? 1 : -1;
     Piece king_piece = this->board[orig_rank * 8 + orig_file].getPiece();
@@ -969,52 +962,27 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     for (int i = 0; i <= 2; i++)
     {
         int current_file = orig_file + (i * dir);
-        this->setBoard(board_copy);
 
-        // On place le roi sur la case testée et on vide l'origine (si on a bougé)
         this->board[orig_rank * 8 + current_file].setPiece(king_piece);
         if (current_file != orig_file) {
             this->board[orig_rank * 8 + orig_file].setPiece(Piece());
         }
 
-        // Mise à jour temporaire du cache des coordonnées pour checkForCheck()
-        if (this->turn == WHITE) {
-            this->white_king_file = current_file;
-        }
-        else {
-            this->black_king_file = current_file;
-        }
+        if (this->turn == WHITE) this->white_king_file = current_file;
+        else this->black_king_file = current_file;
 
         bool is_checked = this->isInCheck();
-        if (this->turn == WHITE) {
-            this->white_king_file = orig_file;
-        }
-        else {
-            this->black_king_file = orig_file;
-        }
+
+        if (this->turn == WHITE) this->white_king_file = orig_file;
+        else this->black_king_file = orig_file;
 
         if (is_checked)
         {
-            //std::cout << "You cannot castle: there are threats on the way." << std::endl;
-            this->setBoard(board_copy);
+            this->setBoard(original_board);
             return false;
         }
     }
-
-    // On restaure le plateau propre avant de valider les mouvements finaux
-    this->setBoard(board_copy);
-
-    // On est sûr que le castle est valide : on bouge la tour
-    if (short_castle)
-    {
-        this->board[rank * 8 + 5].setPiece(Piece(this->turn, ROOK));
-        this->board[rank * 8 + 7].setPiece(Piece());
-    }
-    else if (long_castle)
-    {
-        this->board[rank * 8 + 3].setPiece(Piece(this->turn, ROOK));
-        this->board[rank * 8 + 0].setPiece(Piece());
-    }
+    this->setBoard(original_board);
     return true;
 }
 
@@ -1078,7 +1046,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     // 3. Validation
     if (std::find(legalMoves.begin(), legalMoves.end(), attempted_move) != legalMoves.end())
     {
-        std::array<Square, 64> board_copy = this->board;
+        std::array<Square, 64> board_copy_before_move = this->board;
 
         Piece moving_piece = first_square.getPiece();
         bool is_king_move = (moving_piece.getType() == KING);
@@ -1089,11 +1057,19 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
             abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
         bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
 
+
         // Roque
         if (is_king_move && abs(orig_file - file) == 2)
         {
-            if (!this->isCastlePossible(orig_file, orig_rank, file, rank, board_copy))
+            if (!this->isCastlePossible(orig_file, orig_rank, file, rank))
                 return false;
+
+            // Déplacement physique de la Tour
+            int rook_orig_file = (file > orig_file) ? 7 : 0; // Tour h (7) pour petit roque, a (0) pour grand
+            int rook_dest_file = (file > orig_file) ? 5 : 3; // Tour atterrit en f (5) ou d (3)
+
+            this->board[rank * 8 + rook_dest_file].setPiece(this->board[rank * 8 + rook_orig_file].getPiece());
+            this->board[rank * 8 + rook_orig_file].setPiece(Piece());
         }
 
         // Prise en passant
@@ -1119,7 +1095,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         if (this->isInCheck())
         {
             //std::cout << "Illegal move." << std::endl;
-            this->setBoard(board_copy);
+            
 
             // Restauration du cache
             if (is_king_move)
@@ -1131,6 +1107,8 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
                     this->black_king_file = orig_file; this->black_king_rank = orig_rank;
                 }
             }
+
+            this->setBoard(board_copy_before_move);
             return false;
         }
 
