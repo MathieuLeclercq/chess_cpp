@@ -6,12 +6,8 @@ import chess_engine
 
 from lib import decode_move_index
 
-_first_failure_logged = False  # en haut du fichier ou dans la classe
-
 
 class MCTSNode:
-    _first_failure_logged = False
-
     def __init__(self, prior, move=None, parent=None):
         self.move = move  # (orig_f, orig_r, dest_f, dest_r, promo)
         self.parent = parent
@@ -28,114 +24,80 @@ class MCTSNode:
 
     def ucb_score(self, parent_visits, c_puct=1.4):
         u = c_puct * self.prior * math.sqrt(parent_visits) / (1 + self.visit_count)
-        return -self.q_value() + u  # négatif : le parent est l'adversaire
+        return -self.q_value() + u
+
+
+def backup(node, value):
+    """Remonte la valeur dans l'arbre en alternant le signe."""
+    while node is not None:
+        node.visit_count += 1
+        node.total_value += value
+        value = -value
+        node = node.parent
 
 
 class MCTS:
 
     @staticmethod
-    def is_terminal(board):
-        return board.game_state != chess_engine.GameState.ONGOING
-
-    @staticmethod
-    def terminal_value(board):
-        """Retourne la value du point de vue du joueur qui VIENT de jouer (le parent)."""
-        state = board.game_state
-        if state == chess_engine.GameState.CHECKMATE:
-            return -1.0  # le joueur au trait a perdu → celui qui a joué a gagné
-        return 0.0  # pat, répétition, 50 coups
-
-    @staticmethod
-    def mcts_search(board, model, device, num_simulations=800, c_puct=1.4, add_dirichlet=False):
+    def select_leaf(root, board, c_puct):
         """
-        Retourne le vecteur de probabilités pi (basé sur les visites)
-        et la value de la position racine.
+        Descend dans l'arbre en suivant UCB jusqu'à une feuille.
+        Retourne (node, moves_played, aborted).
         """
-        root = MCTSNode(prior=0.0)
+        node = root
+        moves_played = 0
 
-        MCTS.expand_node(root, board, model, device)
+        while node.children and not node.is_terminal:
+            best_idx = max(
+                node.children,
+                key=lambda idx: node.children[idx].ucb_score(node.visit_count, c_puct)
+            )
+            child = node.children[best_idx]
+            orig_f, orig_r, dest_f, dest_r, promo = child.move
+            success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo, False)
+            if not success:
+                # Coup invalide — ne devrait plus arriver, mais on se protège
+                del node.children[best_idx]
+                return node, moves_played, True  # aborted
+            node = child
+            moves_played += 1
 
-        if add_dirichlet and root.children:
-            epsilon = 0.25  # Fraction du bruit (25%)
-            alpha = 0.3  # Paramètre de la distribution pour les échecs
-
-            # Génération d'un vecteur de bruit de la taille du nombre de coups légaux
-            noise = np.random.dirichlet([alpha] * len(root.children))
-
-            # Mélange des priors du réseau avec le bruit
-            for i, (idx, child) in enumerate(root.children.items()):
-                child.prior = (1 - epsilon) * child.prior + epsilon * noise[i]
-
-        MCTS._first_failure_logged = False
-        # Lancement des simulations
-        for _ in range(num_simulations):
-            node = root
-            moves_played = 0
-
-            # 1. SELECT
-            while node.children and not node.is_terminal:
-                best_idx = max(node.children,
-                               key=lambda idx: node.children[idx].ucb_score(node.visit_count,
-                                                                            c_puct))
-                child = node.children[best_idx]
-                orig_f, orig_r, dest_f, dest_r, promo = child.move
-                success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo, False)
-                if not success:
-                    if not MCTS._first_failure_logged:
-                        MCTS._first_failure_logged = True
-                        piece = board.get_square(orig_f, orig_r).get_piece()
-                        print(f"=== FIRST MCTS FAILURE ===")
-                        print(
-                            f"  Move: ({orig_f},{orig_r})->({dest_f},{dest_r}), promo={promo}")
-                    # break  # CRUCIAL : ne pas incrémenter moves_played
-                    raise ValueError("problème dans la génération du coup.")
-                node = child
-                moves_played += 1
-
-            # 2. EVALUATE / EXPAND
-            if node.is_terminal:
-                # Noeud terminal déjà connu : relire la valeur directement
-                if board.is_in_check():
-                    value = -1.0
-                else:
-                    value = 0.0
-            elif not node.children:
-                value = MCTS.expand_node(node, board, model, device)
-            else:
-                value = node.q_value()  # fallback, ne devrait pas arriver
-
-            # 3. BACKUP
-            while node is not None:
-                node.visit_count += 1
-                node.total_value += value
-                value = -value
-                node = node.parent
-
-            for _ in range(moves_played):
-                board.undo_move()
-
-        # Construire le vecteur de policy (basé sur les visites)
-        pi = np.zeros(4672, dtype=np.float32)
-        for idx, child in root.children.items():
-            pi[idx] = child.visit_count
-
-        sum_visits = pi.sum()
-        if sum_visits > 0:
-            pi /= sum_visits
-
-        return pi, root
+        return node, moves_played, False
 
     @staticmethod
-    def expand_node(node, board, model, device):
+    def expand_node_from_results(node, legal_indices, decoded_moves, policy, value):
+        """
+        Expanse un nœud avec les résultats d'un forward pass déjà effectué.
+        """
+        legal_probs = np.array([policy[idx] for idx in legal_indices], dtype=np.float32)
+        s = legal_probs.sum()
+        if s > 0:
+            legal_probs /= s
+        else:
+            legal_probs = np.ones(len(legal_indices), dtype=np.float32) / len(legal_indices)
+
+        for i, idx in enumerate(legal_indices):
+            node.children[idx] = MCTSNode(
+                prior=legal_probs[i],
+                move=decoded_moves[i],
+                parent=node
+            )
+
+        return value
+
+    @staticmethod
+    def expand_node_single(node, board, model, device):
+        """
+        Expansion classique (un seul nœud). Utilisé pour la racine.
+        """
         legal_indices = board.get_legal_move_indices()
 
-        # Position terminale : pas de coups légaux
         if not legal_indices:
             node.is_terminal = True
             if board.is_in_check():
-                return -1.0  # mat : le joueur au trait a perdu
+                return -1.0
             else:
-                return 0.0  # pat
+                return 0.0
 
         tensor = torch.from_numpy(board.get_alphazero_tensor()).float().unsqueeze(0).to(device)
 
@@ -146,22 +108,113 @@ class MCTS:
         value = v.item()
 
         is_black = (board.turn == chess_engine.Color.BLACK)
-        legal_probs = np.zeros(len(legal_indices), dtype=np.float32)
-        for i, idx in enumerate(legal_indices):
-            legal_probs[i] = policy[idx]
 
-        sum_probs = np.sum(legal_probs)
-        if sum_probs > 0:
-            legal_probs /= sum_probs
-        else:
-            legal_probs = np.ones(len(legal_indices), dtype=np.float32) / len(legal_indices)
+        decoded_moves = []
+        for idx in legal_indices:
+            decoded_moves.append(decode_move_index(board, idx, is_black))
 
-        for i, idx in enumerate(legal_indices):
-            orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, idx, is_black)
-            node.children[idx] = MCTSNode(
-                prior=legal_probs[i],
-                move=(orig_f, orig_r, dest_f, dest_r, promo),
-                parent=node
-            )
+        return MCTS.expand_node_from_results(node, legal_indices, decoded_moves, policy, value)
 
-        return value
+    @staticmethod
+    def mcts_search(board, model, device, num_simulations=200, c_puct=1.4,
+                    add_dirichlet=False, batch_size=16):
+        """
+        MCTS avec évaluation par batch.
+        Collecte plusieurs feuilles, fait UN forward pass, puis expand + backup.
+        """
+        root = MCTSNode(prior=0.0)
+
+        # Expansion initiale de la racine (toujours en single)
+        MCTS.expand_node_single(root, board, model, device)
+
+        # Bruit de Dirichlet sur la racine
+        if add_dirichlet and root.children:
+            epsilon, alpha = 0.25, 0.3
+            noise = np.random.dirichlet([alpha] * len(root.children))
+            for i, (idx, child) in enumerate(root.children.items()):
+                child.prior = (1 - epsilon) * child.prior + epsilon * noise[i]
+
+        sim = 0
+        while sim < num_simulations:
+            # ── Phase 1 : Collecter un batch de feuilles ──
+            pending = []  # (node, moves_played, tensor_np, legal_indices, decoded_moves)
+
+            for _ in range(min(batch_size, num_simulations - sim)):
+                node, moves_played, aborted = MCTS.select_leaf(root, board, c_puct)
+
+                if aborted:
+                    for _ in range(moves_played):
+                        board.undo_move()
+                    sim += 1
+                    continue
+
+                # Cas terminal : backup immédiat, pas besoin du réseau
+                if node.is_terminal:
+                    value = -1.0 if board.is_in_check() else 0.0
+                    backup(node, value)
+                    for _ in range(moves_played):
+                        board.undo_move()
+                    sim += 1
+                    continue
+
+                # Feuille non-expansée : collecter les données
+                if not node.children:
+                    legal_indices = board.get_legal_move_indices()
+
+                    # Vérifier si c'est en fait une position terminale
+                    if not legal_indices:
+                        node.is_terminal = True
+                        value = -1.0 if board.is_in_check() else 0.0
+                        backup(node, value)
+                        for _ in range(moves_played):
+                            board.undo_move()
+                        sim += 1
+                        continue
+
+                    # Capturer tensor + moves AVANT de rembobiner
+                    tensor_np = board.get_alphazero_tensor()
+                    is_black = (board.turn == chess_engine.Color.BLACK)
+
+                    decoded_moves = []
+                    for idx in legal_indices:
+                        decoded_moves.append(decode_move_index(board, idx, is_black))
+
+                    pending.append((node, moves_played, tensor_np, legal_indices, decoded_moves))
+
+                # Rembobiner le board pour la prochaine sélection
+                for _ in range(moves_played):
+                    board.undo_move()
+
+            # ── Phase 2 : Forward pass batché ──
+            if not pending:
+                continue
+
+            tensors = np.stack([p[2] for p in pending])
+            batch_tensor = torch.from_numpy(tensors).float().to(device)
+
+            with torch.no_grad():
+                p_logits, v_preds = model(batch_tensor)
+
+            policies = torch.softmax(p_logits, dim=1).cpu().numpy()
+            values = v_preds.squeeze(1).cpu().numpy()
+
+            # ── Phase 3 : Expansion + Backup ──
+            for i, (node, moves_played, tensor_np, legal_indices, decoded_moves) in enumerate(
+                    pending):
+                policy = policies[i]
+                value = float(values[i])
+
+                MCTS.expand_node_from_results(node, legal_indices, decoded_moves, policy, value)
+                backup(node, value)
+                sim += 1
+
+        # Construire le vecteur pi
+        pi = np.zeros(4672, dtype=np.float32)
+        for idx, child in root.children.items():
+            pi[idx] = child.visit_count
+
+        s = pi.sum()
+        if s > 0:
+            pi /= s
+
+        return pi, root

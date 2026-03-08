@@ -1,10 +1,10 @@
-import numpy as np
+import wandb
 import torch
+import numpy as np
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.cuda.amp import GradScaler
-import wandb
-import os
+from datetime import datetime
 
 import chess_engine
 from lib import decode_move_index, move_to_san, print_pgn
@@ -130,6 +130,8 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 
     for epoch in range(epochs):
         epoch_loss = 0.0
+        epoch_policy_loss = 0.0
+        epoch_value_loss = 0.0
         num_batches = 0
 
         for x, target_pi, y_value in loader:
@@ -151,19 +153,22 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
             scaler.update()
 
             epoch_loss += loss.item()
+            epoch_policy_loss += policy_loss.item()
+            epoch_value_loss += value_loss.item()
             num_batches += 1
             global_step += 1
 
-            if num_batches % 20 == 0:
-                wandb.log({
-                    "train/loss": loss.item(),
-                    "train/policy_loss": policy_loss.item(),
-                    "train/value_loss": value_loss.item(),
-                    "train/global_step": global_step,
-                })
-
-        avg_loss = epoch_loss / max(num_batches, 1)
-        print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
+        # Log systématique à la fin de chaque époque
+        if num_batches > 0:
+            avg_loss = epoch_loss / num_batches
+            wandb.log({
+                "train/epoch_loss": avg_loss,
+                "train/epoch_policy_loss": epoch_policy_loss / num_batches,
+                "train/epoch_value_loss": epoch_value_loss / num_batches,
+                "train/epoch": epoch + 1,
+                "train/global_step": global_step,
+            })
+            print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
 
     return global_step
 
@@ -173,39 +178,29 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 # ============================================================
 
 def pipeline(
-    num_iterations=10,
-    games_per_iter=20,
-    num_simulations=200,
-    train_epochs=10,
-    batch_size=256,
-    learning_rate=1e-3,
-    num_res_blocks=10,
-    num_filters=128,
-    max_buffer_size=200_000,
-    checkpoint_path=None,
+        num_iterations=10,
+        games_per_iter=20,
+        num_simulations=200,
+        train_epochs=10,
+        batch_size=256,
+        learning_rate=1e-3,
+        num_res_blocks=10,
+        num_filters=128,
+        max_buffer_size=200_000,
+        checkpoint_path=None,
 ):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    device = torch.device("cuda")
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
 
     # Chargement optionnel du checkpoint supervisé
     if checkpoint_path:
-        # from train_supervised import AlphaZeroLightning
-        # pretrained = AlphaZeroLightning.load_from_checkpoint(
-        #     checkpoint_path,
-        #     num_res_blocks=num_res_blocks,
-        #     num_filters=num_filters,
-        # )
-        # model.load_state_dict(pretrained.model.state_dict())
-        # print(f"Checkpoint supervisé chargé: {checkpoint_path}")
-
-        # 2. Chargement du fichier
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-        # 3. Injection des poids
-        # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"
         model.load_state_dict(checkpoint["model_state_dict"])
         print(f"Checkpoint non supervisé chargé : {checkpoint_path}")
+
+    model.eval()
+    dummy = torch.randn(1, 119, 8, 8).to(device)
+    model = torch.jit.trace(model, dummy)
 
     # Persistants entre les itérations — jamais recréés
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -254,7 +249,9 @@ def pipeline(
         )
 
         # ── 3. Sauvegarde ──
-        save_path = f"checkpoints/selfplay_iter{iteration + 1}.pt"
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = f"checkpoints/selfplay_iter{iteration + 1}_{timestamp}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -275,5 +272,5 @@ if __name__ == "__main__":
         num_simulations=200,
         train_epochs=3,
         batch_size=1024,
-        checkpoint_path="checkpoints/selfplay_iter3.pt",
+        checkpoint_path="checkpoints/selfplay_iter1.pt",
     )
