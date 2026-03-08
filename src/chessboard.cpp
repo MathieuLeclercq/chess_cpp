@@ -120,7 +120,6 @@ GameState Chessboard::getGameState() const
 bool Chessboard::isInCheck() const
 {
     // On part du roi et on regarde si des pièces le menacent
-
     Color color = this->turn;
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
 
@@ -314,7 +313,6 @@ bool Chessboard::hasAnyLegalMove()
                 {
                     if (!this->isCastlePossible(i, j, dest_file, dest_rank))
                         continue;
-                    //this->board = board_copy;
                 }
 
                 if (is_king_move) {
@@ -336,6 +334,7 @@ bool Chessboard::hasAnyLegalMove()
 
                 bool in_check = this->isInCheck();
                 this->board = board_copy;
+
 
                 if (is_king_move) {
                     if (color == WHITE) { white_king_file = i; white_king_rank = j; }
@@ -614,7 +613,7 @@ void Chessboard::updateCastleFlags()
 
 
 
-void Chessboard::checkPromotion(Square& second_square, PieceType force_promotion)
+void Chessboard::applyPromotion(Square& second_square, PieceType force_promotion)
 {
     if (force_promotion != NONE)
     {
@@ -685,135 +684,116 @@ void Chessboard::evaluateGameState()
     }
 }
 
+void Chessboard::updateStateSnapshot()
+{
+    StateSnapshot current_snapshot;
+    current_snapshot.short_castle_white = this->short_castle_white;
+    current_snapshot.long_castle_white = this->long_castle_white;
+    current_snapshot.short_castle_black = this->short_castle_black;
+    current_snapshot.long_castle_black = this->long_castle_black;
+    current_snapshot.en_passant = this->en_passant;
+    current_snapshot.en_passant_file = this->en_passant_file;
+    current_snapshot.half_move_clock = this->half_move_clock;
+    current_snapshot.current_state = this->current_state;
+    current_snapshot.white_king_file = this->white_king_file;
+    current_snapshot.white_king_rank = this->white_king_rank;
+    current_snapshot.black_king_file = this->black_king_file;
+    current_snapshot.black_king_rank = this->black_king_rank;
+    this->snapshotHistory.push_back(current_snapshot);
+}
+
 bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion, bool check_game_end)
 {
     Square& first_square = this->board[orig_rank * 8 + orig_file];
     Square& second_square = this->board[rank * 8 + file];
-
-    const std::vector<Move> legalMoves = this->getNaiveLegalMoves(orig_file, orig_rank);
 
     if (first_square.getPiece().getColor() != this->turn)
     {
         return false;
     }
 
-    // 1. CAPTURE DE L'ÉTAT AVANT TOUTE MODIFICATION
-    StateSnapshot snapshot_before_move;
-    snapshot_before_move.short_castle_white = this->short_castle_white;
-    snapshot_before_move.long_castle_white = this->long_castle_white;
-    snapshot_before_move.short_castle_black = this->short_castle_black;
-    snapshot_before_move.long_castle_black = this->long_castle_black;
-    snapshot_before_move.en_passant = this->en_passant;
-    snapshot_before_move.en_passant_file = this->en_passant_file;
-    snapshot_before_move.half_move_clock = this->half_move_clock;
-    snapshot_before_move.current_state = this->current_state;
-    snapshot_before_move.white_king_file = this->white_king_file;
-    snapshot_before_move.white_king_rank = this->white_king_rank;
-    snapshot_before_move.black_king_file = this->black_king_file;
-    snapshot_before_move.black_king_rank = this->black_king_rank;
+    std::vector<Move> valid_moves;
+    this->getLegalMovesForSquare(orig_file, orig_rank, valid_moves, file, rank);
 
-    // 2. Création du coup tenté
     Move attempted_move(first_square, second_square, promotion);
-
-    // 3. Validation
-    if (std::find(legalMoves.begin(), legalMoves.end(), attempted_move) != legalMoves.end())
+    if (std::find(valid_moves.begin(), valid_moves.end(), attempted_move) == valid_moves.end())
     {
-        std::array<Square, 64> board_copy_before_move = this->board;
+        return false; // si le move tenté n'est pas dans la liste des coups possibles
+    }
 
-        Piece moving_piece = first_square.getPiece();
-        bool is_king_move = (moving_piece.getType() == KING);
-        bool is_pawn_move = (moving_piece.getType() == PAWN);
-        Color moving_color = moving_piece.getColor();
+    // A PARTIR D'ICI LE COUP EST VALIDE
+    // 1. CAPTURE DE L'ÉTAT AVANT TOUTE MODIFICATION
+    
+    this->updateStateSnapshot();
 
-        bool is_en_passant_capture = (is_pawn_move && second_square.getPiece().getType() == NONE &&
-            abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
-        bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
+    Piece moving_piece = first_square.getPiece();
+    bool is_king_move = (moving_piece.getType() == KING);
+    bool is_pawn_move = (moving_piece.getType() == PAWN);
+    Color moving_color = moving_piece.getColor();
+
+    bool is_en_passant_capture = (is_pawn_move && second_square.getPiece().getType() == NONE &&
+        abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
+    bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
 
 
-        // Roque
-        if (is_king_move && abs(orig_file - file) == 2)
-        {
-            if (!this->isCastlePossible(orig_file, orig_rank, file, rank))
-                return false;
+    // Exécution du coup
 
-            // Déplacement physique de la Tour
-            int rook_orig_file = (file > orig_file) ? 7 : 0; // Tour h (7) pour petit roque, a (0) pour grand
-            int rook_dest_file = (file > orig_file) ? 5 : 3; // Tour atterrit en f (5) ou d (3)
+    // Roque
+    if (is_king_move && abs(orig_file - file) == 2)
+    {
+        // déplacement de la tour
+        int rook_orig_file = (file > orig_file) ? 7 : 0; // Tour h (7) pour petit roque, a (0) pour grand
+        int rook_dest_file = (file > orig_file) ? 5 : 3; // Tour atterrit en f (5) ou d (3)
 
-            this->board[rank * 8 + rook_dest_file].setPiece(this->board[rank * 8 + rook_orig_file].getPiece());
-            this->board[rank * 8 + rook_orig_file].setPiece(Piece());
-        }
+        this->board[rank * 8 + rook_dest_file].setPiece(this->board[rank * 8 + rook_orig_file].getPiece());
+        this->board[rank * 8 + rook_orig_file].setPiece(Piece());
+    }
 
-        // Prise en passant
-        if (is_en_passant_capture)
-        {
-            this->board[orig_rank * 8 + file].setPiece(Piece());
-        }
+    if (is_en_passant_capture)
+    {
+        this->board[orig_rank * 8 + file].setPiece(Piece()); // suppression du pion PAS SUR CASE D'ARRIVEE !!
+    }
 
-        second_square.setPiece(first_square.getPiece());
-        first_square.setPiece(Piece());
+    // déplacement de la pièce qui a fait le coup actuel
+    second_square.setPiece(first_square.getPiece());
+    first_square.setPiece(Piece());
 
-        // Mise à jour du cache si le roi bouge
-        if (is_king_move)
-        {
-            if (moving_color == WHITE) {
-                this->white_king_file = file; this->white_king_rank = rank;
-            }
-            else {
-                this->black_king_file = file; this->black_king_rank = rank;
-            }
-        }
-
-        if (this->isInCheck())
-        {
-            //std::cout << "Illegal move." << std::endl
-
-            // Restauration du cache
-            if (is_king_move)
-            {
-                if (moving_color == WHITE) {
-                    this->white_king_file = orig_file; this->white_king_rank = orig_rank;
-                }
-                else {
-                    this->black_king_file = orig_file; this->black_king_rank = orig_rank;
-                }
-            }
-
-            this->setBoard(board_copy_before_move);
-            return false;
-        }
-
-        // A PARTIR D'ICI LE COUP EST VALIDE
-        this->snapshotHistory.push_back(snapshot_before_move);
-
-        this->checkPromotion(second_square, promotion);
-        this->updateHistory(attempted_move);
-
-        this->updateCastleFlags();
-        this->checkEnPassant();
-
-        this->turn = (this->turn == WHITE) ? BLACK : WHITE;
-
-        // maj du compteur de la règle des 50 coups
-        if (is_capture || is_pawn_move) {
-            this->half_move_clock = 0;
+    // Mise à jour du cache si le roi bouge
+    if (is_king_move)
+    {
+        if (moving_color == WHITE) {
+            this->white_king_file = file; this->white_king_rank = rank;
         }
         else {
-            this->half_move_clock++;
+            this->black_king_file = file; this->black_king_rank = rank;
         }
-
-        if (check_game_end)
-        {
-            this->evaluateGameState();
-        }
-
-        return true;
     }
-    else
+    
+
+    // Préparation de l'état suivant
+    this->applyPromotion(second_square, promotion);
+    this->updateHistory(attempted_move);
+
+    this->updateCastleFlags();
+    this->checkEnPassant();
+
+    this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+
+    // maj du compteur de la règle des 50 coups
+    if (is_capture || is_pawn_move) {
+        this->half_move_clock = 0;
+    }
+    else {
+        this->half_move_clock++;
+    }
+
+    if (check_game_end)
     {
-        //std::cout << "Illegal move" << std::endl;
-        return false;
+        this->evaluateGameState();
     }
+
+    return true;
+
 }
 
 bool Chessboard::movePiece(std::string orig_square, std::string square)

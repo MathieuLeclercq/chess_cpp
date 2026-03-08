@@ -36,7 +36,7 @@ class SelfPlayDataset(Dataset):
 #                     SELF-PLAY
 # ============================================================
 
-def self_play_game(model, device, num_simulations=200, max_moves=100):
+def self_play_game(model, device, num_simulations=200, max_moves=200):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
 
@@ -262,10 +262,10 @@ def pipeline(
 
 if __name__ == "__main__":
     pipeline(
-        num_iterations=15,  # Un peu plus d'itérations
-        games_per_iter=10,  # BEAUCOUP plus de parties pour la diversité des données
-        num_simulations=50,  # OK pour l'instant
-        train_epochs=3,  # Moins d'epochs pour ne pas overfitter sur le nouveau buffer
-        batch_size=512,
+        num_iterations=15,
+        games_per_iter=10,
+        num_simulations=50,
+        train_epochs=3,
+        batch_size=1024,
         checkpoint_path="checkpoints/supervised_best_03_07.ckpt",
     )

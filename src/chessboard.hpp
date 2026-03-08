@@ -103,5 +103,6 @@ class Chessboard
         void undoMove();
         void updateHistory(const Move& move);
         void updateCastleFlags();
-        void checkPromotion(Square& second_square, PieceType force_promotion = NONE);
+        void applyPromotion(Square& second_square, PieceType force_promotion = NONE);
+        void updateStateSnapshot();
 };
