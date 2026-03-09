@@ -11,7 +11,7 @@ from datetime import datetime
 import torch.multiprocessing as mp
 
 import chess_engine
-from lib import (decode_move_index, move_to_san, load_model)
+from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer)
 from model import ChessNet
 
 
@@ -233,7 +233,6 @@ def pipeline(
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(gpu_device)
 
     if checkpoint_path:
-        # Chargement direct sur GPU
         model = load_model(checkpoint_path, num_res_blocks, num_filters, gpu_device)
         print(f"Checkpoint chargé : {checkpoint_path}")
 
@@ -242,7 +241,8 @@ def pipeline(
 
     wandb.init(project="alphazero-chess", name="self_play_onnx_cpp")
 
-    replay_buffer = []
+    buffer_filepath = "checkpoints/replay_buffer.npz"
+    replay_buffer = load_buffer(buffer_filepath)
     global_step = 0
 
     for iteration in range(num_iterations):
@@ -295,6 +295,8 @@ def pipeline(
             "global_step": global_step,
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
+
+        save_buffer(replay_buffer, buffer_filepath)
 
     wandb.finish()
 

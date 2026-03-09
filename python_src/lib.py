@@ -343,3 +343,38 @@ def ai_pick_move_instant(board, model, device, temperature=0.1):
     print(f"IA joue: ({orig_f},{orig_r}) -> ({dest_f},{dest_r}), promo={promo}, value={value:.3f}")
 
     return orig_f, orig_r, dest_f, dest_r, promo
+
+
+def save_buffer(buffer, filepath):
+    """Sauvegarde le replay buffer dans un fichier .npz compressé."""
+    if not buffer:
+        return
+
+    # Séparation des tuples en trois listes distinctes
+    states = np.array([item[0] for item in buffer], dtype=np.float32)
+    policies = np.array([item[1] for item in buffer], dtype=np.float32)
+    values = np.array([item[2] for item in buffer], dtype=np.float32)
+
+    # Sauvegarde compressée
+    np.savez_compressed(filepath, states=states, policies=policies, values=values)
+    print(f"  [Disque] Buffer sauvegardé : {len(buffer)} positions dans {filepath}")
+
+
+def load_buffer(filepath):
+    """Charge le replay buffer depuis un fichier .npz."""
+    if not os.path.exists(filepath):
+        print(f"  [Disque] Aucun buffer existant trouvé à {filepath}. Démarrage à vide.")
+        return []
+
+    data = np.load(filepath)
+    states = data['states']
+    policies = data['policies']
+    values = data['values']
+
+    # Reconstruction de la liste de tuples
+    buffer = []
+    for i in range(len(states)):
+        buffer.append((states[i], policies[i], float(values[i])))
+
+    print(f"  [Disque] Buffer chargé : {len(buffer)} positions depuis {filepath}")
+    return buffer
