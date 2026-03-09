@@ -3,9 +3,8 @@ import torch
 import numpy as np
 from whr import whole_history_rating
 import chess_engine
-from model import ChessNet
 from mcts import MCTS
-from lib import decode_move_index, move_to_san
+from lib import decode_move_index, move_to_san, load_model
 
 # ============================================================
 #                     CONFIGURATION
@@ -17,14 +16,6 @@ CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 200
 GAMES_PER_PAIR = 2  # Nombre total de parties par face-à-face
 WHR_STATE_FILE = "tournament_state.whr"
-
-
-def load_model_pure(path, device):
-    model = ChessNet(num_res_blocks=NUM_RES_BLOCKS, num_filters=NUM_FILTERS)
-    checkpoint = torch.load(path, map_location=device, weights_only=False)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.to(device).eval()
-    return model
 
 
 def play_game(model_white, model_black, device, sims):
@@ -95,7 +86,7 @@ def count_games_between(whr, p1, p2):
 
 
 def run_tournament():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     if os.path.exists(WHR_STATE_FILE):
         print(f"Chargement de l'historique Elo depuis {WHR_STATE_FILE}...")
@@ -103,8 +94,11 @@ def run_tournament():
     else:
         whr = whole_history_rating.Base({"w2": 14})
 
-    files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".pt")])
-    if len(files) < 2: return
+    files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if
+                    f.endswith(".pt") or f.endswith(".ckpt")])
+    print(f"{files=}")
+    if len(files) < 2:
+        return
 
     for i in range(len(files) - 1):
         p1, p2 = files[i], files[i + 1]
@@ -117,8 +111,9 @@ def run_tournament():
         # Approximation : comme un Draw = 2 slots dans WHR, on ajuste le seuil
         if games_played < GAMES_PER_PAIR:
             print(f"\n--- Match: {p1} vs {p2} ({games_played}/{GAMES_PER_PAIR} joués) ---")
-            m1 = load_model_pure(os.path.join(CHECKPOINT_DIR, p1), device)
-            m2 = load_model_pure(os.path.join(CHECKPOINT_DIR, p2), device)
+
+            m1 = load_model(os.path.join(CHECKPOINT_DIR, p1), NUM_RES_BLOCKS, NUM_FILTERS, device)
+            m2 = load_model(os.path.join(CHECKPOINT_DIR, p2), NUM_RES_BLOCKS, NUM_FILTERS, device)
 
             for g in range(games_played, GAMES_PER_PAIR):
                 if g % 2 == 0:

@@ -16,7 +16,7 @@ from lib_gui import (
     rendu
 )
 from lib import (decode_move_index, move_to_san, print_pgn,
-                 load_unsupervised_model, load_supervised_model)
+                 load_model)
 
 # ============================================================
 #                     CONFIGURATION
@@ -62,7 +62,9 @@ def main():
 
     # Chargement du modèle
     device = "cuda"
-    model = load_supervised_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS, device)
+
+    model = load_model(CHECKPOINT_PATH, NUM_RES_BLOCKS, NUM_FILTERS, device)
+
 
     # Initialisation du plateau
     board = chess_engine.Chessboard()

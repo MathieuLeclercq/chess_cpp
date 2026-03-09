@@ -259,10 +259,9 @@ def load_supervised_model(checkpoint_path, num_res_blocks, num_filters, device):
     return model
 
 
-def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters):
+def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters, device):
     """Charge le modèle depuis un checkpoint standard PyTorch."""
     os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1. Instanciation de l'architecture vide
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
@@ -278,7 +277,20 @@ def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters):
     model.eval()
 
     print(f"Modèle chargé depuis {checkpoint_path} (device: {device})")
-    return model, device
+    return model
+
+
+def load_model(checkpoint_path, num_res_blocks, num_filters, device):
+    if checkpoint_path.endswith('.ckpt'):
+        # il faut load le modèle supervisé
+        model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, device)
+    elif checkpoint_path.endswith('.pt'):
+        # il faut load le modèle "alphazero"
+        model = load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters, device)
+    else:
+        raise Exception('Extension inconnue pour le fichier checkpoint '
+                        '(doit être ".pt" ou ".ckpt"')
+    return model
 
 
 def ai_pick_move_instant(board, model, device, temperature=0.1):
