@@ -1,5 +1,6 @@
 import os
 import torch
+import itertools
 import numpy as np
 from whr import whole_history_rating
 import chess_engine
@@ -72,86 +73,97 @@ def format_pgn(white_name, black_name, winner, moves):
     return pgn
 
 
-def count_games_between(whr, p1, p2):
-    """Compte combien de matchs existent déjà entre deux joueurs dans la base."""
-    count = 0
-    for game in whr.games:
-        if (game.black_player.name == p1 and game.white_player.name == p2) or \
-                (game.black_player.name == p2 and game.white_player.name == p1):
-            count += 1
-    # Note: Dans WHR, un Draw est souvent enregistré comme 2 games (B et W).
-    # Si ton code enregistre les draws en split, il faut diviser par 2 ou adapter.
-    # Ici, ton code enregistre 2 games par Draw, donc on divise par 2 pour le compte "humain".
-    return count
+def get_ranked_players(whr, files):
+    """Retourne la liste des joueurs triée par Elo décroissant."""
+    players = []
+    for f in files:
+        rating = whr.ratings_for_player(f)
+        if rating:
+            players.append((f, rating[-1][1]))  # (nom, elo)
+    players.sort(key=lambda x: x[1], reverse=True)
+    return players
+
+
+def play_match(p1, p2, whr, device):
+    """Lance un face-à-face entre deux bots et met à jour le WHR."""
+    print(f"\n--- MATCH : {p1} vs {p2} ---")
+
+    # Chargement des modèles
+    res1 = load_model(os.path.join(CHECKPOINT_DIR, p1), NUM_RES_BLOCKS, NUM_FILTERS, device)
+    res2 = load_model(os.path.join(CHECKPOINT_DIR, p2), NUM_RES_BLOCKS, NUM_FILTERS, device)
+    m1 = res1[0] if isinstance(res1, tuple) else res1
+    m2 = res2[0] if isinstance(res2, tuple) else res2
+
+    for g in range(GAMES_PER_PAIR):
+        if g % 2 == 0:
+            white_n, black_n, white_m, black_m = p1, p2, m1, m2
+        else:
+            white_n, black_n, white_m, black_m = p2, p1, m2, m1
+
+        winner, moves = play_game(white_m, black_m, device, SIMULATIONS_EVAL)
+        print(format_pgn(white_n, black_n, winner, moves))
+
+        if winner == "draw":
+            whr.create_game(black_n, white_n, "B", 0, 0)
+            whr.create_game(black_n, white_n, "W", 0, 0)
+        else:
+            outcome = "W" if winner == "white" else "B"
+            whr.create_game(black_n, white_n, outcome, 0, 0)
+
+    whr.iterate(10)
+    whr.save_base(WHR_STATE_FILE)
 
 
 def run_tournament():
     device = torch.device("cpu")
-
     if os.path.exists(WHR_STATE_FILE):
-        print(f"Chargement de l'historique Elo depuis {WHR_STATE_FILE}...")
         whr = whole_history_rating.Base.load_base(WHR_STATE_FILE)
     else:
         whr = whole_history_rating.Base({"w2": 14})
 
-    files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if
-                    f.endswith(".pt") or f.endswith(".ckpt")])
-    print(f"{files=}")
-    if len(files) < 2:
-        return
+    all_files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if f.endswith((".pt", ".ckpt"))])
 
-    for i in range(len(files) - 1):
-        p1, p2 = files[i], files[i + 1]
+    # Identifier les nouveaux venus
+    known_players = [p.name for p in whr.players.values()]
+    new_bots = [f for f in all_files if f not in known_players]
 
-        # Logique de saut améliorée : on compte les parties réelles
-        # Un Draw compte pour 2 dans whr.games (B et W), une victoire pour 1.
-        # On vérifie si on a atteint le quota GAMES_PER_PAIR
-        games_played = count_games_between(whr, p1, p2)
+    # Obtenir le classement actuel
+    ranked_existing = get_ranked_players(whr, all_files)
 
-        # Approximation : comme un Draw = 2 slots dans WHR, on ajuste le seuil
-        if games_played < GAMES_PER_PAIR:
-            print(f"\n--- Match: {p1} vs {p2} ({games_played}/{GAMES_PER_PAIR} joués) ---")
+    # --- LOGIQUE DE SELECTION DES MATCHS ---
+    pairs_to_play = []
 
-            m1 = load_model(os.path.join(CHECKPOINT_DIR, p1), NUM_RES_BLOCKS, NUM_FILTERS, device)
-            m2 = load_model(os.path.join(CHECKPOINT_DIR, p2), NUM_RES_BLOCKS, NUM_FILTERS, device)
+    if new_bots:
+        print(f"Nouveaux bots détectés : {new_bots}")
+        # 1. Chaque nouveau bot contre le champion
+        if ranked_existing:
+            champion = ranked_existing[0][0]
+            for nb in new_bots:
+                pairs_to_play.append((nb, champion))
 
-            for g in range(games_played, GAMES_PER_PAIR):
-                if g % 2 == 0:
-                    white_n, black_n, white_m, black_m = p1, p2, m1, m2
-                else:
-                    white_n, black_n, white_m, black_m = p2, p1, m2, m1
+        # 2. Les nouveaux bots entre eux
+        if len(new_bots) > 1:
+            for pair in itertools.combinations(new_bots, 2):
+                pairs_to_play.append(pair)
 
-                winner, moves = play_game(white_m, black_m, device, SIMULATIONS_EVAL)
-                print(format_pgn(white_n, black_n, winner, moves))
+    elif len(ranked_existing) >= 2:
+        # 3. 0 nouveau bot : Match au sommet (n°1 vs n°2)
+        p1, p2 = ranked_existing[0][0], ranked_existing[1][0]
+        print(f"Aucun nouveau bot. Choc des titans : {p1} vs {p2}")
+        pairs_to_play.append((p1, p2))
 
-                if winner == "draw":
-                    whr.create_game(black_n, white_n, "B", i, 0)
-                    whr.create_game(black_n, white_n, "W", i, 0)
-                else:
-                    outcome = "W" if winner == "white" else "B"
-                    whr.create_game(black_n, white_n, outcome, i, 0)
+    # --- EXECUTION DES MATCHS ---
+    for p1, p2 in pairs_to_play:
+        play_match(p1, p2, whr, device)
 
-                # --- SAUVEGARDE ET MISE À JOUR LIVE ---
-                # On fait 5 itérations pour rafraîchir l'Elo sans bloquer le script
-                whr.iterate(5)
-                whr.save_base(WHR_STATE_FILE)
-
-                p1_elo = whr.ratings_for_player(p1)[-1][1]
-                p2_elo = whr.ratings_for_player(p2)[-1][1]
-                print(f"  Sauvegarde effectuée. Elo live : {p1}: {p1_elo} | {p2}: {p2_elo}")
-        else:
-            print(f"Match {p1} vs {p2} complet, passage au suivant...")
-
-    # Fin du tournoi : Grosse optimisation finale
-    print("\nOptimisation finale de la courbe Elo...")
+    # --- RESULTATS FINAUX ---
     whr.iterate(100)
     whr.save_base(WHR_STATE_FILE)
 
-    print("\n" + "=" * 30 + "\n RÉSULTATS FINAUX\n" + "=" * 30)
-    for f in files:
-        rating = whr.ratings_for_player(f)
-        if rating:
-            print(f"{f:40} : {rating[-1][1]:+.1f} Elo (±{rating[-1][2]:.1f})")
+    print("\n" + "=" * 30 + "\n CLASSEMENT MIS À JOUR\n" + "=" * 30)
+    final_ranking = get_ranked_players(whr, all_files)
+    for name, elo in final_ranking:
+        print(f"{name:40} : {elo:+.1f} Elo")
 
 
 if __name__ == "__main__":
