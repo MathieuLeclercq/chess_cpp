@@ -7,7 +7,7 @@ from torch.cuda.amp import GradScaler
 from datetime import datetime
 
 import chess_engine
-from lib import decode_move_index, move_to_san, print_pgn
+from lib import decode_move_index, move_to_san, print_pgn, load_supervised_model, load_unsupervised_model
 from mcts import MCTS
 from model import ChessNet
 
@@ -193,11 +193,12 @@ def pipeline(
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
 
     # Chargement optionnel du checkpoint supervisé
-    if checkpoint_path:
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        print(f"Checkpoint non supervisé chargé : {checkpoint_path}")
+    # if checkpoint_path:
+    #     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    #     model.load_state_dict(checkpoint["model_state_dict"])
+    #     print(f"Checkpoint non supervisé chargé : {checkpoint_path}")
 
+    model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cuda")
     model.eval()
     dummy = torch.randn(1, 119, 8, 8).to(device)
     model = torch.jit.trace(model, dummy)
@@ -267,10 +268,10 @@ def pipeline(
 
 if __name__ == "__main__":
     pipeline(
-        num_iterations=15,
-        games_per_iter=6,
-        num_simulations=500,
+        num_iterations=2,
+        games_per_iter=2,
+        num_simulations=25,
         train_epochs=3,
         batch_size=1024,
-        checkpoint_path="checkpoints/selfplay_iter4_20260308_145240.pt",
+        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt",
     )
