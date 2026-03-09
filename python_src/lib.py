@@ -267,7 +267,7 @@ def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters, device
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
 
     # 2. Chargement du fichier
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     # 3. Injection des poids
     # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"

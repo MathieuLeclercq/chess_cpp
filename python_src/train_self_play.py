@@ -12,7 +12,7 @@ import torch.multiprocessing as mp
 
 import chess_engine
 from lib import (decode_move_index, move_to_san, print_pgn,
-                 load_supervised_model, load_unsupervised_model)
+                 load_model)
 from mcts import MCTS
 from model import ChessNet
 
@@ -219,7 +219,7 @@ def pipeline(
 
     if checkpoint_path:
         # On charge sur CPU en premier lieu pour éviter des soucis de partage mémoire
-        model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cpu")
+        model = load_model(checkpoint_path, num_res_blocks, num_filters, "cpu")
         print(f"Checkpoint chargé : {checkpoint_path}")
 
     # L'optimiseur surveillera les paramètres (même s'ils changent d'appareil)
@@ -296,10 +296,10 @@ if __name__ == "__main__":
         num_iterations=2,
         games_per_iter=16,
         num_workers=16,
-        num_simulations=400,
-        train_epochs=3,
+        num_simulations=600,
+        train_epochs=6,
         batch_size=1024,
         learning_rate=1e-4,
         max_buffer_size=100_000,
-        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt"
+        checkpoint_path="checkpoints/2026_03_09_14h42_multi_iter2.pt"
     )
