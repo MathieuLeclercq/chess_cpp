@@ -32,8 +32,7 @@ add_library(chess_core STATIC
     src/piece.cpp 
     src/move.cpp 
     src/pgn_parser.cpp
-    # src/mcts.cpp  <-- À créer et décommenter à la prochaine étape
-)
+    src/mcts.cpp )
 
 # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
@@ -43,7 +42,7 @@ target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB})
 # ==========================================
 # 2. Exécutable de test (C++ pur)
 # ==========================================
-add_executable(chess_tests src/main.cpp)
+add_executable(chess_tests src/main.cpp "src/mcts.cpp")
 target_link_libraries(chess_tests PRIVATE chess_core)
 
 # ==========================================
