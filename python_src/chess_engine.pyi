@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy
 import pybind11_stubgen.typing_ext
 import typing
-__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
+__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
 class Chessboard:
     def __init__(self) -> None:
         ...
@@ -127,6 +127,11 @@ class GameState:
         ...
     @property
     def value(self) -> int:
+        ...
+class MCTS:
+    def __init__(self, model_path: str) -> None:
+        ...
+    def mcts_search(self, board: Chessboard, num_simulations: int, c_puct: float = 1.399999976158142, add_dirichlet: bool = False) -> list[float]:
         ...
 class Move:
     def get_dest_square(self) -> Square:

@@ -1,9 +1,10 @@
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // Indispensable pour la conversion des std::vector et std::array
+#include <pybind11/stl.h>
 #include "chessboard.hpp"
 #include "piece.hpp"
 #include "move.hpp"
 #include "square.hpp"
+#include "mcts.hpp"
 #include <pybind11/numpy.h>
 
 namespace py = pybind11;
@@ -88,4 +89,10 @@ PYBIND11_MODULE(chess_engine, m) {
             last_move.getPromotion()
         );
             });
+
+    // --- NOUVEAU : Classe MCTS ---
+    py::class_<MCTS>(m, "MCTS")
+        .def(py::init<const std::string&>(), py::arg("model_path"))
+        .def("mcts_search", &MCTS::mcts_search,
+            py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f, py::arg("add_dirichlet") = false);
 }

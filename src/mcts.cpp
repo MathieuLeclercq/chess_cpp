@@ -181,7 +181,6 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
 
     std::vector<float> pi(4672, 0.0f);
     float sum_visits = 0.0f;
-    // Remplacement des structured bindings ici
     for (const auto& pair : root->children) {
         int idx = pair.first;
         MCTSNode* child = pair.second.get();

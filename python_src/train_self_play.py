@@ -1,6 +1,6 @@
 import warnings
+
 warnings.filterwarnings("ignore", module="requests")
-import os
 import wandb
 import torch
 import numpy as np
@@ -11,10 +11,36 @@ from datetime import datetime
 import torch.multiprocessing as mp
 
 import chess_engine
-from lib import (decode_move_index, move_to_san, print_pgn,
-                 load_model)
-from mcts import MCTS
+from lib import (decode_move_index, move_to_san, load_model)
 from model import ChessNet
+
+
+# ============================================================
+#                     EXPORT ONNX
+# ============================================================
+def export_model_to_onnx(model, onnx_path, device):
+    """Exporte le modèle PyTorch courant vers un fichier ONNX optimisé."""
+    model.eval()
+    dummy_input = torch.randn(1, 119, 8, 8, device=device)
+
+    # On masque les warnings d'export ONNX qui sont souvent verbaux pour les ResNets
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch.onnx.export(
+            model,
+            dummy_input,
+            onnx_path,
+            export_params=True,
+            opset_version=14,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['policy', 'value'],
+            dynamic_axes={
+                'input': {0: 'batch_size'},
+                'policy': {0: 'batch_size'},
+                'value': {0: 'batch_size'}
+            }
+        )
 
 
 # ============================================================
@@ -39,7 +65,7 @@ class SelfPlayDataset(Dataset):
 # ============================================================
 #                     WORKER & SELF-PLAY
 # ============================================================
-def self_play_game(model, device, num_simulations=200, max_moves=200):
+def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
 
@@ -49,9 +75,11 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
 
     while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
         tensor_np = board.get_alphazero_tensor()
-        pi, _ = MCTS.mcts_search(board, model, device, num_simulations, add_dirichlet=True)
 
-        # On limite la variance des ouvertures au 12ème coup pour le fine-tuning
+        # Appel natif au C++ (retourne une liste, on convertit en ndarray)
+        pi_raw = mcts_engine.mcts_search(board, num_simulations, 1.4, True)
+        pi = np.array(pi_raw, dtype=np.float32)
+
         if move_num < 12:
             probs = pi.copy()
             probs /= probs.sum()
@@ -77,10 +105,6 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
         san_moves.append(san)
         move_num += 1
 
-    # Optionnel: on peut masquer les print_pgn en mode multi-processus
-    # pour éviter que les consoles ne s'entremêlent, mais on le laisse pour le test
-    # print_pgn(board, san_moves)
-
     z = 0.0
     if board.game_state == chess_engine.GameState.CHECKMATE:
         z = 1.0
@@ -94,34 +118,27 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
 
 
 def worker_self_play(args):
-    """
-    Fonction isolée exécutée par chaque processus (Cœur CPU).
-    """
-    model, num_simulations, max_moves = args
+    """Fonction isolée exécutée par chaque processus (Cœur CPU)."""
+    onnx_path, num_simulations, max_moves = args
 
-    # CRITIQUE: Empêche PyTorch d'utiliser tous les cœurs pour un seul processus
-    torch.set_num_threads(1)
-
-    # On force l'appareil sur CPU pour le processus enfant
-    device = torch.device("cpu")
+    # Initialisation du moteur MCTS en C++ pour ce thread
+    mcts_engine = chess_engine.MCTS(onnx_path)
 
     # Génération d'une seule partie
-    game_data, move_count, state = self_play_game(model, device, num_simulations, max_moves)
+    game_data, move_count, state = self_play_game(mcts_engine, num_simulations, max_moves)
 
     return game_data, move_count, state
 
 
-def generate_games(model, num_games, num_simulations, num_workers=4):
+def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
     all_data = []
     total_moves = 0
     results = {"checkmate": 0, "draw": 0, "ongoing": 0}
 
-    # Préparation des arguments (on limite max_moves à 200 pour éviter les boucles infinies)
-    args_list = [(model, num_simulations, 200) for _ in range(num_games)]
+    args_list = [(onnx_path, num_simulations, 200) for _ in range(num_games)]
 
-    print(f"Lancement de {num_games} parties sur {num_workers} processus CPU (Inférence CPU)...")
+    print(f"Lancement de {num_games} parties sur {num_workers} processus (MCTS C++ / ONNX)...")
 
-    # Initialisation du pool de processus PyTorch
     with mp.Pool(processes=num_workers) as pool:
         for i, (game_data, move_count, state) in enumerate(
                 pool.imap_unordered(worker_self_play, args_list)):
@@ -148,7 +165,6 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
                     epochs=10, batch_size=256, global_step=0):
     model.train()
     dataset = SelfPlayDataset(replay_buffer)
-    # num_workers=0 est important sous Windows pour DataLoader en GPU
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
     for epoch in range(epochs):
@@ -214,19 +230,17 @@ def pipeline(
     assert torch.cuda.is_available()
     gpu_device = torch.device("cuda")
 
-    # On instancie d'abord le modèle
-    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
+    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(gpu_device)
 
     if checkpoint_path:
-        # On charge sur CPU en premier lieu pour éviter des soucis de partage mémoire
-        model = load_model(checkpoint_path, num_res_blocks, num_filters, "cpu")
+        # Chargement direct sur GPU
+        model = load_model(checkpoint_path, num_res_blocks, num_filters, gpu_device)
         print(f"Checkpoint chargé : {checkpoint_path}")
 
-    # L'optimiseur surveillera les paramètres (même s'ils changent d'appareil)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scaler = GradScaler("cuda", enabled=True)
 
-    wandb.init(project="alphazero-chess", name="self_play_multi_cpu")
+    wandb.init(project="alphazero-chess", name="self_play_onnx_cpp")
 
     replay_buffer = []
     global_step = 0
@@ -236,13 +250,14 @@ def pipeline(
         print(f"  ITERATION {iteration + 1}/{num_iterations}")
         print(f"{'=' * 50}")
 
-        # ── 1. Phase Self-Play (CPU Multi-Processus) ──
-        model.eval()
-        model.cpu()  # On s'assure que le modèle est sur CPU
-        model.share_memory()  # Partage la RAM du modèle avec les processus enfants
+        # ── 0. Exportation du modèle vers ONNX ──
+        onnx_path = f"checkpoints/current_mcts_iter{iteration + 1}.onnx"
+        print("  Exportation du modèle vers ONNX pour les workers CPU...")
+        export_model_to_onnx(model, onnx_path, gpu_device)
 
+        # ── 1. Phase Self-Play (C++ / ONNX) ──
         new_data, results, avg_length = generate_games(
-            model, games_per_iter, num_simulations, num_workers=num_workers
+            onnx_path, games_per_iter, num_simulations, num_workers=num_workers
         )
 
         replay_buffer.extend(new_data)
@@ -259,10 +274,6 @@ def pipeline(
         print(f"  Buffer: {len(replay_buffer)} positions")
 
         # ── 2. Phase Training (GPU) ──
-        model.to(gpu_device)  # On déplace le modèle sur GPU pour la vitesse d'apprentissage
-
-        # Le DataLoader aura besoin d'assez de données pour faire un batch
-        # Si le buffer est plus petit que le batch_size (possible au tout 1er step), on gère
         current_batch_size = min(batch_size, len(replay_buffer))
 
         if current_batch_size > 0:
@@ -300,5 +311,5 @@ if __name__ == "__main__":
         batch_size=1024,
         learning_rate=1e-4,
         max_buffer_size=100_000,
-        checkpoint_path="checkpoints/2026_03_09_14h42_multi_iter2.pt"
+        checkpoint_path="checkpoints/2026_03_09_17h17_multi_iter2.pt"
     )
