@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", module="requests")
+import os
 import wandb
 import torch
 import numpy as np
@@ -5,6 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.amp import GradScaler
 from datetime import datetime
+import torch.multiprocessing as mp
 
 import chess_engine
 from lib import (decode_move_index, move_to_san, print_pgn,
@@ -33,7 +37,7 @@ class SelfPlayDataset(Dataset):
 
 
 # ============================================================
-#                     SELF-PLAY
+#                     WORKER & SELF-PLAY
 # ============================================================
 def self_play_game(model, device, num_simulations=200, max_moves=200):
     board = chess_engine.Chessboard()
@@ -47,6 +51,7 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
         tensor_np = board.get_alphazero_tensor()
         pi, _ = MCTS.mcts_search(board, model, device, num_simulations, add_dirichlet=True)
 
+        # On limite la variance des ouvertures au 12ème coup pour le fine-tuning
         if move_num < 12:
             probs = pi.copy()
             probs /= probs.sum()
@@ -72,7 +77,10 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
         san_moves.append(san)
         move_num += 1
 
-    print_pgn(board, san_moves)
+    # Optionnel: on peut masquer les print_pgn en mode multi-processus
+    # pour éviter que les consoles ne s'entremêlent, mais on le laisse pour le test
+    # print_pgn(board, san_moves)
+
     z = 0.0
     if board.game_state == chess_engine.GameState.CHECKMATE:
         z = 1.0
@@ -85,24 +93,49 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
     return dataset, move_num, board.game_state
 
 
-def generate_games(model, device, num_games, num_simulations):
+def worker_self_play(args):
+    """
+    Fonction isolée exécutée par chaque processus (Cœur CPU).
+    """
+    model, num_simulations, max_moves = args
+
+    # CRITIQUE: Empêche PyTorch d'utiliser tous les cœurs pour un seul processus
+    torch.set_num_threads(1)
+
+    # On force l'appareil sur CPU pour le processus enfant
+    device = torch.device("cpu")
+
+    # Génération d'une seule partie
+    game_data, move_count, state = self_play_game(model, device, num_simulations, max_moves)
+
+    return game_data, move_count, state
+
+
+def generate_games(model, num_games, num_simulations, num_workers=4):
     all_data = []
     total_moves = 0
     results = {"checkmate": 0, "draw": 0, "ongoing": 0}
 
-    for g in range(num_games):
-        game_data, move_count, state = self_play_game(model, device, num_simulations)
-        all_data.extend(game_data)
-        total_moves += move_count
+    # Préparation des arguments (on limite max_moves à 200 pour éviter les boucles infinies)
+    args_list = [(model, num_simulations, 200) for _ in range(num_games)]
 
-        if state == chess_engine.GameState.CHECKMATE:
-            results["checkmate"] += 1
-        elif state == chess_engine.GameState.ONGOING:
-            results["ongoing"] += 1
-        else:
-            results["draw"] += 1
+    print(f"Lancement de {num_games} parties sur {num_workers} processus CPU (Inférence CPU)...")
 
-        print(f"  Partie {g + 1}/{num_games}: {move_count} coups, état={state}")
+    # Initialisation du pool de processus PyTorch
+    with mp.Pool(processes=num_workers) as pool:
+        for i, (game_data, move_count, state) in enumerate(
+                pool.imap_unordered(worker_self_play, args_list)):
+            all_data.extend(game_data)
+            total_moves += move_count
+
+            if state == chess_engine.GameState.CHECKMATE:
+                results["checkmate"] += 1
+            elif state == chess_engine.GameState.ONGOING:
+                results["ongoing"] += 1
+            else:
+                results["draw"] += 1
+
+            print(f"  Partie terminée ({i + 1}/{num_games}): {move_count} coups, état={state}")
 
     avg_length = total_moves / max(num_games, 1)
     return all_data, results, avg_length
@@ -115,6 +148,7 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
                     epochs=10, batch_size=256, global_step=0):
     model.train()
     dataset = SelfPlayDataset(replay_buffer)
+    # num_workers=0 est important sous Windows pour DataLoader en GPU
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
     for epoch in range(epochs):
@@ -166,32 +200,33 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 # ============================================================
 def pipeline(
         num_iterations=2,
-        games_per_iter=2,
-        num_simulations=25,
-        train_epochs=2,
-        batch_size=64,
-        learning_rate=1e-3,
+        games_per_iter=4,
+        num_simulations=100,
+        train_epochs=3,
+        batch_size=1024,
+        learning_rate=1e-4,
         num_res_blocks=10,
         num_filters=128,
-        max_buffer_size=200_000,
+        max_buffer_size=100_000,
+        num_workers=4,
         checkpoint_path=None,
 ):
     assert torch.cuda.is_available()
-    device = torch.device("cuda")
-    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
+    gpu_device = torch.device("cuda")
+
+    # On instancie d'abord le modèle
+    model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters)
 
     if checkpoint_path:
-        # checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        # model.load_state_dict(checkpoint["model_state_dict"])
-
-        model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cuda")
+        # On charge sur CPU en premier lieu pour éviter des soucis de partage mémoire
+        model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cpu")
         print(f"Checkpoint chargé : {checkpoint_path}")
 
-    # Le torch.jit.trace a été supprimé ici.
+    # L'optimiseur surveillera les paramètres (même s'ils changent d'appareil)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    scaler = GradScaler("cuda", enabled=(device.type == "cuda"))
+    scaler = GradScaler("cuda", enabled=True)
 
-    wandb.init(project="alphazero-chess", name="self_play_dummy_test")
+    wandb.init(project="alphazero-chess", name="self_play_multi_cpu")
 
     replay_buffer = []
     global_step = 0
@@ -201,10 +236,13 @@ def pipeline(
         print(f"  ITERATION {iteration + 1}/{num_iterations}")
         print(f"{'=' * 50}")
 
-        # 1. Self-play
+        # ── 1. Phase Self-Play (CPU Multi-Processus) ──
         model.eval()
+        model.cpu()  # On s'assure que le modèle est sur CPU
+        model.share_memory()  # Partage la RAM du modèle avec les processus enfants
+
         new_data, results, avg_length = generate_games(
-            model, device, games_per_iter, num_simulations
+            model, games_per_iter, num_simulations, num_workers=num_workers
         )
 
         replay_buffer.extend(new_data)
@@ -220,15 +258,24 @@ def pipeline(
 
         print(f"  Buffer: {len(replay_buffer)} positions")
 
-        # 2. Training
-        global_step = train_on_buffer(
-            model, optimizer, scaler, device, replay_buffer,
-            epochs=train_epochs, batch_size=batch_size, global_step=global_step,
-        )
+        # ── 2. Phase Training (GPU) ──
+        model.to(gpu_device)  # On déplace le modèle sur GPU pour la vitesse d'apprentissage
 
-        # 3. Sauvegarde
+        # Le DataLoader aura besoin d'assez de données pour faire un batch
+        # Si le buffer est plus petit que le batch_size (possible au tout 1er step), on gère
+        current_batch_size = min(batch_size, len(replay_buffer))
+
+        if current_batch_size > 0:
+            global_step = train_on_buffer(
+                model, optimizer, scaler, gpu_device, replay_buffer,
+                epochs=train_epochs, batch_size=current_batch_size, global_step=global_step,
+            )
+        else:
+            print("  Pas assez de données pour entraîner.")
+
+        # ── 3. Sauvegarde ──
         timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
-        save_path = f"checkpoints/{timestamp}_dummy_iter{iteration + 1}.pt"
+        save_path = f"checkpoints/{timestamp}_multi_iter{iteration + 1}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -242,11 +289,14 @@ def pipeline(
 
 
 if __name__ == "__main__":
-    # Paramètres de test factices pour une validation rapide (5-10 minutes)
+    # Il est impératif sous Windows de définir le mode de démarrage des processus
+    mp.set_start_method('spawn', force=True)
+
     pipeline(
-        num_iterations=15,
-        games_per_iter=10,
-        num_simulations=100,
+        num_iterations=2,
+        games_per_iter=16,
+        num_workers=16,
+        num_simulations=400,
         train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
