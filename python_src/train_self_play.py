@@ -5,43 +5,17 @@ import wandb
 import torch
 import numpy as np
 import torch.nn.functional as F
+import torch.multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader
 from torch.amp import GradScaler
 from datetime import datetime
-import torch.multiprocessing as mp
+
 
 import chess_engine
-from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer)
+from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer,
+                 export_model_to_onnx)
+
 from model import ChessNet
-
-
-# ============================================================
-#                     EXPORT ONNX
-# ============================================================
-def export_model_to_onnx(model, onnx_path, device):
-    """Exporte le modèle PyTorch courant vers un fichier ONNX optimisé."""
-    model.eval()
-    dummy_input = torch.randn(1, 119, 8, 8, device=device)
-
-    # On masque les warnings d'export ONNX qui sont souvent verbaux pour les ResNets
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        torch.onnx.export(
-            model,
-            dummy_input,
-            onnx_path,
-            export_params=True,
-            opset_version=14,
-            do_constant_folding=True,
-            input_names=['input'],
-            output_names=['policy', 'value'],
-            dynamic_axes={
-                'input': {0: 'batch_size'},
-                'policy': {0: 'batch_size'},
-                'value': {0: 'batch_size'}
-            }
-        )
-
 
 # ============================================================
 #                     DATASET
@@ -251,8 +225,8 @@ def pipeline(
         print(f"{'=' * 50}")
 
         # ── 0. Exportation du modèle vers ONNX ──
-        onnx_path = f"checkpoints/current_mcts_iter{iteration + 1}.onnx"
-        print("  Exportation du modèle vers ONNX pour les workers CPU...")
+        onnx_path = f"checkpoints/current_mcts_iter{iteration + 1}_int8.onnx"
+        print("  Exportation et quantification du modèle vers ONNX...")
         export_model_to_onnx(model, onnx_path, gpu_device)
 
         # ── 1. Phase Self-Play (C++ / ONNX) ──
@@ -305,13 +279,13 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
 
     pipeline(
-        num_iterations=2,
+        num_iterations=15,
         games_per_iter=16,
-        num_workers=16,
+        num_workers=8,
         num_simulations=600,
         train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
         max_buffer_size=100_000,
-        checkpoint_path="checkpoints/2026_03_09_17h17_multi_iter2.pt"
+        checkpoint_path="checkpoints/2026_03_09_22h42_multi_iter2.pt"
     )

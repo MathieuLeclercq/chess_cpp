@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ==========================================
 # RÉCUPÉRATION DE ONNX RUNTIME (C++)
 # ==========================================
-set(ONNXRUNTIME_VERSION "1.17.1")
+set(ONNXRUNTIME_VERSION "1.24.3")
 set(ONNXRUNTIME_URL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-win-x64-${ONNXRUNTIME_VERSION}.zip")
 
 include(FetchContent)

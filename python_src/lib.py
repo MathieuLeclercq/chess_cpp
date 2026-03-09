@@ -1,8 +1,12 @@
 import os
 import torch
+import warnings
 import numpy as np
 import torch.nn.functional as F
 import lightning as L
+
+from onnxruntime.quantization import quantize_dynamic, QuantType
+from onnxruntime.quantization.preprocess import quant_pre_process
 
 import chess_engine
 from model import ChessNet
@@ -378,3 +382,55 @@ def load_buffer(filepath):
 
     print(f"  [Disque] Buffer chargé : {len(buffer)} positions depuis {filepath}")
     return buffer
+
+
+# ============================================================
+#                     EXPORT ONNX & QUANTIFICATION
+# ============================================================
+def export_model_to_onnx(model, onnx_path, device):
+    """Exporte le modèle PyTorch vers ONNX, l'optimise (fusion de nœuds), puis le quantifie en INT8."""
+    model.eval()
+    dummy_input = torch.randn(1, 119, 8, 8, device=device)
+
+    temp_fp32_path = onnx_path.replace(".onnx", "_temp_fp32.onnx")
+    temp_infer_path = onnx_path.replace(".onnx", "_temp_infer.onnx")
+
+    # 1. Export standard en FP32
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch.onnx.export(
+            model,
+            dummy_input,
+            temp_fp32_path,
+            export_params=True,
+            opset_version=14,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['policy', 'value'],
+            dynamic_axes={
+                'input': {0: 'batch_size'},
+                'policy': {0: 'batch_size'},
+                'value': {0: 'batch_size'}
+            }
+        )
+
+    # 2. Pré-processing (Optimisation ONNX : Fusion Conv + BatchNorm)
+    quant_pre_process(
+        input_model_path=temp_fp32_path,
+        output_model_path=temp_infer_path,
+        skip_symbolic_shape=False
+    )
+
+    # 3. Quantification dynamique en INT8 sur le modèle optimisé
+    # On désactive l'optimisation ici (optimize_model=False) car elle a déjà été faite à l'étape 2
+    quantize_dynamic(
+        model_input=temp_infer_path,
+        model_output=onnx_path,
+        weight_type=QuantType.QUInt8,
+    )
+
+    # 4. Nettoyage des fichiers temporaires
+    if os.path.exists(temp_fp32_path):
+        os.remove(temp_fp32_path)
+    if os.path.exists(temp_infer_path):
+        os.remove(temp_infer_path)
