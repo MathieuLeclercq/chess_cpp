@@ -14,8 +14,8 @@ NUM_RES_BLOCKS = 10
 NUM_FILTERS = 128
 
 CHECKPOINT_DIR = "checkpoints"
-SIMULATIONS_EVAL = 200
-GAMES_PER_PAIR = 2  # Nombre total de parties par face-à-face
+SIMULATIONS_EVAL = 600
+GAMES_PER_PAIR = 4
 WHR_STATE_FILE = "tournament_state.whr"
 
 
@@ -88,6 +88,10 @@ def play_match(p1, p2, whr, device):
     """Lance un face-à-face entre deux bots et met à jour le WHR."""
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
+    # Initialisation des scores du match
+    score_p1 = 0.0
+    score_p2 = 0.0
+
     # Chargement des modèles
     res1 = load_model(os.path.join(CHECKPOINT_DIR, p1), NUM_RES_BLOCKS, NUM_FILTERS, device)
     res2 = load_model(os.path.join(CHECKPOINT_DIR, p2), NUM_RES_BLOCKS, NUM_FILTERS, device)
@@ -104,11 +108,26 @@ def play_match(p1, p2, whr, device):
         print(format_pgn(white_n, black_n, winner, moves))
 
         if winner == "draw":
+            score_p1 += 0.5
+            score_p2 += 0.5
             whr.create_game(black_n, white_n, "B", 0, 0)
             whr.create_game(black_n, white_n, "W", 0, 0)
         else:
+            if winner == "white":
+                if white_n == p1:
+                    score_p1 += 1
+                else:
+                    score_p2 += 1
+            else:
+                if black_n == p1:
+                    score_p1 += 1
+                else:
+                    score_p2 += 1
+
             outcome = "W" if winner == "white" else "B"
             whr.create_game(black_n, white_n, outcome, 0, 0)
+
+    print(f"\n>>>> FIN DU MATCH : {p1} ({score_p1}) - {p2} ({score_p2})")
 
     whr.iterate(10)
     whr.save_base(WHR_STATE_FILE)

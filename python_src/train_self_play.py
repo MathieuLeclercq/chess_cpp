@@ -289,7 +289,6 @@ def pipeline(
 
 
 if __name__ == "__main__":
-    # Il est impératif sous Windows de définir le mode de démarrage des processus
     mp.set_start_method('spawn', force=True)
 
     pipeline(
@@ -297,7 +296,7 @@ if __name__ == "__main__":
         games_per_iter=16,
         num_workers=16,
         num_simulations=600,
-        train_epochs=6,
+        train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
         max_buffer_size=100_000,

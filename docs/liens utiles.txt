@@ -1,5 +1,7 @@
 https://medium.com/oracledevs/lessons-from-implementing-alphazero-7e36e9054191
 
+https://hengbin.medium.com/training-budget-alphazero-to-play-chess-with-an-8-month-gpu-in-pytorch-d8e3d2556c16
+
 https://www.youtube.com/watch?v=UXW2yZndl7U
 
 https://lczero.org/blog/2018/09/a-standard-dataset/

@@ -15,7 +15,7 @@ from lib_gui import (
     load_images,
     rendu
 )
-from lib import (decode_move_index, move_to_san, print_pgn,
+from lib import (move_to_san, print_pgn,
                  load_model)
 
 # ============================================================
@@ -23,11 +23,11 @@ from lib import (decode_move_index, move_to_san, print_pgn,
 # ============================================================
 
 HUMAN_COLOR = chess_engine.Color.WHITE
-CHECKPOINT_PATH = "checkpoints/supervised_best_03_09_lichess.ckpt"
+CHECKPOINT_PATH = "checkpoints/2026_03_09_17h17_multi_iter2.pt"
 
 NUM_RES_BLOCKS = 10
 NUM_FILTERS = 128
-NUM_SIMULATIONS = 1000
+NUM_SIMULATIONS = 300
 
 
 # ============================================================
