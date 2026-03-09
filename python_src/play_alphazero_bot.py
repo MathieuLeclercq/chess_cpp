@@ -23,7 +23,7 @@ from lib import (decode_move_index, move_to_san, print_pgn,
 # ============================================================
 
 HUMAN_COLOR = chess_engine.Color.WHITE
-CHECKPOINT_PATH = "checkpoints/supervised_best_03_07.ckpt"
+CHECKPOINT_PATH = "checkpoints/supervised_best_03_09_lichess.ckpt"
 
 NUM_RES_BLOCKS = 10
 NUM_FILTERS = 128

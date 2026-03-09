@@ -35,7 +35,7 @@ def play_game(model_white, model_black, device, sims):
     while board.game_state == chess_engine.GameState.ONGOING:
         current_model = model_white if board.turn == chess_engine.Color.WHITE else model_black
         pi, _ = MCTS.mcts_search(board, current_model, device, num_simulations=sims,
-                                 add_dirichlet=False, batch_size=2)
+                                 add_dirichlet=False)
 
         move_count = len(san_moves)
         current_tau = 0.3 if move_count < 8 else 0.01

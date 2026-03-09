@@ -3,11 +3,12 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 from datetime import datetime
 
 import chess_engine
-from lib import decode_move_index, move_to_san, print_pgn, load_supervised_model, load_unsupervised_model
+from lib import (decode_move_index, move_to_san, print_pgn,
+                 load_supervised_model, load_unsupervised_model)
 from mcts import MCTS
 from model import ChessNet
 
@@ -15,7 +16,6 @@ from model import ChessNet
 # ============================================================
 #                     DATASET
 # ============================================================
-
 class SelfPlayDataset(Dataset):
     def __init__(self, buffer):
         self.buffer = buffer
@@ -35,7 +35,6 @@ class SelfPlayDataset(Dataset):
 # ============================================================
 #                     SELF-PLAY
 # ============================================================
-
 def self_play_game(model, device, num_simulations=200, max_moves=200):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
@@ -48,7 +47,7 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
         tensor_np = board.get_alphazero_tensor()
         pi, _ = MCTS.mcts_search(board, model, device, num_simulations, add_dirichlet=True)
 
-        if move_num < 30:
+        if move_num < 12:
             probs = pi.copy()
             probs /= probs.sum()
             chosen_idx = np.random.choice(4672, p=probs)
@@ -59,15 +58,6 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
 
         is_black = (board.turn == chess_engine.Color.BLACK)
         orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, chosen_idx, is_black)
-
-        # Debug : vérifier que la pièce existe
-        piece = board.get_square(orig_f, orig_r).get_piece()
-        if piece.get_type() == chess_engine.PieceType.NONE:
-            print(f"BUG: case vide à ({orig_f},{orig_r}), index={chosen_idx}, is_black={is_black}")
-            print(f"  plane={chosen_idx // 64}, remainder={chosen_idx % 64}")
-            print(f"  legal_indices={board.get_legal_move_indices()}")
-            print(f"  chosen_idx in legal: {chosen_idx in board.get_legal_move_indices()}")
-            break
 
         san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)
         success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
@@ -85,7 +75,7 @@ def self_play_game(model, device, num_simulations=200, max_moves=200):
     print_pgn(board, san_moves)
     z = 0.0
     if board.game_state == chess_engine.GameState.CHECKMATE:
-        z = 1.0  # history[-1] est la position du gagnant
+        z = 1.0
 
     dataset = []
     for i, (tensor_np, pi) in enumerate(history):
@@ -121,7 +111,6 @@ def generate_games(model, device, num_games, num_simulations):
 # ============================================================
 #                     TRAINING
 # ============================================================
-
 def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
                     epochs=10, batch_size=256, global_step=0):
     model.train()
@@ -158,7 +147,6 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
             num_batches += 1
             global_step += 1
 
-        # Log systématique à la fin de chaque époque
         if num_batches > 0:
             avg_loss = epoch_loss / num_batches
             wandb.log({
@@ -176,39 +164,34 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 # ============================================================
 #                     PIPELINE
 # ============================================================
-
 def pipeline(
-        num_iterations=10,
-        games_per_iter=20,
-        num_simulations=200,
-        train_epochs=10,
-        batch_size=256,
+        num_iterations=2,
+        games_per_iter=2,
+        num_simulations=25,
+        train_epochs=2,
+        batch_size=64,
         learning_rate=1e-3,
         num_res_blocks=10,
         num_filters=128,
         max_buffer_size=200_000,
         checkpoint_path=None,
 ):
+    assert torch.cuda.is_available()
     device = torch.device("cuda")
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(device)
 
-    # Chargement optionnel du checkpoint supervisé
-    # if checkpoint_path:
-    #     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    #     model.load_state_dict(checkpoint["model_state_dict"])
-    #     print(f"Checkpoint non supervisé chargé : {checkpoint_path}")
+    if checkpoint_path:
+        # checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        # model.load_state_dict(checkpoint["model_state_dict"])
 
-    model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cuda")
-    model.eval()
-    dummy = torch.randn(1, 119, 8, 8).to(device)
-    model = torch.jit.trace(model, dummy)
+        model = load_supervised_model(checkpoint_path, num_res_blocks, num_filters, "cuda")
+        print(f"Checkpoint chargé : {checkpoint_path}")
 
-    # Persistants entre les itérations — jamais recréés
+    # Le torch.jit.trace a été supprimé ici.
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    scaler = GradScaler(enabled=(device.type == "cuda"))
+    scaler = GradScaler("cuda", enabled=(device.type == "cuda"))
 
-    wandb.init(project="alphazero-chess", name="self_play")
-    wandb.watch(model, log="gradients", log_freq=100)
+    wandb.init(project="alphazero-chess", name="self_play_dummy_test")
 
     replay_buffer = []
     global_step = 0
@@ -218,7 +201,7 @@ def pipeline(
         print(f"  ITERATION {iteration + 1}/{num_iterations}")
         print(f"{'=' * 50}")
 
-        # ── 1. Self-play ──
+        # 1. Self-play
         model.eval()
         new_data, results, avg_length = generate_games(
             model, device, games_per_iter, num_simulations
@@ -232,34 +215,26 @@ def pipeline(
             "selfplay/buffer_size": len(replay_buffer),
             "selfplay/new_positions": len(new_data),
             "selfplay/avg_game_length": avg_length,
-            "selfplay/checkmates": results["checkmate"],
-            "selfplay/draws": results["draw"],
-            "selfplay/truncated": results["ongoing"],
             "selfplay/iteration": iteration + 1,
         })
 
         print(f"  Buffer: {len(replay_buffer)} positions")
-        print(f"  Parties: {results['checkmate']} mats, {results['draw']} nulles, "
-              f"{results['ongoing']} tronquées")
-        print(f"  Longueur moyenne: {avg_length:.0f} coups")
 
-        # ── 2. Training ──
+        # 2. Training
         global_step = train_on_buffer(
             model, optimizer, scaler, device, replay_buffer,
             epochs=train_epochs, batch_size=batch_size, global_step=global_step,
         )
 
-        # ── 3. Sauvegarde ──
-
+        # 3. Sauvegarde
         timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
-        save_path = f"checkpoints/{timestamp}_selfplay_iter{iteration + 1}.pt"
+        save_path = f"checkpoints/{timestamp}_dummy_iter{iteration + 1}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scaler_state_dict": scaler.state_dict(),
             "iteration": iteration + 1,
             "global_step": global_step,
-            "buffer_size": len(replay_buffer),
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
 
@@ -267,11 +242,14 @@ def pipeline(
 
 
 if __name__ == "__main__":
+    # Paramètres de test factices pour une validation rapide (5-10 minutes)
     pipeline(
-        num_iterations=2,
-        games_per_iter=2,
-        num_simulations=25,
+        num_iterations=15,
+        games_per_iter=10,
+        num_simulations=100,
         train_epochs=3,
         batch_size=1024,
-        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt",
+        learning_rate=1e-4,
+        max_buffer_size=100_000,
+        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt"
     )

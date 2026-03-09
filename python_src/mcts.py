@@ -101,7 +101,7 @@ class MCTS:
         MCTS.expand_node_single(root, board, model, device)
 
         if add_dirichlet and root.children:
-            epsilon, alpha = 0.25, 0.3
+            epsilon, alpha = 0.12, 0.3
             noise = np.random.dirichlet([alpha] * len(root.children))
             for i, (idx, child) in enumerate(root.children.items()):
                 child.prior = (1 - epsilon) * child.prior + epsilon * noise[i]
@@ -198,8 +198,7 @@ class MCTS:
 
         # 2. Lancement de la recherche MCTS
         pi, root = MCTS.mcts_search(
-            board, model, device, num_simulations=num_simulations, add_dirichlet=False,
-            batch_size=16)
+            board, model, device, num_simulations=num_simulations, add_dirichlet=False)
 
         # 3. Trier les indices par nombre de visites (décroissant)
         top_indices = np.argsort(pi)[::-1][:3]
