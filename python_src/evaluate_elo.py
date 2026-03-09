@@ -1,34 +1,32 @@
 import os
-import torch
 import itertools
 import numpy as np
 from whr import whole_history_rating
 import chess_engine
-from mcts import MCTS
-from lib import decode_move_index, move_to_san, load_model
+from lib import decode_move_index, move_to_san
 
 # ============================================================
 #                     CONFIGURATION
 # ============================================================
-NUM_RES_BLOCKS = 10
-NUM_FILTERS = 128
-
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 4
+GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
 
 
-def play_game(model_white, model_black, device, sims):
+def play_game(model_white, model_black, sims):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
     san_moves = []
 
     while board.game_state == chess_engine.GameState.ONGOING:
         current_model = model_white if board.turn == chess_engine.Color.WHITE else model_black
-        pi, _ = MCTS.mcts_search(board, current_model, device, num_simulations=sims,
-                                 add_dirichlet=False)
 
+        # Appel au moteur MCTS C++ / ONNX
+        pi_raw = current_model.mcts_search(board, sims, 1.4, False)
+        pi = np.array(pi_raw, dtype=np.float32)
+
+        # Logique de température
         move_count = len(san_moves)
         current_tau = 0.3 if move_count < 8 else 0.01
 
@@ -84,7 +82,7 @@ def get_ranked_players(whr, files):
     return players
 
 
-def play_match(p1, p2, whr, device):
+def play_match(p1, p2, whr):
     """Lance un face-à-face entre deux bots et met à jour le WHR."""
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
@@ -92,11 +90,9 @@ def play_match(p1, p2, whr, device):
     score_p1 = 0.0
     score_p2 = 0.0
 
-    # Chargement des modèles
-    res1 = load_model(os.path.join(CHECKPOINT_DIR, p1), NUM_RES_BLOCKS, NUM_FILTERS, device)
-    res2 = load_model(os.path.join(CHECKPOINT_DIR, p2), NUM_RES_BLOCKS, NUM_FILTERS, device)
-    m1 = res1[0] if isinstance(res1, tuple) else res1
-    m2 = res2[0] if isinstance(res2, tuple) else res2
+    # Instanciation des modèles MCTS C++
+    m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
+    m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
 
     for g in range(GAMES_PER_PAIR):
         if g % 2 == 0:
@@ -104,7 +100,7 @@ def play_match(p1, p2, whr, device):
         else:
             white_n, black_n, white_m, black_m = p2, p1, m2, m1
 
-        winner, moves = play_game(white_m, black_m, device, SIMULATIONS_EVAL)
+        winner, moves = play_game(white_m, black_m, SIMULATIONS_EVAL)
         print(format_pgn(white_n, black_n, winner, moves))
 
         if winner == "draw":
@@ -134,13 +130,13 @@ def play_match(p1, p2, whr, device):
 
 
 def run_tournament():
-    device = torch.device("cpu")
     if os.path.exists(WHR_STATE_FILE):
         whr = whole_history_rating.Base.load_base(WHR_STATE_FILE)
     else:
         whr = whole_history_rating.Base({"w2": 14})
 
-    all_files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if f.endswith((".pt", ".ckpt"))])
+    # Filtrer uniquement les fichiers ONNX (idéalement les INT8 si présents)
+    all_files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".onnx")])
 
     # Identifier les nouveaux venus
     known_players = [p.name for p in whr.players.values()]
@@ -173,7 +169,7 @@ def run_tournament():
 
     # --- EXECUTION DES MATCHS ---
     for p1, p2 in pairs_to_play:
-        play_match(p1, p2, whr, device)
+        play_match(p1, p2, whr)
 
     # --- RESULTATS FINAUX ---
     whr.iterate(100)
