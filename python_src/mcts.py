@@ -1,20 +1,18 @@
 import math
 import torch
 import numpy as np
-
 import chess_engine
-
 from lib import decode_move_index, move_to_san
 
 
 class MCTSNode:
     def __init__(self, prior, move=None, parent=None):
-        self.move = move  # (orig_f, orig_r, dest_f, dest_r, promo)
+        self.move = move
         self.parent = parent
-        self.children = {}  # move_index -> MCTSNode
-        self.prior = prior  # P(s,a) donné par le réseau
-        self.visit_count = 0  # N(s,a)
-        self.total_value = 0.0  # W(s,a)
+        self.children = {}
+        self.prior = prior
+        self.visit_count = 0
+        self.total_value = 0.0
         self.is_terminal = False
 
     def q_value(self):
@@ -28,7 +26,6 @@ class MCTSNode:
 
 
 def backup(node, value):
-    """Remonte la valeur dans l'arbre en alternant le signe."""
     while node is not None:
         node.visit_count += 1
         node.total_value += value
@@ -37,13 +34,8 @@ def backup(node, value):
 
 
 class MCTS:
-
     @staticmethod
     def select_leaf(root, board, c_puct):
-        """
-        Descend dans l'arbre en suivant UCB jusqu'à une feuille.
-        Retourne (node, moves_played, aborted).
-        """
         node = root
         moves_played = 0
 
@@ -56,7 +48,6 @@ class MCTS:
             orig_f, orig_r, dest_f, dest_r, promo = child.move
             success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo, False)
             if not success:
-                # Coup invalide — ne devrait plus arriver
                 raise Exception("problème lors de la génération du coup")
 
             node = child
@@ -66,9 +57,6 @@ class MCTS:
 
     @staticmethod
     def expand_node_from_results(node, legal_indices, decoded_moves, policy, value):
-        """
-        Expanse un nœud avec les résultats d'un forward pass déjà effectué.
-        """
         legal_probs = np.array([policy[idx] for idx in legal_indices], dtype=np.float32)
         s = legal_probs.sum()
         if s > 0:
@@ -82,22 +70,14 @@ class MCTS:
                 move=decoded_moves[i],
                 parent=node
             )
-
         return value
 
     @staticmethod
     def expand_node_single(node, board, model, device):
-        """
-        Expansion classique (un seul nœud). Utilisé pour la racine.
-        """
         legal_indices = board.get_legal_move_indices()
-
         if not legal_indices:
             node.is_terminal = True
-            if board.is_in_check():
-                return -1.0
-            else:
-                return 0.0
+            return -1.0 if board.is_in_check() else 0.0
 
         tensor = torch.from_numpy(board.get_alphazero_tensor()).float().unsqueeze(0).to(device)
 
@@ -108,26 +88,18 @@ class MCTS:
         value = v.item()
 
         is_black = (board.turn == chess_engine.Color.BLACK)
-
-        decoded_moves = []
-        for idx in legal_indices:
-            decoded_moves.append(decode_move_index(board, idx, is_black))
+        decoded_moves = [decode_move_index(board, idx, is_black) for idx in legal_indices]
 
         return MCTS.expand_node_from_results(node, legal_indices, decoded_moves, policy, value)
 
     @staticmethod
-    def mcts_search(board, model, device, num_simulations=200, c_puct=1.4,
-                    add_dirichlet=False, batch_size=1):
+    def mcts_search(board, model, device, num_simulations=200, c_puct=1.4, add_dirichlet=False):
         """
-        MCTS avec évaluation par batch.
-        Collecte plusieurs feuilles, fait UN forward pass, puis expand + backup.
+        MCTS séquentiel classique (sans batch_size).
         """
         root = MCTSNode(prior=0.0)
-
-        # Expansion initiale de la racine (toujours en single)
         MCTS.expand_node_single(root, board, model, device)
 
-        # Bruit de Dirichlet sur la racine
         if add_dirichlet and root.children:
             epsilon, alpha = 0.25, 0.3
             noise = np.random.dirichlet([alpha] * len(root.children))
@@ -136,79 +108,54 @@ class MCTS:
 
         sim = 0
         while sim < num_simulations:
-            # ── Phase 1 : Collecter un batch de feuilles ──
-            pending = []  # (node, moves_played, tensor_np, legal_indices, decoded_moves)
+            node, moves_played, aborted = MCTS.select_leaf(root, board, c_puct)
 
-            for _ in range(min(batch_size, num_simulations - sim)):
-                node, moves_played, aborted = MCTS.select_leaf(root, board, c_puct)
-
-                if aborted:
-                    for _ in range(moves_played):
-                        board.undo_move()
-                    sim += 1
-                    continue
-
-                # Cas terminal : backup immédiat, pas besoin du réseau
-                if node.is_terminal:
-                    value = -1.0 if board.is_in_check() else 0.0
-                    backup(node, value)
-                    for _ in range(moves_played):
-                        board.undo_move()
-                    sim += 1
-                    continue
-
-                # Feuille non-expansée : collecter les données
-                if not node.children:
-                    legal_indices = board.get_legal_move_indices()
-
-                    # Vérifier si c'est en fait une position terminale
-                    if not legal_indices:
-                        node.is_terminal = True
-                        value = -1.0 if board.is_in_check() else 0.0
-                        backup(node, value)
-                        for _ in range(moves_played):
-                            board.undo_move()
-                        sim += 1
-                        continue
-
-                    # Capturer tensor + moves AVANT de rembobiner
-                    tensor_np = board.get_alphazero_tensor()
-                    is_black = (board.turn == chess_engine.Color.BLACK)
-
-                    decoded_moves = []
-                    for idx in legal_indices:
-                        decoded_moves.append(decode_move_index(board, idx, is_black))
-
-                    pending.append((node, moves_played, tensor_np, legal_indices, decoded_moves))
-
-                # Rembobiner le board pour la prochaine sélection
-                for _ in range(moves_played):
-                    board.undo_move()
-
-            # ── Phase 2 : Forward pass batché ──
-            if not pending:
+            if aborted:
+                for _ in range(moves_played): board.undo_move()
+                sim += 1
                 continue
 
-            tensors = np.stack([p[2] for p in pending])
-            batch_tensor = torch.from_numpy(tensors).float().to(device)
+            if node.is_terminal:
+                value = -1.0 if board.is_in_check() else 0.0
+                backup(node, value)
+                for _ in range(moves_played): board.undo_move()
+                sim += 1
+                continue
 
-            with torch.no_grad():
-                p_logits, v_preds = model(batch_tensor)
+            # Si le nœud n'est pas expansé (c'est une nouvelle feuille)
+            if not node.children:
+                legal_indices = board.get_legal_move_indices()
 
-            policies = torch.softmax(p_logits, dim=1).cpu().numpy()
-            values = v_preds.squeeze(1).cpu().numpy()
+                if not legal_indices:
+                    node.is_terminal = True
+                    value = -1.0 if board.is_in_check() else 0.0
+                    backup(node, value)
+                    for _ in range(moves_played): board.undo_move()
+                    sim += 1
+                    continue
 
-            # ── Phase 3 : Expansion + Backup ──
-            for i, (node, moves_played, tensor_np, legal_indices, decoded_moves) in enumerate(
-                    pending):
-                policy = policies[i]
-                value = float(values[i])
+                # Inférence directe sur le réseau
+                tensor = torch.from_numpy(board.get_alphazero_tensor()).float().unsqueeze(0).to(
+                    device)
+                with torch.no_grad():
+                    p_logits, v_preds = model(tensor)
 
+                policy = torch.softmax(p_logits, dim=1).squeeze(0).cpu().numpy()
+                value = float(v_preds.item())
+
+                is_black = (board.turn == chess_engine.Color.BLACK)
+                decoded_moves = [decode_move_index(board, idx, is_black) for idx in legal_indices]
+
+                # Expansion et Backup
                 MCTS.expand_node_from_results(node, legal_indices, decoded_moves, policy, value)
                 backup(node, value)
-                sim += 1
 
-        # Construire le vecteur pi
+            # Rétablissement de l'état C++
+            for _ in range(moves_played):
+                board.undo_move()
+
+            sim += 1
+
         pi = np.zeros(4672, dtype=np.float32)
         for idx, child in root.children.items():
             pi[idx] = child.visit_count
