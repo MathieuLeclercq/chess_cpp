@@ -7,6 +7,8 @@
 #include <memory>
 #include <cmath>
 #include <random>
+#include <cstdint>
+#include <cstring>
 
 struct MCTSNode {
     int move_idx;
@@ -33,17 +35,34 @@ struct MCTSNode {
     }
 };
 
+struct TTEntry {
+    std::vector<float> policy;
+    float value;
+};
+
 class MCTS {
 private:
     Ort::Env env;
     Ort::SessionOptions session_options;
     std::unique_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
+    std::unordered_map<uint64_t, TTEntry> transposition_table;
+
+    // Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
+    uint64_t compute_hash(const std::vector<float>& tensor) const {
+        uint64_t hash = 14695981039346656037ULL;
+        for (float f : tensor) {
+            uint32_t bits;
+            std::memcpy(&bits, &f, sizeof(bits));
+            hash ^= bits;
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
 
 public:
     MCTS(const std::string& model_path);
 
-    // Retourne le vecteur de probabilités Pi de taille 4672
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
 
 private:

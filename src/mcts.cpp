@@ -101,10 +101,27 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     }
 
     std::vector<float> tensor = board.getAlphaZeroTensor();
+    uint64_t hash = compute_hash(tensor);
+
     std::vector<float> policy;
     float value;
 
-    evaluate_onnx(tensor, policy, value);
+    // --- TABLE DE TRANSPOSITION ---
+    auto it = transposition_table.find(hash);
+    if (it != transposition_table.end()) {
+        policy = it->second.policy;
+        value = it->second.value;
+    }
+    else {
+        evaluate_onnx(tensor, policy, value);
+
+        // Sécurité mémoire : limite à ~350 Mo par worker
+        if (transposition_table.size() > 20000) {
+            transposition_table.clear();
+        }
+
+        transposition_table[hash] = { policy, value };
+    }
 
     // Filtrage des coups illégaux et normalisation
     float sum_legal = 0.0f;
