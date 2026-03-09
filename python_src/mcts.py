@@ -228,36 +228,59 @@ class MCTS:
         if not legal_indices:
             return None
 
-        # 1. Lancement de la recherche
+        is_black = (board.turn == chess_engine.Color.BLACK)
+
+        # --- 1. PRÉDICTION BRUTE (Avant MCTS) ---
+        # On convertit le plateau en tenseur et on fait une passe dans le réseau
+        tensor = torch.from_numpy(board.get_alphazero_tensor()).float().unsqueeze(0).to(device)
+        model.eval()
+        with torch.no_grad():
+            p_logits, _ = model(tensor)
+
+        # On masque les coups illégaux pour ne garder que la meilleure idée légale
+        p_logits = p_logits[0].cpu().numpy()
+        masked_logits = np.full_like(p_logits, -np.inf)
+        masked_logits[legal_indices] = p_logits[legal_indices]
+
+        best_raw_idx = int(np.argmax(masked_logits))
+        orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, best_raw_idx, is_black)
+        raw_san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)
+
+        print(f"\n[Réseau Brut] Coup préféré avant réflexion : {raw_san}")
+        # ----------------------------------------
+
+        # 2. Lancement de la recherche MCTS
         pi, root = MCTS.mcts_search(
             board, model, device, num_simulations=num_simulations, add_dirichlet=False,
             batch_size=16)
 
-        # 2. Trier les indices par nombre de visites (décroissant)
-        # pi contient les probabilités (visites / total_visites)
+        # 3. Trier les indices par nombre de visites (décroissant)
         top_indices = np.argsort(pi)[::-1][:3]
 
-        print(f"\n--- Analyse MCTS ({num_simulations} sims) ---")
-
-        is_black = (board.turn == chess_engine.Color.BLACK)
+        print(f"--- Analyse MCTS ({num_simulations} sims) ---")
 
         for i, idx in enumerate(top_indices):
-            if pi[idx] == 0: continue  # On n'affiche pas les coups non visités
+            if pi[idx] == 0:
+                continue  # On n'affiche pas les coups non visités
 
             child = root.children[idx]
-            # Décodage pour l'affichage
             f_o, r_o, f_d, r_d, promo = child.move
             san = move_to_san(board, f_o, r_o, f_d, r_d, promo)
 
-            # Valeur du point de vue de l'IA (-q_value car l'enfant est le point de vue adverse)
-            val = -child.q_value()
+            # --- NOUVEAU : Valeur absolue (Blancs = Positif) ---
+            # Si c'est au tour des Blancs, l'enfant (trait aux Noirs) évalue pour les Noirs -> on inverse
+            # Si c'est au tour des Noirs, l'enfant (trait aux Blancs) évalue pour les Blancs -> on conserve
+            val_white = -child.q_value() if not is_black else child.q_value()
+            # ---------------------------------------------------
+
             prob = pi[idx] * 100
             visites = child.visit_count
 
             rank_str = f"#{i + 1}"
-            print(f"{rank_str:3} | {san:6} | Prob: {prob:5.1f}% | Value: {val:+.3f} | N: {visites}")
+            print(
+                f"{rank_str:3} | {san:6} | Prob: {prob:5.1f}% | Value: {val_white:+.3f} | N: {visites}")
 
-        # 3. Le meilleur coup reste celui avec l'index 0 du tri (ou l'argmax de pi)
+        # 4. Le meilleur coup reste celui avec l'index 0 du tri
         best_idx = top_indices[0]
         best_move = root.children[best_idx].move
 
