@@ -13,7 +13,7 @@ CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
 GAMES_PER_PAIR = 1
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "all"  # Options : "default" ou "all"
+MODE = "default"  # Options : "default" ou "all"
 
 
 def play_game(model_white, model_black, sims):
