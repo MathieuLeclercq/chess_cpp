@@ -213,9 +213,6 @@ class MCTS:
             f_o, r_o, f_d, r_d, promo = child.move
             san = move_to_san(board, f_o, r_o, f_d, r_d, promo)
 
-            # --- NOUVEAU : Valeur absolue (Blancs = Positif) ---
-            # Si c'est au tour des Blancs, l'enfant (trait aux Noirs) évalue pour les Noirs -> on inverse
-            # Si c'est au tour des Noirs, l'enfant (trait aux Blancs) évalue pour les Blancs -> on conserve
             val_white = -child.q_value() if not is_black else child.q_value()
             # ---------------------------------------------------
 

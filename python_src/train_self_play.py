@@ -9,6 +9,7 @@ import torch.multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader
 from torch.amp import GradScaler
 from datetime import datetime
+from tqdm import tqdm
 
 import chess_engine
 from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer,
@@ -76,7 +77,7 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
         success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
         if not success:
             print(f"SELF-PLAY ERROR: move failed ({orig_f},{orig_r})->({dest_f},{dest_r})")
-            break
+            raise Exception
 
         if board.game_state == chess_engine.GameState.CHECKMATE:
             san += "#"
@@ -121,7 +122,7 @@ def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
 
     with mp.Pool(processes=num_workers) as pool:
         for i, (game_data, move_count, state) in enumerate(
-                pool.imap_unordered(worker_self_play, args_list)):
+                tqdm(pool.imap_unordered(worker_self_play, args_list), total=num_games)):
             all_data.extend(game_data)
             total_moves += move_count
 
@@ -226,17 +227,15 @@ def pipeline(
     replay_buffer = load_buffer(buffer_filepath)
     global_step = 0
 
+    init_onnx_filename = f"{timestamp}_iter0_unsupervised"
+    print("  Exportation et quantification du modèle vers ONNX...")
+    onnx_path = f"checkpoints/{init_onnx_filename}.onnx"
+    export_model_to_onnx(model, onnx_path, gpu_device)
+
     for iteration in range(num_iterations):
         print(f"\n{'=' * 50}")
         print(f"  ITERATION {iteration + 1}/{num_iterations}")
         print(f"{'=' * 50}")
-
-        # ── 0. Exportation du modèle vers ONNX ──
-
-        ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
-        print("  Exportation et quantification du modèle vers ONNX...")
-        onnx_path = f"checkpoints/{ckpt_filename}.onnx"
-        export_model_to_onnx(model, onnx_path, gpu_device)
 
         # ── 1. Phase Self-Play (C++ / ONNX) ──
         new_data, results, avg_length = generate_games(
@@ -269,6 +268,7 @@ def pipeline(
 
         # ── 3. Sauvegarde ──
 
+        ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
         save_path = f"checkpoints/{ckpt_filename}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
@@ -278,7 +278,9 @@ def pipeline(
             "global_step": global_step,
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
-
+        print("  Exportation et quantification du modèle vers ONNX...")
+        onnx_path = f"checkpoints/{ckpt_filename}.onnx"
+        export_model_to_onnx(model, onnx_path, gpu_device)
         save_buffer(replay_buffer, buffer_filepath)
 
     last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
@@ -296,9 +298,10 @@ if __name__ == "__main__":
         games_per_iter=64,
         num_workers=8,
         num_simulations=600,
+
         train_epochs=1,
         batch_size=1024,
         learning_rate=1e-5,
         max_buffer_size=50_000,
-        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt"
+        checkpoint_path="checkpoints/2026_03_10_18h04_iter1_unsupervised.pt"
     )

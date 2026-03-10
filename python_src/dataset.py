@@ -35,7 +35,7 @@ def extract_sans_from_pgn(filepath):
     return content.split()
 
 
-class ChessDataset(IterableDataset):
+class ChessSupervisedDataset(IterableDataset):
     def __init__(self, pgn_dir):
         super().__init__()
         self.pgn_dir = pgn_dir

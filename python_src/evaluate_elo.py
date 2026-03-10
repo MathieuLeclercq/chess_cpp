@@ -2,8 +2,9 @@ import os
 import itertools
 import numpy as np
 from whr import whole_history_rating
+
 import chess_engine
-from lib import decode_move_index, move_to_san
+from lib import decode_move_index, move_to_san, get_model_hash
 
 # ============================================================
 #                     CONFIGURATION
@@ -135,51 +136,65 @@ def run_tournament():
     else:
         whr = whole_history_rating.Base({"w2": 14})
 
-    # Filtrer uniquement les fichiers ONNX (idéalement les INT8 si présents)
-    all_files = sorted([f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".onnx")])
+    # 1. Scan des fichiers physiques
+    onnx_files = [f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".onnx")]
 
-    # Identifier les nouveaux venus
-    known_players = [p.name for p in whr.players.values()]
-    new_bots = [f for f in all_files if f not in known_players]
+    # 2. Création du mapping Hash -> Filename
+    # all_hashes contient les IDs uniques de tous les fichiers présents
+    hash_to_filename = {}
+    for f in onnx_files:
+        h = get_model_hash(os.path.join(CHECKPOINT_DIR, f))
+        hash_to_filename[h] = f
 
-    # Obtenir le classement actuel
-    ranked_existing = get_ranked_players(whr, all_files)
+    all_hashes = list(hash_to_filename.keys())
+
+    # 3. Identification des nouveaux venus par rapport au WHR
+    known_hashes = [p.name for p in whr.players.values()]
+    new_hashes = [h for h in all_hashes if h not in known_hashes]
+
+    # 4. Classement actuel (basé sur les hashs)
+    ranked_existing_hashes = get_ranked_players(whr, all_hashes)
+
+    print("\n" + "=" * 30 + "\n CLASSEMENT ACTUEL\n" + "=" * 30)
+    for h, elo in ranked_existing_hashes:
+        print(f"{hash_to_filename[h]:40} : {elo:+.1f} Elo ({h})")
 
     # --- LOGIQUE DE SELECTION DES MATCHS ---
     pairs_to_play = []
 
-    if new_bots:
-        print(f"Nouveaux bots détectés : {new_bots}")
-        # 1. Chaque nouveau bot contre le champion
-        if ranked_existing:
-            champion = ranked_existing[0][0]
-            for nb in new_bots:
-                pairs_to_play.append((nb, champion))
+    if new_hashes:
+        print(f"\nNouveaux modèles détectés (via Hash) : {len(new_hashes)}")
+        # On utilise le meilleur hash connu comme champion
+        if ranked_existing_hashes:
+            champion_hash = ranked_existing_hashes[0][0]
+            for nh in new_hashes:
+                pairs_to_play.append((nh, champion_hash))
 
-        # 2. Les nouveaux bots entre eux
-        if len(new_bots) > 1:
-            for pair in itertools.combinations(new_bots, 2):
+        # Les nouveaux entre eux
+        if len(new_hashes) > 1:
+            for pair in itertools.combinations(new_hashes, 2):
                 pairs_to_play.append(pair)
 
-    elif len(ranked_existing) >= 2:
-        # 3. 0 nouveau bot : Match au sommet (n°1 vs n°2)
-        p1, p2 = ranked_existing[0][0], ranked_existing[1][0]
-        print(f"Aucun nouveau bot. Choc des titans : {p1} vs {p2}")
-        pairs_to_play.append((p1, p2))
+    elif len(ranked_existing_hashes) >= 2:
+        p1_h, p2_h = ranked_existing_hashes[0][0], ranked_existing_hashes[1][0]
+        print(
+            f"\nAucun nouveau bot. Choc des titans : {hash_to_filename[p1_h]} vs {hash_to_filename[p2_h]}")
+        pairs_to_play.append((p1_h, p2_h))
 
     # --- EXECUTION DES MATCHS ---
-    for p1, p2 in pairs_to_play:
-        play_match(p1, p2, whr)
+    for h1, h2 in pairs_to_play:
+        play_match(h1, h2, hash_to_filename, whr)
 
     # --- RESULTATS FINAUX ---
     whr.iterate(100)
     whr.save_base(WHR_STATE_FILE)
 
     print("\n" + "=" * 30 + "\n CLASSEMENT MIS À JOUR\n" + "=" * 30)
-    final_ranking = get_ranked_players(whr, all_files)
-    for name, elo in final_ranking:
+    final_ranking = get_ranked_players(whr, all_hashes)
+    for h, elo in final_ranking:
+        # Si un fichier a été supprimé entre temps, on affiche juste son hash
+        name = hash_to_filename.get(h, f"Fichier inconnu ({h})")
         print(f"{name:40} : {elo:+.1f} Elo")
-
 
 if __name__ == "__main__":
     run_tournament()

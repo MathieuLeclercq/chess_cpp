@@ -1,6 +1,7 @@
 import os
 import torch
 import warnings
+import hashlib
 import numpy as np
 import torch.nn.functional as F
 import lightning as L
@@ -226,7 +227,8 @@ def print_pgn(board, san_move_list):
         pgn += san + " "
 
     results = {
-        chess_engine.GameState.CHECKMATE: "1-0" if board.turn == chess_engine.Color.BLACK else "0-1",
+        chess_engine.GameState.CHECKMATE: ("1-0" if board.turn == chess_engine.Color.BLACK
+                                           else "0-1"),
         chess_engine.GameState.STALEMATE: "1/2-1/2",
         chess_engine.GameState.DRAW_REPETITION: "1/2-1/2",
         chess_engine.GameState.DRAW_50_MOVES: "1/2-1/2",
@@ -277,7 +279,6 @@ def load_unsupervised_model(checkpoint_path, num_res_blocks, num_filters, device
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     # 3. Injection des poids
-    # Note : Ton script de self-play sauvegarde les poids sous la clé "model_state_dict"
     model.load_state_dict(checkpoint["model_state_dict"])
 
     model.to(device)
@@ -391,7 +392,11 @@ def load_buffer(filepath):
 #                     EXPORT ONNX & QUANTIFICATION
 # ============================================================
 def export_model_to_onnx(model, onnx_path, device):
-    """Exporte le modèle PyTorch vers ONNX, l'optimise (fusion de nœuds), puis le quantifie en INT8."""
+    """
+    Exporte le modèle PyTorch vers ONNX,
+    l'optimise (fusion de nœuds),
+    puis le quantifie en INT8.
+    """
     model.eval()
     dummy_input = torch.randn(1, 119, 8, 8, device=device)
 
@@ -437,3 +442,12 @@ def export_model_to_onnx(model, onnx_path, device):
         os.remove(temp_fp32_path)
     if os.path.exists(temp_infer_path):
         os.remove(temp_infer_path)
+
+
+def get_model_hash(filepath):
+    """Génère un hash unique basé sur le contenu du fichier."""
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()[:16]
