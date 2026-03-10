@@ -21,8 +21,7 @@ from lib import (move_to_san, print_pgn, decode_move_index)
 # ============================================================
 
 HUMAN_COLOR = chess_engine.Color.WHITE
-# Remplacer par le chemin exact vers ton dernier fichier ONNX
-CHECKPOINT_PATH = "checkpoints/current_mcts_iter9_int8.onnx"
+CHECKPOINT_PATH = "checkpoints/2026_03_10_20h08_iter2_unsupervised.onnx"
 
 NUM_SIMULATIONS = 1200
 
@@ -71,16 +70,13 @@ def main():
     screen, clock = pygame_init()
     load_images()
 
-    # Chargement du modèle ONNX via C++
     print(f"Chargement du moteur MCTS avec {CHECKPOINT_PATH}...")
     mcts_engine = chess_engine.MCTS(CHECKPOINT_PATH)
 
-    # Initialisation du plateau
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
     san_moves = []
 
-    # Variables de gestion du Threading
     ai_thinking = False
     ai_result_container = []
 
@@ -89,30 +85,65 @@ def main():
     current_legal_moves = []
     game_over = False
 
+    # Nouvelles variables pour l'UI
+    dragging = False
+    drag_pos = (0, 0)
+    red_squares = set()
+
     while running:
         is_human_turn = (board.turn == HUMAN_COLOR)
 
-        # 1. Gestion des événements (souris, clavier)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-            # Clic humain uniquement pendant son tour ET si l'IA ne réfléchit pas
-            elif (event.type == pygame.MOUSEBUTTONDOWN and
-                  is_human_turn and
-                  not game_over and
-                  not ai_thinking):
+            # --- CLIC DROIT : Surlignage rouge ---
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                x, y = pygame.mouse.get_pos()
+                clicked_file = x // SQUARE_SIZE
+                clicked_rank = 7 - (y // SQUARE_SIZE)
+                sq = (clicked_file, clicked_rank)
+
+                # Toggle (ajoute si n'y est pas, retire si y est)
+                if sq in red_squares:
+                    red_squares.remove(sq)
+                else:
+                    red_squares.add(sq)
+
+            # --- CLIC GAUCHE (DOWN) : Saisir la pièce ---
+            elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and
+                  is_human_turn and not game_over and not ai_thinking):
+
+                red_squares.clear()  # Nettoie les cases rouges quand on joue
+
                 x, y = pygame.mouse.get_pos()
                 clicked_file = x // SQUARE_SIZE
                 clicked_rank = 7 - (y // SQUARE_SIZE)
 
-                if selected_square is None:
-                    sq = board.get_square(clicked_file, clicked_rank)
-                    if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
-                        selected_square = (clicked_file, clicked_rank)
-                        current_legal_moves = board.get_legal_moves(
-                            clicked_file, clicked_rank)
-                else:
+                sq = board.get_square(clicked_file, clicked_rank)
+                if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
+                    selected_square = (clicked_file, clicked_rank)
+                    current_legal_moves = board.get_legal_moves(clicked_file, clicked_rank)
+                    dragging = True
+                    drag_pos = (x, y)
+
+            # --- SOURIS (MOTION) : Faire glisser ---
+            elif event.type == pygame.MOUSEMOTION:
+                if dragging:
+                    drag_pos = event.pos
+
+            # --- CLIC GAUCHE (UP) : Relâcher la pièce ---
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if dragging:
+                    dragging = False
+                    x, y = event.pos
+                    clicked_file = x // SQUARE_SIZE
+                    clicked_rank = 7 - (y // SQUARE_SIZE)
+
+                    # Si on lâche sur la même case, on maintient la sélection (permet le click-to-click)
+                    if (clicked_file, clicked_rank) == selected_square:
+                        continue
+
                     valid_move = None
                     promotion_type = chess_engine.PieceType.NONE
 
@@ -130,6 +161,7 @@ def main():
                                           promotion_type)
                         success = board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
                                                    promotion_type)
+
                         if success:
                             if board.game_state == chess_engine.GameState.CHECKMATE:
                                 san += "#"
@@ -139,28 +171,22 @@ def main():
 
                             if board.game_state != chess_engine.GameState.ONGOING:
                                 game_over = True
-                        if board.game_state != chess_engine.GameState.ONGOING:
-                            game_over = True
 
+                    # On réinitialise la sélection après un mouvement (valide ou invalide)
                     selected_square = None
                     current_legal_moves = []
 
-        # 2. Tour de l'IA (Non bloquant)
+        # 2. Tour de l'IA (inchangé)
         if not is_human_turn and not game_over:
-
-            # A. Démarrage de la réflexion
             if not ai_thinking:
                 ai_thinking = True
                 ai_result_container.clear()
-
-                # On lance le worker dans un thread séparé, en lui passant mcts_engine
                 thread = threading.Thread(
                     target=mcts_worker,
                     args=(san_moves.copy(), mcts_engine, NUM_SIMULATIONS, ai_result_container)
                 )
                 thread.start()
 
-            # B. Récupération du résultat (une fois le thread terminé)
             elif len(ai_result_container) > 0:
                 result = ai_result_container.pop()
                 if result is not None:
@@ -176,21 +202,23 @@ def main():
 
                 if board.game_state != chess_engine.GameState.ONGOING:
                     game_over = True
-
                 ai_thinking = False
 
+        # 3. Appel de rendu mis à jour
         clock = rendu(
             screen,
             board,
             selected_square,
             current_legal_moves,
-            clock
+            clock,
+            dragging,  # NOUVEAU
+            drag_pos,  # NOUVEAU
+            red_squares  # NOUVEAU
         )
 
     print_pgn(board, san_moves)
     pygame.quit()
     sys.exit()
-
 
 if __name__ == "__main__":
     main()
