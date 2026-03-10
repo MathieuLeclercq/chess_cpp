@@ -54,10 +54,16 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
         pi_raw = mcts_engine.mcts_search(board, num_simulations, 1.4, True)
         pi = np.array(pi_raw, dtype=np.float32)
 
-        if move_num < 12:
-            probs = pi.copy()
-            probs /= probs.sum()
+        if move_num < 6:
+            tau = 0.5
+            log_pi = np.log(pi + 1e-10)
+            logits = log_pi / tau
+            logits -= np.max(logits)
+            probs = np.exp(logits)
+            probs /= np.sum(probs)
+
             chosen_idx = np.random.choice(4672, p=probs)
+
         else:
             chosen_idx = np.argmax(pi)
 
@@ -280,12 +286,12 @@ if __name__ == "__main__":
 
     pipeline(
         num_iterations=40,
-        games_per_iter=32,
+        games_per_iter=64,
         num_workers=8,
         num_simulations=600,
-        train_epochs=3,
+        train_epochs=1,
         batch_size=1024,
-        learning_rate=1e-4,
-        max_buffer_size=100_000,
-        checkpoint_path="checkpoints/2026_03_09_23h17_multi_iter1.pt"
+        learning_rate=1e-5,
+        max_buffer_size=50_000,
+        checkpoint_path="checkpoints/supervised_best_03_09_lichess.ckpt"
     )

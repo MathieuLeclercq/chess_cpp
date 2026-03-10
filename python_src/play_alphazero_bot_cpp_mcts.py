@@ -22,9 +22,9 @@ from lib import (move_to_san, print_pgn, decode_move_index)
 
 HUMAN_COLOR = chess_engine.Color.WHITE
 # Remplacer par le chemin exact vers ton dernier fichier ONNX
-CHECKPOINT_PATH = "checkpoints/current_mcts_iter2_int8.onnx"
+CHECKPOINT_PATH = "checkpoints/current_mcts_iter26_int8.onnx"
 
-NUM_SIMULATIONS = 1000
+NUM_SIMULATIONS = 1200
 
 
 # ============================================================
