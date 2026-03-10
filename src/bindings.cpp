@@ -35,6 +35,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .value("STALEMATE", STALEMATE)
         .value("DRAW_REPETITION", DRAW_REPETITION)
         .value("DRAW_50_MOVES", DRAW_50_MOVES)
+        .value("DRAW_INSUFF_MATERIAL", DRAW_INSUFF_MATERIAL)
         .export_values();
 
     // --- Classes ---
@@ -73,7 +74,12 @@ PYBIND11_MODULE(chess_engine, m) {
         .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock)
         .def("get_alphazero_tensor", [](const Chessboard& cb) {
         std::vector<float> tensor = cb.getAlphaZeroTensor();
-        return py::array_t<float>({ 119, 8, 8 }, tensor.data());
+
+        // On crée l'objet NumPy et on copie explicitement les données
+        py::array_t<float> result({ 119, 8, 8 });
+        std::memcpy(result.mutable_data(), tensor.data(), tensor.size() * sizeof(float));
+
+        return result;
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
@@ -90,7 +96,6 @@ PYBIND11_MODULE(chess_engine, m) {
         );
             });
 
-    // --- NOUVEAU : Classe MCTS ---
     py::class_<MCTS>(m, "MCTS")
         .def(py::init<const std::string&>(), py::arg("model_path"))
         .def("mcts_search", &MCTS::mcts_search,

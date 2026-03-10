@@ -230,6 +230,7 @@ def print_pgn(board, san_move_list):
         chess_engine.GameState.STALEMATE: "1/2-1/2",
         chess_engine.GameState.DRAW_REPETITION: "1/2-1/2",
         chess_engine.GameState.DRAW_50_MOVES: "1/2-1/2",
+        chess_engine.GameState.DRAW_INSUFF_MATERIAL: "1/2-1/2"
     }
     pgn += results.get(board.game_state, "*")
 

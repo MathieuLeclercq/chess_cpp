@@ -125,6 +125,7 @@ def draw_game_over(screen, board):
         chess_engine.GameState.STALEMATE: "Pat — Nulle",
         chess_engine.GameState.DRAW_REPETITION: "Nulle par répétition",
         chess_engine.GameState.DRAW_50_MOVES: "Nulle — règle des 50 coups",
+        chess_engine.GameState.DRAW_INSUFF_MATERIAL: "Nulle - Manque de matériel"
     }
     text = messages.get(state, "Partie terminée")
 

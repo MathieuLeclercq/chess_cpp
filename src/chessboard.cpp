@@ -81,6 +81,77 @@ bool Chessboard::checkThreefoldRepetition() const
     return count >= 3;
 }
 
+bool Chessboard::checkInsufficientMaterial() const
+{
+
+    // 1. Comptage rapide sans allocation de vecteur
+    int wCount = 0;
+    int bCount = 0;
+    for (int i = 0; i < 64; ++i) {
+        if (board[i].CheckOccupied()) {
+            if (board[i].getPiece().getColor() == WHITE) wCount++;
+            else bCount++;
+        }
+    }
+
+    // 2. Fast Path : Si trop de pièces, ce n'est pas une nulle
+    if (wCount > 2 || bCount > 2) return false;
+    if (wCount + bCount > 4) return false; // Optionnel : K+B vs K+B est le max (4 pièces)
+
+    // 3. Si on arrive ici, on a peu de pièces, on fait l'analyse détaillée
+    std::vector<std::pair<PieceType, int>> whitePieces;
+    std::vector<std::pair<PieceType, int>> blackPieces;
+
+    for (int i = 0; i < 64; ++i) {
+        const Piece& p = board[i].getPiece();
+        if (p.getType() == NONE) continue;
+
+        // On stocke le type et l'indice de case (pour la couleur des fous)
+        if (p.getColor() == WHITE) whitePieces.push_back({ p.getType(), i });
+        else blackPieces.push_back({ p.getType(), i });
+    }
+
+    auto isMajorOrPawn = [](const std::vector<std::pair<PieceType, int>>& pieces) {
+        for (auto const& [type, idx] : pieces) {
+            if (type == PAWN || type == ROOK || type == QUEEN) return true;
+        }
+        return false;
+        };
+
+    // Si un camp a un Pion, une Tour ou une Dame, le mat est encore possible.
+    if (isMajorOrPawn(whitePieces) || isMajorOrPawn(blackPieces)) return false;
+
+
+    // 1. K vs K
+    if (wCount == 1 && bCount == 1) return true;
+
+    // 2. K+B vs K ou K+N vs K (et inversement)
+    if ((wCount == 2 && bCount == 1) || (wCount == 1 && bCount == 2)) {
+        const auto& sideWithTwo = (wCount == 2) ? whitePieces : blackPieces;
+        for (auto const& [type, idx] : sideWithTwo) {
+            if (type == BISHOP || type == KNIGHT) return true;
+        }
+    }
+
+    // 3. K+B vs K+B (Fous sur même couleur)
+    if (wCount == 2 && bCount == 2) {
+        int whiteBishopSq = -1;
+        int blackBishopSq = -1;
+
+        for (auto const& [type, idx] : whitePieces)
+            if (type == BISHOP) whiteBishopSq = idx;
+        for (auto const& [type, idx] : blackPieces)
+            if (type == BISHOP) blackBishopSq = idx;
+
+        if (whiteBishopSq != -1 && blackBishopSq != -1) {
+            auto isLight = [](int idx) { return ((idx / 8) + (idx % 8)) % 2 != 0; };
+            if (isLight(whiteBishopSq) == isLight(blackBishopSq)) return true;
+        }
+    }
+
+    return false;
+}
+
 const std::vector<Move>& Chessboard::getMoveHistory() const
 {
     return moveHistory;
@@ -681,6 +752,11 @@ void Chessboard::evaluateGameState()
     else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
     {
         this->current_state = DRAW_50_MOVES;
+    }
+
+    else if (this->checkInsufficientMaterial())
+    {
+        this->current_state = DRAW_INSUFF_MATERIAL;
     }
 }
 

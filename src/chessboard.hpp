@@ -12,7 +12,8 @@ enum GameState
     CHECKMATE,
     STALEMATE,
     DRAW_REPETITION,
-    DRAW_50_MOVES
+    DRAW_50_MOVES,
+    DRAW_INSUFF_MATERIAL
 };
 
 struct StateSnapshot {
@@ -82,6 +83,7 @@ class Chessboard
         void checkEnPassant();
         bool isInCheck() const;
         bool hasAnyLegalMove();
+        bool checkInsufficientMaterial() const;
         Color getTurn() const;
         GameState getGameState() const;
         std::vector<float> getAlphaZeroTensor() const;

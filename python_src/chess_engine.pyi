@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy
 import pybind11_stubgen.typing_ext
 import typing
-__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
+__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
 class Chessboard:
     def __init__(self) -> None:
         ...
@@ -95,13 +95,16 @@ class GameState:
       DRAW_REPETITION
     
       DRAW_50_MOVES
+    
+      DRAW_INSUFF_MATERIAL
     """
     CHECKMATE: typing.ClassVar[GameState]  # value = <GameState.CHECKMATE: 1>
     DRAW_50_MOVES: typing.ClassVar[GameState]  # value = <GameState.DRAW_50_MOVES: 4>
+    DRAW_INSUFF_MATERIAL: typing.ClassVar[GameState]  # value = <GameState.DRAW_INSUFF_MATERIAL: 5>
     DRAW_REPETITION: typing.ClassVar[GameState]  # value = <GameState.DRAW_REPETITION: 3>
     ONGOING: typing.ClassVar[GameState]  # value = <GameState.ONGOING: 0>
     STALEMATE: typing.ClassVar[GameState]  # value = <GameState.STALEMATE: 2>
-    __members__: typing.ClassVar[dict[str, GameState]]  # value = {'ONGOING': <GameState.ONGOING: 0>, 'CHECKMATE': <GameState.CHECKMATE: 1>, 'STALEMATE': <GameState.STALEMATE: 2>, 'DRAW_REPETITION': <GameState.DRAW_REPETITION: 3>, 'DRAW_50_MOVES': <GameState.DRAW_50_MOVES: 4>}
+    __members__: typing.ClassVar[dict[str, GameState]]  # value = {'ONGOING': <GameState.ONGOING: 0>, 'CHECKMATE': <GameState.CHECKMATE: 1>, 'STALEMATE': <GameState.STALEMATE: 2>, 'DRAW_REPETITION': <GameState.DRAW_REPETITION: 3>, 'DRAW_50_MOVES': <GameState.DRAW_50_MOVES: 4>, 'DRAW_INSUFF_MATERIAL': <GameState.DRAW_INSUFF_MATERIAL: 5>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -224,6 +227,7 @@ BISHOP: PieceType  # value = <PieceType.BISHOP: 3>
 BLACK: Color  # value = <Color.BLACK: 1>
 CHECKMATE: GameState  # value = <GameState.CHECKMATE: 1>
 DRAW_50_MOVES: GameState  # value = <GameState.DRAW_50_MOVES: 4>
+DRAW_INSUFF_MATERIAL: GameState  # value = <GameState.DRAW_INSUFF_MATERIAL: 5>
 DRAW_REPETITION: GameState  # value = <GameState.DRAW_REPETITION: 3>
 KING: PieceType  # value = <PieceType.KING: 0>
 KNIGHT: PieceType  # value = <PieceType.KNIGHT: 4>

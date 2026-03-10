@@ -207,6 +207,7 @@ def pipeline(
         num_workers=4,
         checkpoint_path=None,
 ):
+    timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     assert torch.cuda.is_available()
     gpu_device = torch.device("cuda")
 
@@ -219,7 +220,7 @@ def pipeline(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scaler = GradScaler("cuda", enabled=True)
 
-    wandb.init(project="alphazero-chess", name="self_play_onnx_cpp")
+    wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play")
 
     buffer_filepath = "checkpoints/replay_buffer.npz"
     replay_buffer = load_buffer(buffer_filepath)
@@ -231,8 +232,10 @@ def pipeline(
         print(f"{'=' * 50}")
 
         # ── 0. Exportation du modèle vers ONNX ──
-        onnx_path = f"checkpoints/current_mcts_iter{iteration + 1}_int8.onnx"
+
+        ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
         print("  Exportation et quantification du modèle vers ONNX...")
+        onnx_path = f"checkpoints/{ckpt_filename}.onnx"
         export_model_to_onnx(model, onnx_path, gpu_device)
 
         # ── 1. Phase Self-Play (C++ / ONNX) ──
@@ -265,8 +268,8 @@ def pipeline(
             print("  Pas assez de données pour entraîner.")
 
         # ── 3. Sauvegarde ──
-        timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
-        save_path = f"checkpoints/{timestamp}_multi_iter{iteration + 1}.pt"
+
+        save_path = f"checkpoints/{ckpt_filename}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -277,6 +280,10 @@ def pipeline(
         print(f"  Checkpoint sauvegardé: {save_path}")
 
         save_buffer(replay_buffer, buffer_filepath)
+
+    last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
+    ckpt_onnx_final_path = f"checkpoints/{last_timestamp}_last_unsupervised.onnx"
+    export_model_to_onnx(model, ckpt_onnx_final_path, gpu_device)
 
     wandb.finish()
 
