@@ -83,8 +83,12 @@ def get_ranked_players(whr, files):
     return players
 
 
-def play_match(p1, p2, whr):
+def play_match(h1, h2, hash_to_filename, whr):
     """Lance un face-à-face entre deux bots et met à jour le WHR."""
+
+    p1 = hash_to_filename[h1]
+    p2 = hash_to_filename[h2]
+
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
     # Initialisation des scores du match
@@ -98,8 +102,10 @@ def play_match(p1, p2, whr):
     for g in range(GAMES_PER_PAIR):
         if g % 2 == 0:
             white_n, black_n, white_m, black_m = p1, p2, m1, m2
+            white_h, black_h = h1, h2  # Ajout des identifiants Hash
         else:
             white_n, black_n, white_m, black_m = p2, p1, m2, m1
+            white_h, black_h = h2, h1  # Ajout des identifiants Hash
 
         winner, moves = play_game(white_m, black_m, SIMULATIONS_EVAL)
         print(format_pgn(white_n, black_n, winner, moves))
@@ -107,22 +113,24 @@ def play_match(p1, p2, whr):
         if winner == "draw":
             score_p1 += 0.5
             score_p2 += 0.5
-            whr.create_game(black_n, white_n, "B", 0, 0)
-            whr.create_game(black_n, white_n, "W", 0, 0)
+            # On passe bien les Hashs au WHR
+            whr.create_game(black_h, white_h, "B", 0, 0)
+            whr.create_game(black_h, white_h, "W", 0, 0)
         else:
             if winner == "white":
-                if white_n == p1:
+                if white_h == h1:
                     score_p1 += 1
                 else:
                     score_p2 += 1
             else:
-                if black_n == p1:
+                if black_h == h1:
                     score_p1 += 1
                 else:
                     score_p2 += 1
 
             outcome = "W" if winner == "white" else "B"
-            whr.create_game(black_n, white_n, outcome, 0, 0)
+            # On passe bien les Hashs au WHR
+            whr.create_game(black_h, white_h, outcome, 0, 0)
 
     print(f"\n>>>> FIN DU MATCH : {p1} ({score_p1}) - {p2} ({score_p2})")
 
@@ -163,7 +171,7 @@ def run_tournament():
     pairs_to_play = []
 
     if new_hashes:
-        print(f"\nNouveaux modèles détectés (via Hash) : {len(new_hashes)}")
+        print(f"\nNouveaux modèles détectés : {len(new_hashes)}")
         # On utilise le meilleur hash connu comme champion
         if ranked_existing_hashes:
             champion_hash = ranked_existing_hashes[0][0]
@@ -186,7 +194,7 @@ def run_tournament():
         play_match(h1, h2, hash_to_filename, whr)
 
     # --- RESULTATS FINAUX ---
-    whr.iterate(100)
+    whr.auto_iterate()
     whr.save_base(WHR_STATE_FILE)
 
     print("\n" + "=" * 30 + "\n CLASSEMENT MIS À JOUR\n" + "=" * 30)
@@ -195,6 +203,7 @@ def run_tournament():
         # Si un fichier a été supprimé entre temps, on affiche juste son hash
         name = hash_to_filename.get(h, f"Fichier inconnu ({h})")
         print(f"{name:40} : {elo:+.1f} Elo")
+
 
 if __name__ == "__main__":
     run_tournament()
