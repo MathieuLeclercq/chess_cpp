@@ -13,7 +13,7 @@ torch.set_float32_matmul_precision('medium')
 
 if __name__ == "__main__":
     # --- Configuration ---
-    SHARD_DIR = r"D:\dataset_cpp_chess\dataset_shards"
+    SHARD_DIR = r"D:\data_cpp_chess\dataset_shards"
     BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
