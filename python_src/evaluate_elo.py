@@ -11,8 +11,9 @@ from lib import decode_move_index, move_to_san, get_model_hash
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 2
+GAMES_PER_PAIR = 1
 WHR_STATE_FILE = "tournament_state.whr"
+MODE = "all"  # Options : "default" ou "all"
 
 
 def play_game(model_white, model_black, sims):
@@ -73,12 +74,24 @@ def format_pgn(white_name, black_name, winner, moves):
 
 
 def get_ranked_players(whr, files):
-    """Retourne la liste des joueurs triée par Elo décroissant."""
+    """Retourne la liste des joueurs triée par Elo décroissant avec le nombre de parties."""
+    # 1. Comptage des parties pour chaque hash
+    game_counts = {f: 0 for f in files}
+    for game in whr.games:
+        w_name = game.white_player.name
+        b_name = game.black_player.name
+        if w_name in game_counts:
+            game_counts[w_name] += 1
+        if b_name in game_counts:
+            game_counts[b_name] += 1
+
+    # 2. Construction du classement
     players = []
     for f in files:
         rating = whr.ratings_for_player(f)
         if rating:
-            players.append((f, rating[-1][1]))  # (nom, elo)
+            players.append((f, rating[-1][1], game_counts[f]))
+
     players.sort(key=lambda x: x[1], reverse=True)
     return players
 
@@ -148,7 +161,6 @@ def run_tournament():
     onnx_files = [f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".onnx")]
 
     # 2. Création du mapping Hash -> Filename
-    # all_hashes contient les IDs uniques de tous les fichiers présents
     hash_to_filename = {}
     for f in onnx_files:
         h = get_model_hash(os.path.join(CHECKPOINT_DIR, f))
@@ -160,34 +172,42 @@ def run_tournament():
     known_hashes = [p.name for p in whr.players.values()]
     new_hashes = [h for h in all_hashes if h not in known_hashes]
 
-    # 4. Classement actuel (basé sur les hashs)
+    # 4. Classement actuel
     ranked_existing_hashes = get_ranked_players(whr, all_hashes)
 
     print("\n" + "=" * 30 + "\n CLASSEMENT ACTUEL\n" + "=" * 30)
-    for h, elo in ranked_existing_hashes:
-        print(f"{hash_to_filename[h]:40} : {elo:+.1f} Elo ({h})")
+    for h, elo, games in ranked_existing_hashes:
+        print(f"{hash_to_filename[h]:35} : {elo:>6.1f} Elo | {games:>3} parties ({h})")
 
     # --- LOGIQUE DE SELECTION DES MATCHS ---
     pairs_to_play = []
 
-    if new_hashes:
-        print(f"\nNouveaux modèles détectés : {len(new_hashes)}")
-        # On utilise le meilleur hash connu comme champion
-        if ranked_existing_hashes:
-            champion_hash = ranked_existing_hashes[0][0]
-            for nh in new_hashes:
-                pairs_to_play.append((nh, champion_hash))
+    if MODE == "all":
+        print(f"\nMode 'all' activé : Tournoi complet entre les {len(all_hashes)} bots.")
+        # Génère toutes les paires uniques possibles
+        pairs_to_play = list(itertools.combinations(all_hashes, 2))
 
-        # Les nouveaux entre eux
-        if len(new_hashes) > 1:
-            for pair in itertools.combinations(new_hashes, 2):
-                pairs_to_play.append(pair)
+    else:
+        # Mode par défaut
+        if new_hashes:
+            print(f"\nNouveaux modèles détectés (via Hash) : {len(new_hashes)}")
+            # On utilise le meilleur hash connu comme champion
+            if ranked_existing_hashes:
+                champion_hash = ranked_existing_hashes[0][0]
+                for nh in new_hashes:
+                    pairs_to_play.append((nh, champion_hash))
 
-    elif len(ranked_existing_hashes) >= 2:
-        p1_h, p2_h = ranked_existing_hashes[0][0], ranked_existing_hashes[1][0]
-        print(
-            f"\nAucun nouveau bot. Choc des titans : {hash_to_filename[p1_h]} vs {hash_to_filename[p2_h]}")
-        pairs_to_play.append((p1_h, p2_h))
+            # Les nouveaux entre eux
+            if len(new_hashes) > 1:
+                for pair in itertools.combinations(new_hashes, 2):
+                    pairs_to_play.append(pair)
+
+        elif len(ranked_existing_hashes) >= 2:
+            p1_h, p2_h = ranked_existing_hashes[0][0], ranked_existing_hashes[1][0]
+            print(
+                f"\nAucun nouveau bot. Choc des titans : "
+                f"{hash_to_filename[p1_h]} vs {hash_to_filename[p2_h]}")
+            pairs_to_play.append((p1_h, p2_h))
 
     # --- EXECUTION DES MATCHS ---
     for h1, h2 in pairs_to_play:
@@ -199,10 +219,9 @@ def run_tournament():
 
     print("\n" + "=" * 30 + "\n CLASSEMENT MIS À JOUR\n" + "=" * 30)
     final_ranking = get_ranked_players(whr, all_hashes)
-    for h, elo in final_ranking:
-        # Si un fichier a été supprimé entre temps, on affiche juste son hash
+    for h, elo, games in final_ranking:
         name = hash_to_filename.get(h, f"Fichier inconnu ({h})")
-        print(f"{name:40} : {elo:+.1f} Elo")
+        print(f"{name:35} : {elo:>6.1f} Elo | {games:>3} parties")
 
 
 if __name__ == "__main__":
