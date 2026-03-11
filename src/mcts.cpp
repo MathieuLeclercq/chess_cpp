@@ -33,12 +33,12 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         float max_ucb = -1e9f;
         int best_idx = -1;
 
-        // Remplacement des structured bindings pour éviter les erreurs d'IDE
+        float parent_q = node->q_value();
         for (const auto& pair : node->children) {
             int idx = pair.first;
             MCTSNode* child = pair.second.get();
 
-            float score = child->ucb_score(node->visit_count, c_puct);
+            float score = child->ucb_score(node->visit_count, parent_q, c_puct);
             if (score > max_ucb) {
                 max_ucb = score;
                 best_idx = idx;
@@ -162,7 +162,6 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
         }
 
         int i = 0;
-        // Remplacement des structured bindings ici aussi
         for (auto& pair : root->children) {
             MCTSNode* child = pair.second.get();
             float dirichlet = noise[i++] / sum_noise;
