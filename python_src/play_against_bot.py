@@ -110,40 +110,27 @@ def main():
                 else:
                     red_squares.add(sq)
 
-            # --- CLIC GAUCHE (DOWN) : Saisir la pièce ---
+            # --- CLIC GAUCHE (DOWN) : Saisir ou Cliquer-pour-bouger ---
             elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and
                   is_human_turn and not game_over and not ai_thinking):
 
-                red_squares.clear()  # Nettoie les cases rouges quand on joue
+                red_squares.clear()  # Nettoie les cases rouges quand on interagit
 
                 x, y = pygame.mouse.get_pos()
                 clicked_file = x // SQUARE_SIZE
                 clicked_rank = 7 - (y // SQUARE_SIZE)
+                clicked_sq = (clicked_file, clicked_rank)
 
-                sq = board.get_square(clicked_file, clicked_rank)
-                if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
-                    selected_square = (clicked_file, clicked_rank)
-                    current_legal_moves = board.get_legal_moves(clicked_file, clicked_rank)
-                    dragging = True
-                    drag_pos = (x, y)
-
-            # --- SOURIS (MOTION) : Faire glisser ---
-            elif event.type == pygame.MOUSEMOTION:
-                if dragging:
-                    drag_pos = event.pos
-
-            # --- CLIC GAUCHE (UP) : Relâcher la pièce ---
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if dragging:
-                    dragging = False
-                    x, y = event.pos
-                    clicked_file = x // SQUARE_SIZE
-                    clicked_rank = 7 - (y // SQUARE_SIZE)
-
-                    # Si on lâche sur la même case, on maintient la sélection (permet le click-to-click)
-                    if (clicked_file, clicked_rank) == selected_square:
-                        continue
-
+                if selected_square is None:
+                    # Cas 1 : Aucune pièce sélectionnée, on en saisit une
+                    sq = board.get_square(clicked_file, clicked_rank)
+                    if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
+                        selected_square = clicked_sq
+                        current_legal_moves = board.get_legal_moves(clicked_file, clicked_rank)
+                        dragging = True
+                        drag_pos = (x, y)
+                else:
+                    # Cas 2 : Une pièce est déjà sélectionnée (Click-to-Click)
                     valid_move = None
                     promotion_type = chess_engine.PieceType.NONE
 
@@ -156,6 +143,7 @@ def main():
                                 break
 
                     if valid_move is not None:
+                        # C'est un coup valide via clic
                         orig_f, orig_r = selected_square
                         san = move_to_san(board, orig_f, orig_r, clicked_file, clicked_rank,
                                           promotion_type)
@@ -168,13 +156,72 @@ def main():
                             elif board.is_in_check():
                                 san += "+"
                             san_moves.append(san)
+                            if board.game_state != chess_engine.GameState.ONGOING: game_over = True
 
-                            if board.game_state != chess_engine.GameState.ONGOING:
-                                game_over = True
+                        selected_square = None
+                        current_legal_moves = []
+                    else:
+                        # Clic invalide. A-t-on cliqué sur une AUTRE de nos pièces ?
+                        sq = board.get_square(clicked_file, clicked_rank)
+                        if sq.is_occupied() and sq.get_piece().get_color() == board.turn:
+                            # On change la sélection
+                            selected_square = clicked_sq
+                            current_legal_moves = board.get_legal_moves(clicked_file,
+                                                                        clicked_rank)
+                            dragging = True
+                            drag_pos = (x, y)
+                        else:
+                            # Clic dans le vide : on annule la sélection
+                            selected_square = None
+                            current_legal_moves = []
 
-                    # On réinitialise la sélection après un mouvement (valide ou invalide)
-                    selected_square = None
-                    current_legal_moves = []
+            # --- SOURIS (MOTION) : Faire glisser ---
+            elif event.type == pygame.MOUSEMOTION:
+                if dragging:
+                    drag_pos = event.pos
+
+            # --- CLIC GAUCHE (UP) : Relâcher la pièce (Drag-and-Drop) ---
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if dragging:
+                    dragging = False
+                    x, y = event.pos
+                    clicked_file = x // SQUARE_SIZE
+                    clicked_rank = 7 - (y // SQUARE_SIZE)
+
+                    # Si on lâche sur la case de départ, on garde la sélection (permet le click-to-click ensuite)
+                    if (clicked_file, clicked_rank) == selected_square:
+                        pass
+                    else:
+                        valid_move = None
+                        promotion_type = chess_engine.PieceType.NONE
+
+                        for move in current_legal_moves:
+                            if (move.get_dest_square().get_file() == clicked_file and
+                                    move.get_dest_square().get_rank() == clicked_rank):
+                                valid_move = move
+                                if move.get_promotion() == chess_engine.PieceType.QUEEN:
+                                    promotion_type = chess_engine.PieceType.QUEEN
+                                    break
+
+                        if valid_move is not None:
+                            orig_f, orig_r = selected_square
+                            san = move_to_san(board, orig_f, orig_r, clicked_file, clicked_rank,
+                                              promotion_type)
+                            success = board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
+                                                       promotion_type)
+
+                            if success:
+                                if board.game_state == chess_engine.GameState.CHECKMATE:
+                                    san += "#"
+                                elif board.is_in_check():
+                                    san += "+"
+                                san_moves.append(san)
+                                if board.game_state != chess_engine.GameState.ONGOING: game_over = True
+
+                            selected_square = None
+                            current_legal_moves = []
+                        else:
+                            pass
 
         # 2. Tour de l'IA (inchangé)
         if not is_human_turn and not game_over:
@@ -219,6 +266,7 @@ def main():
     print_pgn(board, san_moves)
     pygame.quit()
     sys.exit()
+
 
 if __name__ == "__main__":
     main()

@@ -32,11 +32,17 @@ class ChessNet(nn.Module):
         # 2. Corps résiduel
         self.res_blocks = nn.ModuleList([ResBlock(num_filters) for _ in range(num_res_blocks)])
 
-        # 3. Tête de Policy (Probabilités des coups)
-        # AlphaZero utilise 2 filtres 1x1 pour compresser avant la couche linéaire
-        self.policy_conv = nn.Conv2d(num_filters, 2, kernel_size=1)
-        self.policy_bn = nn.BatchNorm2d(2)
-        self.policy_fc = nn.Linear(2 * 8 * 8, 4672)  # 4672 = espace des coups possible
+        # # 3. Tête de Policy (Probabilités des coups)
+        # self.policy_conv = nn.Conv2d(num_filters, 2, kernel_size=1)
+        # self.policy_bn = nn.BatchNorm2d(2)
+        # self.policy_fc = nn.Linear(2 * 8 * 8, 4672)  # 4672 = espace des coups possible
+
+        # 3. Tête de Policy (façon AlphaZero Chess)
+        self.policy_conv1 = nn.Conv2d(num_filters, num_filters, kernel_size=1)
+        self.policy_bn1 = nn.BatchNorm2d(num_filters)
+        # Sortie directe vers les 73 plans de mouvements spatiaux
+        self.policy_conv2 = nn.Conv2d(num_filters, 73, kernel_size=1)
+        # On supprime totalement self.policy_fc !
 
         # 4. Tête de Value (Évaluation de la position)
         self.value_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
@@ -51,10 +57,15 @@ class ChessNet(nn.Module):
         for block in self.res_blocks:
             x = block(x)
 
+        # # Policy Head
+        # p = F.relu(self.policy_bn(self.policy_conv(x)))
+        # p = p.view(p.size(0), -1)
+        # p = self.policy_fc(p)  # On ne met pas de Softmax ici si on utilise CrossEntropyLoss après
+
         # Policy Head
-        p = F.relu(self.policy_bn(self.policy_conv(x)))
-        p = p.view(p.size(0), -1)
-        p = self.policy_fc(p)  # On ne met pas de Softmax ici si on utilise CrossEntropyLoss après
+        p = F.relu(self.policy_bn1(self.policy_conv1(x)))
+        p = self.policy_conv2(p)  # Shape: (N, 73, 8, 8)
+        p = p.view(p.size(0), -1)  # Flatten final en (N, 4672) pour la CrossEntropyLoss
 
         # Value Head
         v = F.relu(self.value_bn(self.value_conv(x)))

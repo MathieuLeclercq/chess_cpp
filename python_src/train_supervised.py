@@ -25,7 +25,7 @@ if __name__ == "__main__":
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # --- Instanciation ---
     # model = AlphaZeroLightning(learning_rate=1e-3, num_res_blocks=10, num_filters=128)
     model = AlphaZeroLightning.load_from_checkpoint(
-        "checkpoints/supervised_best_03_07.ckpt",
+        "checkpoints/supervised_best_03_07_V2_fixed.pt",
         learning_rate=1e-3,
         num_res_blocks=10,
         num_filters=128
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # --- Entraînement ---
     trainer = L.Trainer(
-        max_epochs=1,
+        max_epochs=4,
         # limit_train_batches=100,
         logger=wandb_logger,
         callbacks=[checkpoint_callback],

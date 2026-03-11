@@ -298,7 +298,6 @@ if __name__ == "__main__":
         games_per_iter=64,
         num_workers=8,
         num_simulations=600,
-
         train_epochs=1,
         batch_size=1024,
         learning_rate=1e-5,
