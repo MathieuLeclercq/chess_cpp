@@ -6,14 +6,14 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from sharded_dataset import ShardedChessDataset
-from lib import AlphaZeroLightning
+from lib import AlphaZeroLightning, load_model
 
 torch.set_float32_matmul_precision('medium')
 
 
 if __name__ == "__main__":
     # --- Configuration ---
-    SHARD_DIR = r"D:\data_cpp_chess\dataset_shards"
+    SHARD_DIR = r"D:\dataset_cpp_chess\dataset_shards"
     BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
@@ -39,9 +39,8 @@ if __name__ == "__main__":
     )
 
     # --- Instanciation ---
-    # model = AlphaZeroLightning(learning_rate=1e-3, num_res_blocks=10, num_filters=128)
-    model = AlphaZeroLightning.load_from_checkpoint(
-        "checkpoints/supervised_best_03_07_V2_fixed.pt",
+    # 1. On instancie le wrapper Lightning avec l'architecture vierge
+    model = AlphaZeroLightning(
         learning_rate=1e-3,
         num_res_blocks=10,
         num_filters=128
@@ -60,4 +59,5 @@ if __name__ == "__main__":
     trainer.fit(
         model,
         train_dataloaders=dataloader,
+        ckpt_path="checkpoints/alphazero-supervised-step=6000.ckpt"
     )

@@ -11,7 +11,7 @@ from lib import decode_move_index, move_to_san, get_model_hash
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 1
+GAMES_PER_PAIR = 4
 WHR_STATE_FILE = "tournament_state.whr"
 MODE = "default"  # Options : "default" ou "all"
 
