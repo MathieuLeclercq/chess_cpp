@@ -41,8 +41,10 @@ struct MCTSNode {
     }
 };
 
-struct TTEntry {
-    std::vector<float> policy;
+
+// Nouvelle structure optimisée en mémoire
+struct TranspositionEntry {
+    std::vector<std::pair<int, float>> legal_policy; // Ne stocke que {index_du_coup, probabilité}
     float value;
 };
 
@@ -52,7 +54,7 @@ private:
     Ort::SessionOptions session_options;
     std::unique_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
-    std::unordered_map<uint64_t, TTEntry> transposition_table;
+    std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
 
     // Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
     uint64_t compute_hash(const std::vector<float>& tensor) const {

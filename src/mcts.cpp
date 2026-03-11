@@ -103,35 +103,44 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     std::vector<float> tensor = board.getAlphaZeroTensor();
     uint64_t hash = compute_hash(tensor);
 
-    std::vector<float> policy;
     float value;
+    std::vector<std::pair<int, float>> legal_policy;
 
     // --- TABLE DE TRANSPOSITION ---
     auto it = transposition_table.find(hash);
     if (it != transposition_table.end()) {
-        policy = it->second.policy;
+        legal_policy = it->second.legal_policy;
         value = it->second.value;
     }
     else {
-        evaluate_onnx(tensor, policy, value);
+        std::vector<float> full_policy;
+        evaluate_onnx(tensor, full_policy, value);
 
-        // Sécurité mémoire : limite à ~350 Mo par worker
-        if (transposition_table.size() > 20000) {
+        // Extraction stricte des coups légaux pour le stockage
+        legal_policy.reserve(legal_indices.size());
+        for (int idx : legal_indices) {
+            legal_policy.push_back({ idx, full_policy[idx] });
+        }
+
+        if (transposition_table.size() > 1000000) {
             transposition_table.clear();
         }
 
-        transposition_table[hash] = { policy, value };
+        transposition_table[hash] = { legal_policy, value };
     }
 
-    // Filtrage des coups illégaux et normalisation
+    // Calcul de la somme pour la normalisation à partir du vecteur compact
     float sum_legal = 0.0f;
-    for (int idx : legal_indices) {
-        sum_legal += policy[idx];
+    for (const auto& pair : legal_policy) {
+        sum_legal += pair.second;
     }
 
+    // Instanciation des enfants
     if (sum_legal > 0.0f) {
-        for (int idx : legal_indices) {
-            node->children[idx] = std::make_unique<MCTSNode>(policy[idx] / sum_legal, idx, node);
+        for (const auto& pair : legal_policy) {
+            int idx = pair.first;
+            float prob = pair.second / sum_legal;
+            node->children[idx] = std::make_unique<MCTSNode>(prob, idx, node);
         }
     }
     else {
