@@ -51,7 +51,6 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
     while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
         tensor_np = board.get_alphazero_tensor()
 
-        # Appel natif au C++ (retourne une liste, on convertit en ndarray)
         pi_raw = mcts_engine.mcts_search(board, num_simulations, 1.4, True)
         pi = np.array(pi_raw, dtype=np.float32)
 
@@ -114,28 +113,51 @@ def worker_self_play(args):
 def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
     all_data = []
     total_moves = 0
-    results = {"checkmate": 0, "draw": 0, "ongoing": 0}
+
+    results = {
+        "CHECKMATE": 0, "STALEMATE": 0,  "DRAW_REPETITION": 0,
+        "DRAW_50_MOVES": 0, "DRAW_INSUFF_MATERIAL": 0, "ONGOING": 0
+    }
 
     args_list = [(onnx_path, num_simulations, 200) for _ in range(num_games)]
 
     print(f"Lancement de {num_games} parties sur {num_workers} processus (MCTS C++ / ONNX)...")
 
     with mp.Pool(processes=num_workers) as pool:
-        for i, (game_data, move_count, state) in enumerate(
-                tqdm(pool.imap_unordered(worker_self_play, args_list), total=num_games)):
+        for game_data, move_count, state in tqdm(pool.imap_unordered(worker_self_play, args_list),
+                                                 total=num_games,
+                                                 desc="Génération du Self-Play"):
             all_data.extend(game_data)
             total_moves += move_count
-
             if state == chess_engine.GameState.CHECKMATE:
-                results["checkmate"] += 1
+                results["CHECKMATE"] += 1
+            elif state == chess_engine.GameState.STALEMATE:
+                results["STALEMATE"] += 1
+            elif state == chess_engine.GameState.DRAW_REPETITION:
+                results["DRAW_REPETITION"] += 1
+            elif state == chess_engine.GameState.DRAW_50_MOVES:
+                results["DRAW_50_MOVES"] += 1
+            elif state == chess_engine.GameState.DRAW_INSUFF_MATERIAL:
+                results["DRAW_INSUFF_MATERIAL"] += 1
             elif state == chess_engine.GameState.ONGOING:
-                results["ongoing"] += 1
-            else:
-                results["draw"] += 1
-
-            print(f"  Partie terminée ({i + 1}/{num_games}): {move_count} coups, état={state}")
+                results["ONGOING"] += 1
 
     avg_length = total_moves / max(num_games, 1)
+    print("\n" + "=" * 30)
+    print(f"      BILAN DE L'ITERATION")
+    print("=" * 30)
+    print(f"Nombre total de coups : {total_moves}")
+    print(f"Moyenne de coups/partie : {avg_length:.1f}")
+    print("-" * 30)
+    print(f" Victoires (Checkmate) : {results['CHECKMATE']}")
+    print(f" Pat (Stalemate)       : {results['STALEMATE']}")
+    print(f" Répétition            : {results['DRAW_REPETITION']}")
+    print(f" Règle des 50 coups    : {results['DRAW_50_MOVES']}")
+    print(f" Matériel insuffisant  : {results['DRAW_INSUFF_MATERIAL']}")
+    if results['ONGOING'] > 0:
+        print(f" Non terminées (Max)   : {results['ONGOING']}")
+    print("=" * 30 + "\n")
+
     return all_data, results, avg_length
 
 

@@ -17,7 +17,10 @@ if __name__ == "__main__":
     BATCH_SIZE = 4096
 
     # --- Initialisation de WandB ---
-    wandb_logger = WandbLogger(project="alphazero-chess", name="supervised_phase_2_lichess")
+    wandb_logger = WandbLogger(
+        project="alphazero-chess", name="supervised_phase_2_lichess",
+        log_model=False
+    )
 
     # --- Préparation des Données ---
     dataset = ShardedChessDataset(SHARD_DIR, shuffle=True)
