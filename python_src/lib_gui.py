@@ -25,7 +25,6 @@ def pygame_init():
     clock = pygame.time.Clock()
     return screen, clock
 
-
 def rendu(screen,
           board,
           selected_square,
@@ -33,27 +32,39 @@ def rendu(screen,
           clock,
           dragging=False,
           drag_pos=(0, 0),
-          red_squares=None
+          red_squares=None,
+          perspective=chess_engine.Color.WHITE  # Ajout du paramètre
           ):
     if red_squares is None:
         red_squares = set()
 
-    draw_board(screen)
-    draw_last_move(screen, board)
-    draw_red_squares(screen, red_squares)
-    draw_highlights(screen, selected_square, current_legal_moves)
+    # Note : Toutes les fonctions ci-dessous doivent maintenant accepter 'perspective'
+    draw_board(screen, perspective)
+    draw_last_move(screen, board, perspective)
+    draw_red_squares(screen, red_squares, perspective)
+    draw_highlights(screen, selected_square, current_legal_moves, perspective)
 
-    # Si on drag, on ne dessine pas la pièce sur sa case d'origine
     dragged_square = selected_square if dragging else None
-    draw_pieces(screen, board, dragged_square)
+    draw_pieces(screen, board, dragged_square, perspective)
 
-    # On dessine la pièce saisie par-dessus tout le reste
+    # La pièce qui glisse suit la souris (pas besoin de flip pour drag_pos)
     draw_dragged_piece(screen, board, selected_square, dragging, drag_pos)
 
     draw_game_over(screen, board)
     pygame.display.flip()
     clock.tick(60)
     return clock
+
+
+def get_screen_coords(file, rank, perspective):
+    """Calcule les pixels X, Y selon la vue (Blancs ou Noirs)."""
+    if perspective == chess_engine.Color.WHITE:
+        x = file * SQUARE_SIZE
+        y = (7 - rank) * SQUARE_SIZE
+    else:
+        x = (7 - file) * SQUARE_SIZE
+        y = rank * SQUARE_SIZE
+    return x, y
 
 
 def load_images():
@@ -78,78 +89,71 @@ def load_images():
             IMAGES[key] = pygame.transform.smoothscale(img, (SQUARE_SIZE, SQUARE_SIZE))
 
 
-def draw_board(screen):
+def draw_board(screen, perspective):
     for rank in range(8):
         for file in range(8):
-            dy = (7 - rank) * SQUARE_SIZE
-            dx = file * SQUARE_SIZE
+            dx, dy = get_screen_coords(file, rank, perspective)
             color = WHITE_COLOR if (rank + file) % 2 != 0 else BLACK_COLOR
             pygame.draw.rect(screen, color, pygame.Rect(dx, dy, SQUARE_SIZE, SQUARE_SIZE))
 
 
-def draw_last_move(screen, board):
-    """Surligne les cases du dernier coup joué."""
+def draw_last_move(screen, board, perspective):
     try:
         orig_f, orig_r, dest_f, dest_r, _ = board.get_last_move_data()
-        if orig_f == -1:
-            return
+        if orig_f == -1: return
+
         for f, r in [(orig_f, orig_r), (dest_f, dest_r)]:
+            dx, dy = get_screen_coords(f, r, perspective)
             s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE))
             s.set_alpha(90)
             s.fill(LAST_MOVE_COLOR)
-            screen.blit(s, (f * SQUARE_SIZE, (7 - r) * SQUARE_SIZE))
+            screen.blit(s, (dx, dy))
     except Exception:
         pass
 
 
-def draw_red_squares(screen, red_squares):
-    """Surligne en rouge les cases sélectionnées par clic droit."""
+def draw_red_squares(screen, red_squares, perspective):
     for file, rank in red_squares:
-        # Vérification de la couleur de la case d'origine
-        if (rank + file) % 2 != 0:
-            color = RED_HIGHLIGHT_LIGHT
-        else:
-            color = RED_HIGHLIGHT_DARK
-
-        pygame.draw.rect(
-            screen,
-            color,
-            pygame.Rect(file * SQUARE_SIZE, (7 - rank) * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE)
-        )
+        dx, dy = get_screen_coords(file, rank, perspective)
+        color = RED_HIGHLIGHT_LIGHT if (rank + file) % 2 != 0 else RED_HIGHLIGHT_DARK
+        pygame.draw.rect(screen, color, pygame.Rect(dx, dy, SQUARE_SIZE, SQUARE_SIZE))
 
 
-def draw_highlights(screen, selected_square, legal_moves):
+def draw_highlights(screen, selected_square, legal_moves, perspective):
     if selected_square is not None:
-        file, rank = selected_square
+        f_sel, r_sel = selected_square
+        dx_sel, dy_sel = get_screen_coords(f_sel, r_sel, perspective)
+
         s = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE))
         s.set_alpha(100)
         s.fill(HIGHLIGHT_COLOR)
-        screen.blit(s, (file * SQUARE_SIZE, (7 - rank) * SQUARE_SIZE))
+        screen.blit(s, (dx_sel, dy_sel))
 
         for move in legal_moves:
             d_file = move.get_dest_square().get_file()
             d_rank = move.get_dest_square().get_rank()
-            cx = d_file * SQUARE_SIZE + SQUARE_SIZE // 2
-            cy = (7 - d_rank) * SQUARE_SIZE + SQUARE_SIZE // 2
+            dx, dy = get_screen_coords(d_file, d_rank, perspective)
+
+            cx = dx + SQUARE_SIZE // 2
+            cy = dy + SQUARE_SIZE // 2
             pygame.draw.circle(screen, DOT_COLOR, (cx, cy), SQUARE_SIZE // 6)
 
 
-def draw_pieces(screen, board, dragged_square=None):
+def draw_pieces(screen, board, dragged_square, perspective):
     for rank in range(8):
         for file in range(8):
-            # On ignore la case de la pièce en cours de drag
             if dragged_square == (file, rank):
                 continue
 
             sq = board.get_square(file, rank)
             if sq.is_occupied():
+                dx, dy = get_screen_coords(file, rank, perspective)
                 key = (sq.get_piece().get_color(), sq.get_piece().get_type())
                 if key in IMAGES:
-                    screen.blit(IMAGES[key], (file * SQUARE_SIZE, (7 - rank) * SQUARE_SIZE))
+                    screen.blit(IMAGES[key], (dx, dy))
 
 
 def draw_dragged_piece(screen, board, selected_square, dragging, drag_pos):
-    """Dessine la pièce saisie centrée sur le curseur de la souris."""
     if dragging and selected_square is not None:
         file, rank = selected_square
         sq = board.get_square(file, rank)

@@ -20,7 +20,7 @@ from lib import (move_to_san, print_pgn, decode_move_index)
 #                     CONFIGURATION
 # ============================================================
 
-HUMAN_COLOR = chess_engine.Color.WHITE
+HUMAN_COLOR = chess_engine.Color.BLACK
 CHECKPOINT_PATH = "checkpoints/2026_03_12_02h16_iter18_unsupervised.onnx"
 
 NUM_SIMULATIONS = 1200
@@ -107,32 +107,33 @@ def main():
         is_human_turn = (board.turn == HUMAN_COLOR)
 
         for event in pygame.event.get():
+            # Calcul des coordonnées selon la perspective
+            x, y = pygame.mouse.get_pos()
+            if HUMAN_COLOR == chess_engine.Color.WHITE:
+                clicked_file = x // SQUARE_SIZE
+                clicked_rank = 7 - (y // SQUARE_SIZE)
+            else:
+                clicked_file = 7 - (x // SQUARE_SIZE)
+                clicked_rank = y // SQUARE_SIZE
+
+            clicked_sq = (clicked_file, clicked_rank)
+
             if event.type == pygame.QUIT:
                 running = False
 
             # --- CLIC DROIT : Surlignage rouge ---
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                x, y = pygame.mouse.get_pos()
-                clicked_file = x // SQUARE_SIZE
-                clicked_rank = 7 - (y // SQUARE_SIZE)
-                sq = (clicked_file, clicked_rank)
-
                 # Toggle (ajoute si n'y est pas, retire si y est)
-                if sq in red_squares:
-                    red_squares.remove(sq)
+                if clicked_sq in red_squares:
+                    red_squares.remove(clicked_sq)
                 else:
-                    red_squares.add(sq)
+                    red_squares.add(clicked_sq)
 
             # --- CLIC GAUCHE (DOWN) : Saisir ou Cliquer-pour-bouger ---
             elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and
                   is_human_turn and not game_over and not ai_thinking):
 
-                red_squares.clear()  # Nettoie les cases rouges quand on interagit
-
-                x, y = pygame.mouse.get_pos()
-                clicked_file = x // SQUARE_SIZE
-                clicked_rank = 7 - (y // SQUARE_SIZE)
-                clicked_sq = (clicked_file, clicked_rank)
+                red_squares.clear()
 
                 if selected_square is None:
                     # Cas 1 : Aucune pièce sélectionnée, on en saisit une
@@ -156,7 +157,6 @@ def main():
                                 break
 
                     if valid_move is not None:
-                        # C'est un coup valide via clic
                         orig_f, orig_r = selected_square
                         san = move_to_san(board, orig_f, orig_r, clicked_file, clicked_rank,
                                           promotion_type)
@@ -197,11 +197,6 @@ def main():
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if dragging:
                     dragging = False
-                    x, y = event.pos
-                    clicked_file = x // SQUARE_SIZE
-                    clicked_rank = 7 - (y // SQUARE_SIZE)
-
-                    # Si on lâche sur la case de départ, on garde la sélection (permet le click-to-click ensuite)
                     if (clicked_file, clicked_rank) == selected_square:
                         pass
                     else:
@@ -272,9 +267,10 @@ def main():
             selected_square,
             current_legal_moves,
             clock,
-            dragging,  # NOUVEAU
-            drag_pos,  # NOUVEAU
-            red_squares  # NOUVEAU
+            dragging,
+            drag_pos,
+            red_squares,
+            perspective=HUMAN_COLOR
         )
 
     print_pgn(board, san_moves)
