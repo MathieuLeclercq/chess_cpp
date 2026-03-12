@@ -54,8 +54,8 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
         pi_raw = mcts_engine.mcts_search(board, num_simulations, 1.4, True)
         pi = np.array(pi_raw, dtype=np.float32)
 
-        if move_num < 6:
-            tau = 0.5
+        if move_num < 30:
+            tau = 1.0
             log_pi = np.log(pi + 1e-10)
             logits = log_pi / tau
             logits -= np.max(logits)
@@ -324,5 +324,5 @@ if __name__ == "__main__":
         batch_size=1024,
         learning_rate=1e-5,
         max_buffer_size=50_000,
-        checkpoint_path="checkpoints/2026_03_12_02h16_iter18_unsupervised.pt"
+        checkpoint_path="checkpoints/2026_03_12_17h43_iter7_unsupervised.pt"
     )
