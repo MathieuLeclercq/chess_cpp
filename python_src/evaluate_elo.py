@@ -11,9 +11,9 @@ from lib import decode_move_index, move_to_san, get_model_hash
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 4
+GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "default"  # Options : "default" ou "all"
+MODE = "default"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -186,6 +186,25 @@ def run_tournament():
         print(f"\nMode 'all' activé : Tournoi complet entre les {len(all_hashes)} bots.")
         # Génère toutes les paires uniques possibles
         pairs_to_play = list(itertools.combinations(all_hashes, 2))
+
+    elif "-" in str(MODE):
+        try:
+            rank1, rank2 = map(int, str(MODE).split('-'))
+            idx1, idx2 = rank1 - 1, rank2 - 1  # Conversion en index 0-based
+
+            if max(idx1, idx2) >= len(ranked_existing_hashes):
+                print(
+                    f"\nErreur : Le classement ne contient que "
+                    f"{len(ranked_existing_hashes)} bots. Impossible de jouer le match {MODE}.")
+            elif min(idx1, idx2) < 0 or idx1 == idx2:
+                print(f"\nErreur : Les rangs doivent être valides et différents (ex: '1-3').")
+            else:
+                h1 = ranked_existing_hashes[idx1][0]
+                h2 = ranked_existing_hashes[idx2][0]
+                print(f"\nMode spécifique activé : Match entre le rang {rank1} et le rang {rank2}.")
+                pairs_to_play.append((h1, h2))
+        except ValueError:
+            print(f"\nErreur : Format de MODE invalide '{MODE}'. Utilisez un format comme '1-3'.")
 
     else:
         # Mode par défaut
