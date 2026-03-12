@@ -29,6 +29,7 @@ struct StateSnapshot {
     int white_king_rank;
     int black_king_file;
     int black_king_rank;
+    uint64_t zobrist_hash;
 };
 
 class Chessboard
@@ -59,16 +60,36 @@ class Chessboard
     std::vector<Move> moveHistory;
     std::vector<std::array<Square, 64>> boardHistory;
     std::vector<StateSnapshot> snapshotHistory;
+    uint64_t current_zobrist_hash = 0;
+
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
     bool checkThreefoldRepetition() const;
     void evaluateGameState();
+    void computeInitialZobrist();
+
+    inline int getPieceZobristIndex(const Piece& piece) const {
+        if (piece.getType() == NONE) return -1;
+        int idx = 0;
+        switch (piece.getType()) {
+        case PAWN:   idx = 0; break;
+        case KNIGHT: idx = 1; break;
+        case BISHOP: idx = 2; break;
+        case ROOK:   idx = 3; break;
+        case QUEEN:  idx = 4; break;
+        case KING:   idx = 5; break;
+        default: return -1;
+        }
+        if (piece.getColor() == BLACK) idx += 6;
+        return idx;
+    }
 
     public:
         // constructors
         Chessboard();
         
         // getters
+        uint64_t getZobristHash() const { return current_zobrist_hash; }
         const Square& getSquare(int file, int rank) const; 
         Square& getSquare(int file, int rank);
         int getNumberOfOccupiedSquares() const;

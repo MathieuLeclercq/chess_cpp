@@ -101,7 +101,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     }
 
     std::vector<float> tensor = board.getAlphaZeroTensor();
-    uint64_t hash = compute_hash(tensor);
+    uint64_t hash = board.getZobristHash();
 
     float value;
     std::vector<std::pair<int, float>> legal_policy;

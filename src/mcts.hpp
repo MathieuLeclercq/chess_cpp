@@ -56,17 +56,17 @@ private:
     Ort::AllocatorWithDefaultOptions allocator;
     std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
 
-    // Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
-    uint64_t compute_hash(const std::vector<float>& tensor) const {
-        uint64_t hash = 14695981039346656037ULL;
-        for (float f : tensor) {
-            uint32_t bits;
-            std::memcpy(&bits, &f, sizeof(bits));
-            hash ^= bits;
-            hash *= 1099511628211ULL;
-        }
-        return hash;
-    }
+    //// Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
+    //uint64_t compute_hash(const std::vector<float>& tensor) const {
+    //    uint64_t hash = 14695981039346656037ULL;
+    //    for (float f : tensor) {
+    //        uint32_t bits;
+    //        std::memcpy(&bits, &f, sizeof(bits));
+    //        hash ^= bits;
+    //        hash *= 1099511628211ULL;
+    //    }
+    //    return hash;
+    //}
 
 public:
     MCTS(const std::string& model_path);

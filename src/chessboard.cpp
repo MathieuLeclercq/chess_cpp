@@ -1,4 +1,5 @@
 #include "chessboard.hpp"
+#include "zobrist.hpp"
 #include <assert.h>
 
 //...............Constructors...............
@@ -622,11 +623,13 @@ void Chessboard::setStartupPieces()
         }
     }
     this->boardHistory.push_back(this->board);
+    computeInitialZobrist();
 }
 
 void Chessboard::setBoard(std::array<Square, 64> some_board)
 {
     this->board = some_board;
+    computeInitialZobrist();
 }
 
 void Chessboard::updateHistory(const Move& move)
@@ -775,6 +778,7 @@ void Chessboard::updateStateSnapshot()
     current_snapshot.white_king_rank = this->white_king_rank;
     current_snapshot.black_king_file = this->black_king_file;
     current_snapshot.black_king_rank = this->black_king_rank;
+    current_snapshot.zobrist_hash = this->current_zobrist_hash;
     this->snapshotHistory.push_back(current_snapshot);
 }
 
@@ -810,6 +814,54 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     bool is_en_passant_capture = (is_pawn_move && second_square.getPiece().getType() == NONE &&
         abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
     bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
+
+
+    // --- ZOBRIST (Partie 1) : Retrait de l'ancien état ---
+    this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE; // On change le trait
+
+    // On retire les anciens droits de roque et en_passant
+    int old_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
+    if (this->en_passant && this->en_passant_file >= 0) {
+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    }
+
+    // Retrait de la pièce de sa case de départ
+    int orig_square_idx = orig_rank * 8 + orig_file;
+    int dest_square_idx = rank * 8 + file;
+    int moving_piece_idx = getPieceZobristIndex(moving_piece);
+    this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_square_idx][moving_piece_idx];
+
+    // Ajout à la case d'arrivée (Gestion de la promotion)
+    if (promotion != NONE) {
+        Piece promoted_piece(moving_color, promotion);
+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(promoted_piece)];
+    }
+    else {
+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][moving_piece_idx];
+    }
+
+    // Retrait de la pièce capturée
+    if (is_capture) {
+        if (is_en_passant_capture) {
+            Piece captured_pawn(this->turn == WHITE ? BLACK : WHITE, PAWN);
+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][getPieceZobristIndex(captured_pawn)];
+        }
+        else {
+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(second_square.getPiece())];
+        }
+    }
+
+    // Gestion du Roque (Mouvement de la tour)
+    if (is_king_move && abs(orig_file - file) == 2) {
+        int rook_orig_file = (file > orig_file) ? 7 : 0;
+        int rook_dest_file = (file > orig_file) ? 5 : 3;
+        Piece rook(moving_color, ROOK);
+        int rook_idx = getPieceZobristIndex(rook);
+
+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_orig_file][rook_idx]; // Retire la tour
+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_dest_file][rook_idx]; // Replace la tour
+    }
 
 
     // Exécution du coup
@@ -852,6 +904,14 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
     this->updateCastleFlags();
     this->checkEnPassant();
+
+
+    // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
+    int new_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
+    if (this->en_passant && this->en_passant_file >= 0) {
+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    }
 
     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
 
@@ -1019,6 +1079,7 @@ void Chessboard::undoMove()
     this->white_king_rank = snapshot.white_king_rank;
     this->black_king_file = snapshot.black_king_file;
     this->black_king_rank = snapshot.black_king_rank;
+    this->current_zobrist_hash = snapshot.zobrist_hash;
 
     // 3. Restitution du trait
     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
@@ -1443,4 +1504,36 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     }
     }
     return legalMoves;
+}
+
+void Chessboard::computeInitialZobrist() {
+    this->current_zobrist_hash = 0;
+
+    // 1. Placement des pièces
+    for (int i = 0; i < 64; i++) {
+        const Piece& p = this->board[i].getPiece();
+        if (p.getType() != NONE) {
+            int piece_idx = getPieceZobristIndex(p);
+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
+        }
+    }
+
+    // 2. Trait
+    if (this->turn == BLACK) {
+        this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
+    }
+
+    // 3. Droits de roque (Encodage sur 4 bits de 0 à 15)
+    int castling_idx = 0;
+    if (this->short_castle_white) castling_idx |= 1; // Bit 0
+    if (this->long_castle_white)  castling_idx |= 2; // Bit 1
+    if (this->short_castle_black) castling_idx |= 4; // Bit 2
+    if (this->long_castle_black)  castling_idx |= 8; // Bit 3
+
+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
+
+    // 4. Case en passant
+    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    }
 }
