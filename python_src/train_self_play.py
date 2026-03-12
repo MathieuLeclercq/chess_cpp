@@ -324,5 +324,5 @@ if __name__ == "__main__":
         batch_size=1024,
         learning_rate=1e-5,
         max_buffer_size=50_000,
-        checkpoint_path="checkpoints/supervised_best_03_11_lichess_FIXED.ckpt"
+        checkpoint_path="checkpoints/2026_03_11_13h21_iter14_unsupervised.pt"
     )
