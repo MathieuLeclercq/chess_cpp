@@ -1,311 +1,436 @@
-diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b18231c..f537c28 100644
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -32,7 +32,8 @@ add_library(chess_core STATIC
-     src/piece.cpp 
-     src/move.cpp 
-     src/pgn_parser.cpp
--    src/mcts.cpp )
-+    src/mcts.cpp 
-+    src/zobrist.cpp)
- 
- # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
- target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
-diff --git a/python_src/zobtest.py b/python_src/zobtest.py
-new file mode 100644
-index 0000000..f08f300
---- /dev/null
-+++ b/python_src/zobtest.py
-@@ -0,0 +1,47 @@
-+import random
-+
-+
-+def generate_zobrist_cpp():
-+    # Fixer la graine pour garantir la reproductibilité
-+    random.seed(123456789)
-+
-+    def gen_hex64():
-+        # Génère un entier de 64 bits et le formate en hexadécimal C++
-+        return f"0x{random.getrandbits(64):016X}ULL"
-+
-+    cpp_content = '#include "zobrist.hpp"\n\n'
-+    cpp_content += 'namespace Zobrist {\n\n'
-+
-+    # 1. PIECE_KEYS [64 cases][12 types de pièces (6 blancs, 6 noirs)]
-+    cpp_content += '    const uint64_t PIECE_KEYS[64][12] = {\n'
-+    for _ in range(64):
-+        row = [gen_hex64() for _ in range(12)]
-+        cpp_content += '        { ' + ', '.join(row) + ' },\n'
-+    cpp_content += '    };\n\n'
-+
-+    # 2. BLACK_TO_MOVE (1 constante)
-+    cpp_content += f'    const uint64_t BLACK_TO_MOVE = {gen_hex64()};\n\n'
-+
-+    # 3. CASTLING_KEYS (16 combinaisons possibles pour les 4 droits de roque)
-+    cpp_content += '    const uint64_t CASTLING_KEYS[16] = {\n        '
-+    castling_keys = [gen_hex64() for _ in range(16)]
-+    cpp_content += ',\n        '.join(castling_keys)
-+    cpp_content += '\n    };\n\n'
-+
-+    # 4. EN_PASSANT_KEYS (8 colonnes possibles)
-+    cpp_content += '    const uint64_t EN_PASSANT_KEYS[8] = {\n        '
-+    ep_keys = [gen_hex64() for _ in range(8)]
-+    cpp_content += ', '.join(ep_keys)
-+    cpp_content += '\n    };\n\n'
-+
-+    cpp_content += '}\n'
-+
-+    # Écriture dans le fichier
-+    with open('zobrist.cpp', 'w') as f:
-+        f.write(cpp_content)
-+
-+    print("Fichier zobrist.cpp généré avec succès.")
-+
-+
-+if __name__ == "__main__":
-+    generate_zobrist_cpp()
-\ No newline at end of file
+diff --git a/modifications.txt b/modifications.txt
+index 41d001b..e69de29 100644
+--- a/modifications.txt
++++ b/modifications.txt
+@@ -1,311 +0,0 @@
+-diff --git a/CMakeLists.txt b/CMakeLists.txt
+-index b18231c..f537c28 100644
+---- a/CMakeLists.txt
+-+++ b/CMakeLists.txt
+-@@ -32,7 +32,8 @@ add_library(chess_core STATIC
+-     src/piece.cpp 
+-     src/move.cpp 
+-     src/pgn_parser.cpp
+--    src/mcts.cpp )
+-+    src/mcts.cpp 
+-+    src/zobrist.cpp)
+- 
+- # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
+- target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
+-diff --git a/python_src/zobtest.py b/python_src/zobtest.py
+-new file mode 100644
+-index 0000000..f08f300
+---- /dev/null
+-+++ b/python_src/zobtest.py
+-@@ -0,0 +1,47 @@
+-+import random
+-+
+-+
+-+def generate_zobrist_cpp():
+-+    # Fixer la graine pour garantir la reproductibilité
+-+    random.seed(123456789)
+-+
+-+    def gen_hex64():
+-+        # Génère un entier de 64 bits et le formate en hexadécimal C++
+-+        return f"0x{random.getrandbits(64):016X}ULL"
+-+
+-+    cpp_content = '#include "zobrist.hpp"\n\n'
+-+    cpp_content += 'namespace Zobrist {\n\n'
+-+
+-+    # 1. PIECE_KEYS [64 cases][12 types de pièces (6 blancs, 6 noirs)]
+-+    cpp_content += '    const uint64_t PIECE_KEYS[64][12] = {\n'
+-+    for _ in range(64):
+-+        row = [gen_hex64() for _ in range(12)]
+-+        cpp_content += '        { ' + ', '.join(row) + ' },\n'
+-+    cpp_content += '    };\n\n'
+-+
+-+    # 2. BLACK_TO_MOVE (1 constante)
+-+    cpp_content += f'    const uint64_t BLACK_TO_MOVE = {gen_hex64()};\n\n'
+-+
+-+    # 3. CASTLING_KEYS (16 combinaisons possibles pour les 4 droits de roque)
+-+    cpp_content += '    const uint64_t CASTLING_KEYS[16] = {\n        '
+-+    castling_keys = [gen_hex64() for _ in range(16)]
+-+    cpp_content += ',\n        '.join(castling_keys)
+-+    cpp_content += '\n    };\n\n'
+-+
+-+    # 4. EN_PASSANT_KEYS (8 colonnes possibles)
+-+    cpp_content += '    const uint64_t EN_PASSANT_KEYS[8] = {\n        '
+-+    ep_keys = [gen_hex64() for _ in range(8)]
+-+    cpp_content += ', '.join(ep_keys)
+-+    cpp_content += '\n    };\n\n'
+-+
+-+    cpp_content += '}\n'
+-+
+-+    # Écriture dans le fichier
+-+    with open('zobrist.cpp', 'w') as f:
+-+        f.write(cpp_content)
+-+
+-+    print("Fichier zobrist.cpp généré avec succès.")
+-+
+-+
+-+if __name__ == "__main__":
+-+    generate_zobrist_cpp()
+-\ No newline at end of file
+-diff --git a/src/chessboard.cpp b/src/chessboard.cpp
+-index 6523626..7ba1f3c 100644
+---- a/src/chessboard.cpp
+-+++ b/src/chessboard.cpp
+-@@ -1,4 +1,5 @@
+- #include "chessboard.hpp"
+-+#include "zobrist.hpp"
+- #include <assert.h>
+- 
+- //...............Constructors...............
+-@@ -622,11 +623,13 @@ void Chessboard::setStartupPieces()
+-         }
+-     }
+-     this->boardHistory.push_back(this->board);
+-+    computeInitialZobrist();
+- }
+- 
+- void Chessboard::setBoard(std::array<Square, 64> some_board)
+- {
+-     this->board = some_board;
+-+    computeInitialZobrist();
+- }
+- 
+- void Chessboard::updateHistory(const Move& move)
+-@@ -775,6 +778,7 @@ void Chessboard::updateStateSnapshot()
+-     current_snapshot.white_king_rank = this->white_king_rank;
+-     current_snapshot.black_king_file = this->black_king_file;
+-     current_snapshot.black_king_rank = this->black_king_rank;
+-+    current_snapshot.zobrist_hash = this->current_zobrist_hash;
+-     this->snapshotHistory.push_back(current_snapshot);
+- }
+- 
+-@@ -812,6 +816,54 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
+-     bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
+- 
+- 
+-+    // --- ZOBRIST (Partie 1) : Retrait de l'ancien état ---
+-+    this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE; // On change le trait
+-+
+-+    // On retire les anciens droits de roque et en_passant
+-+    int old_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
+-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
+-+    if (this->en_passant && this->en_passant_file >= 0) {
+-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+-+    }
+-+
+-+    // Retrait de la pièce de sa case de départ
+-+    int orig_square_idx = orig_rank * 8 + orig_file;
+-+    int dest_square_idx = rank * 8 + file;
+-+    int moving_piece_idx = getPieceZobristIndex(moving_piece);
+-+    this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_square_idx][moving_piece_idx];
+-+
+-+    // Ajout à la case d'arrivée (Gestion de la promotion)
+-+    if (promotion != NONE) {
+-+        Piece promoted_piece(moving_color, promotion);
+-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(promoted_piece)];
+-+    }
+-+    else {
+-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][moving_piece_idx];
+-+    }
+-+
+-+    // Retrait de la pièce capturée
+-+    if (is_capture) {
+-+        if (is_en_passant_capture) {
+-+            Piece captured_pawn(this->turn == WHITE ? BLACK : WHITE, PAWN);
+-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][getPieceZobristIndex(captured_pawn)];
+-+        }
+-+        else {
+-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(second_square.getPiece())];
+-+        }
+-+    }
+-+
+-+    // Gestion du Roque (Mouvement de la tour)
+-+    if (is_king_move && abs(orig_file - file) == 2) {
+-+        int rook_orig_file = (file > orig_file) ? 7 : 0;
+-+        int rook_dest_file = (file > orig_file) ? 5 : 3;
+-+        Piece rook(moving_color, ROOK);
+-+        int rook_idx = getPieceZobristIndex(rook);
+-+
+-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_orig_file][rook_idx]; // Retire la tour
+-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_dest_file][rook_idx]; // Replace la tour
+-+    }
+-+
+-+
+-     // Exécution du coup
+- 
+-     // Roque
+-@@ -853,6 +905,14 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
+-     this->updateCastleFlags();
+-     this->checkEnPassant();
+- 
+-+
+-+    // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
+-+    int new_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
+-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
+-+    if (this->en_passant && this->en_passant_file >= 0) {
+-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+-+    }
+-+
+-     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+- 
+-     // maj du compteur de la règle des 50 coups
+-@@ -1019,6 +1079,7 @@ void Chessboard::undoMove()
+-     this->white_king_rank = snapshot.white_king_rank;
+-     this->black_king_file = snapshot.black_king_file;
+-     this->black_king_rank = snapshot.black_king_rank;
+-+    this->current_zobrist_hash = snapshot.zobrist_hash;
+- 
+-     // 3. Restitution du trait
+-     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+-@@ -1443,4 +1504,36 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
+-     }
+-     }
+-     return legalMoves;
+-+}
+-+
+-+void Chessboard::computeInitialZobrist() {
+-+    this->current_zobrist_hash = 0;
+-+
+-+    // 1. Placement des pièces
+-+    for (int i = 0; i < 64; i++) {
+-+        const Piece& p = this->board[i].getPiece();
+-+        if (p.getType() != NONE) {
+-+            int piece_idx = getPieceZobristIndex(p);
+-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
+-+        }
+-+    }
+-+
+-+    // 2. Trait
+-+    if (this->turn == BLACK) {
+-+        this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
+-+    }
+-+
+-+    // 3. Droits de roque (Encodage sur 4 bits de 0 à 15)
+-+    int castling_idx = 0;
+-+    if (this->short_castle_white) castling_idx |= 1; // Bit 0
+-+    if (this->long_castle_white)  castling_idx |= 2; // Bit 1
+-+    if (this->short_castle_black) castling_idx |= 4; // Bit 2
+-+    if (this->long_castle_black)  castling_idx |= 8; // Bit 3
+-+
+-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
+-+
+-+    // 4. Case en passant
+-+    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
+-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+-+    }
+- }
+-\ No newline at end of file
+-diff --git a/src/chessboard.hpp b/src/chessboard.hpp
+-index 1cbfc85..81eedd6 100644
+---- a/src/chessboard.hpp
+-+++ b/src/chessboard.hpp
+-@@ -29,6 +29,7 @@ struct StateSnapshot {
+-     int white_king_rank;
+-     int black_king_file;
+-     int black_king_rank;
+-+    uint64_t zobrist_hash;
+- };
+- 
+- class Chessboard
+-@@ -59,16 +60,36 @@ class Chessboard
+-     std::vector<Move> moveHistory;
+-     std::vector<std::array<Square, 64>> boardHistory;
+-     std::vector<StateSnapshot> snapshotHistory;
+-+    uint64_t current_zobrist_hash = 0;
+-+
+- 
+-     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
+-     bool checkThreefoldRepetition() const;
+-     void evaluateGameState();
+-+    void computeInitialZobrist();
+-+
+-+    inline int getPieceZobristIndex(const Piece& piece) const {
+-+        if (piece.getType() == NONE) return -1;
+-+        int idx = 0;
+-+        switch (piece.getType()) {
+-+        case PAWN:   idx = 0; break;
+-+        case KNIGHT: idx = 1; break;
+-+        case BISHOP: idx = 2; break;
+-+        case ROOK:   idx = 3; break;
+-+        case QUEEN:  idx = 4; break;
+-+        case KING:   idx = 5; break;
+-+        default: return -1;
+-+        }
+-+        if (piece.getColor() == BLACK) idx += 6;
+-+        return idx;
+-+    }
+- 
+-     public:
+-         // constructors
+-         Chessboard();
+-         
+-         // getters
+-+        uint64_t getZobristHash() const { return current_zobrist_hash; }
+-         const Square& getSquare(int file, int rank) const; 
+-         Square& getSquare(int file, int rank);
+-         int getNumberOfOccupiedSquares() const;
+-diff --git a/src/mcts.cpp b/src/mcts.cpp
+-index fce2bcf..0405c4e 100644
+---- a/src/mcts.cpp
+-+++ b/src/mcts.cpp
+-@@ -101,7 +101,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
+-     }
+- 
+-     std::vector<float> tensor = board.getAlphaZeroTensor();
+--    uint64_t hash = compute_hash(tensor);
+-+    uint64_t hash = board.getZobristHash();
+- 
+-     float value;
+-     std::vector<std::pair<int, float>> legal_policy;
+-diff --git a/src/mcts.hpp b/src/mcts.hpp
+-index d6f518f..8ec7f67 100644
+---- a/src/mcts.hpp
+-+++ b/src/mcts.hpp
+-@@ -56,17 +56,17 @@ private:
+-     Ort::AllocatorWithDefaultOptions allocator;
+-     std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
+- 
+--    // Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
+--    uint64_t compute_hash(const std::vector<float>& tensor) const {
+--        uint64_t hash = 14695981039346656037ULL;
+--        for (float f : tensor) {
+--            uint32_t bits;
+--            std::memcpy(&bits, &f, sizeof(bits));
+--            hash ^= bits;
+--            hash *= 1099511628211ULL;
+--        }
+--        return hash;
+--    }
+-+    //// Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
+-+    //uint64_t compute_hash(const std::vector<float>& tensor) const {
+-+    //    uint64_t hash = 14695981039346656037ULL;
+-+    //    for (float f : tensor) {
+-+    //        uint32_t bits;
+-+    //        std::memcpy(&bits, &f, sizeof(bits));
+-+    //        hash ^= bits;
+-+    //        hash *= 1099511628211ULL;
+-+    //    }
+-+    //    return hash;
+-+    //}
+- 
+- public:
+-     MCTS(const std::string& model_path);
 diff --git a/src/chessboard.cpp b/src/chessboard.cpp
-index 6523626..7ba1f3c 100644
+index 53f92bd..9d7eefc 100644
 --- a/src/chessboard.cpp
 +++ b/src/chessboard.cpp
-@@ -1,4 +1,5 @@
- #include "chessboard.hpp"
-+#include "zobrist.hpp"
- #include <assert.h>
+@@ -62,23 +62,14 @@ void Chessboard::print(std::array<Square, 64> some_board) const
+     }
+ }
  
- //...............Constructors...............
-@@ -622,11 +623,13 @@ void Chessboard::setStartupPieces()
+-bool Chessboard::checkThreefoldRepetition() const
+-{
+-    if (this->boardHistory.size() < 5) return false;
+-
+-    int count = 0;
+-    const std::array<Square, 64>& current_board = this->board;
+-
+-    for (const auto& past_board : this->boardHistory)
+-    {
+-        if (past_board == current_board)
+-        {
++bool Chessboard::checkThreefoldRepetition() const {
++    int count = 1; // La position actuelle compte pour 1
++    for (const auto& snapshot : this->snapshotHistory) {
++        if (snapshot.zobrist_hash == this->current_zobrist_hash) {
+             count++;
          }
      }
-     this->boardHistory.push_back(this->board);
-+    computeInitialZobrist();
+ 
+-    // Le plateau actuel est déjà dans l'historique au moment où on l'appelle,
+-    // on cherche donc au moins 3 occurrences.
+     return count >= 3;
  }
  
- void Chessboard::setBoard(std::array<Square, 64> some_board)
- {
-     this->board = some_board;
-+    computeInitialZobrist();
- }
+@@ -1156,22 +1147,32 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
  
- void Chessboard::updateHistory(const Move& move)
-@@ -775,6 +778,7 @@ void Chessboard::updateStateSnapshot()
-     current_snapshot.white_king_rank = this->white_king_rank;
-     current_snapshot.black_king_file = this->black_king_file;
-     current_snapshot.black_king_rank = this->black_king_rank;
-+    current_snapshot.zobrist_hash = this->current_zobrist_hash;
-     this->snapshotHistory.push_back(current_snapshot);
- }
+     Color p1_color = this->turn;
+     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
+-
+     bool flip = (p1_color == BLACK);
  
-@@ -812,6 +816,54 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
-     bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
++    // Construction d'un historique plat des Zobrist Hashs pour une vérification rapide
++    std::vector<uint64_t> all_hashes;
++    all_hashes.reserve(this->snapshotHistory.size() + 1);
++    for (const auto& snap : this->snapshotHistory) {
++        all_hashes.push_back(snap.zobrist_hash);
++    }
++    all_hashes.push_back(this->current_zobrist_hash);
++
+     // Remplissage de l'historique (112 premiers plans)
+     for (int t = 0; t < 8; t++)
+     {
+         int history_idx = this->boardHistory.size() - 1 - t;
+-        if (history_idx < 0) break; // Padding implicite (les plans resteront à zéro si la partie a moins de 8 coups)
++        if (history_idx < 0) break;
  
+         const std::array<Square, 64>& hist_board = this->boardHistory[history_idx];
+         int plane_offset = t * 14 * 64;
  
-+    // --- ZOBRIST (Partie 1) : Retrait de l'ancien état ---
-+    this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE; // On change le trait
-+
-+    // On retire les anciens droits de roque et en_passant
-+    int old_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
-+    if (this->en_passant && this->en_passant_file >= 0) {
-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
-+    }
-+
-+    // Retrait de la pièce de sa case de départ
-+    int orig_square_idx = orig_rank * 8 + orig_file;
-+    int dest_square_idx = rank * 8 + file;
-+    int moving_piece_idx = getPieceZobristIndex(moving_piece);
-+    this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_square_idx][moving_piece_idx];
-+
-+    // Ajout à la case d'arrivée (Gestion de la promotion)
-+    if (promotion != NONE) {
-+        Piece promoted_piece(moving_color, promotion);
-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(promoted_piece)];
-+    }
-+    else {
-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][moving_piece_idx];
-+    }
-+
-+    // Retrait de la pièce capturée
-+    if (is_capture) {
-+        if (is_en_passant_capture) {
-+            Piece captured_pawn(this->turn == WHITE ? BLACK : WHITE, PAWN);
-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][getPieceZobristIndex(captured_pawn)];
-+        }
-+        else {
-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(second_square.getPiece())];
-+        }
-+    }
-+
-+    // Gestion du Roque (Mouvement de la tour)
-+    if (is_king_move && abs(orig_file - file) == 2) {
-+        int rook_orig_file = (file > orig_file) ? 7 : 0;
-+        int rook_dest_file = (file > orig_file) ? 5 : 3;
-+        Piece rook(moving_color, ROOK);
-+        int rook_idx = getPieceZobristIndex(rook);
-+
-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_orig_file][rook_idx]; // Retire la tour
-+        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_dest_file][rook_idx]; // Replace la tour
-+    }
-+
-+
-     // Exécution du coup
+-        // Calcul des répétitions à cet instant précis du passé
++        // --- CALCUL DES RÉPÉTITIONS VIA ZOBRIST ---
++        uint64_t target_hash = all_hashes[history_idx];
+         int rep_count = 0;
+         for (int i = 0; i <= history_idx; i++) {
+-            if (this->boardHistory[i] == hist_board) rep_count++;
++            if (all_hashes[i] == target_hash) {
++                rep_count++;
++            }
+         }
  
-     // Roque
-@@ -853,6 +905,14 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
-     this->updateCastleFlags();
-     this->checkEnPassant();
- 
-+
-+    // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
-+    int new_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
-+    if (this->en_passant && this->en_passant_file >= 0) {
-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
-+    }
-+
-     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
- 
-     // maj du compteur de la règle des 50 coups
-@@ -1019,6 +1079,7 @@ void Chessboard::undoMove()
-     this->white_king_rank = snapshot.white_king_rank;
-     this->black_king_file = snapshot.black_king_file;
-     this->black_king_rank = snapshot.black_king_rank;
-+    this->current_zobrist_hash = snapshot.zobrist_hash;
- 
-     // 3. Restitution du trait
-     this->turn = (this->turn == WHITE) ? BLACK : WHITE;
-@@ -1443,4 +1504,36 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
-     }
-     }
-     return legalMoves;
-+}
-+
-+void Chessboard::computeInitialZobrist() {
-+    this->current_zobrist_hash = 0;
-+
-+    // 1. Placement des pièces
-+    for (int i = 0; i < 64; i++) {
-+        const Piece& p = this->board[i].getPiece();
-+        if (p.getType() != NONE) {
-+            int piece_idx = getPieceZobristIndex(p);
-+            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
-+        }
-+    }
-+
-+    // 2. Trait
-+    if (this->turn == BLACK) {
-+        this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
-+    }
-+
-+    // 3. Droits de roque (Encodage sur 4 bits de 0 à 15)
-+    int castling_idx = 0;
-+    if (this->short_castle_white) castling_idx |= 1; // Bit 0
-+    if (this->long_castle_white)  castling_idx |= 2; // Bit 1
-+    if (this->short_castle_black) castling_idx |= 4; // Bit 2
-+    if (this->long_castle_black)  castling_idx |= 8; // Bit 3
-+
-+    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
-+
-+    // 4. Case en passant
-+    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
-+        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
-+    }
- }
-\ No newline at end of file
+         for (int rank = 0; rank < 8; rank++)
 diff --git a/src/chessboard.hpp b/src/chessboard.hpp
-index 1cbfc85..81eedd6 100644
+index 11299b5..61ce414 100644
 --- a/src/chessboard.hpp
 +++ b/src/chessboard.hpp
-@@ -29,6 +29,7 @@ struct StateSnapshot {
-     int white_king_rank;
-     int black_king_file;
-     int black_king_rank;
-+    uint64_t zobrist_hash;
- };
+@@ -64,7 +64,6 @@ class Chessboard
  
- class Chessboard
-@@ -59,16 +60,36 @@ class Chessboard
-     std::vector<Move> moveHistory;
-     std::vector<std::array<Square, 64>> boardHistory;
-     std::vector<StateSnapshot> snapshotHistory;
-+    uint64_t current_zobrist_hash = 0;
-+
  
      bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
-     bool checkThreefoldRepetition() const;
+-    bool checkThreefoldRepetition() const;
      void evaluateGameState();
-+    void computeInitialZobrist();
-+
-+    inline int getPieceZobristIndex(const Piece& piece) const {
-+        if (piece.getType() == NONE) return -1;
-+        int idx = 0;
-+        switch (piece.getType()) {
-+        case PAWN:   idx = 0; break;
-+        case KNIGHT: idx = 1; break;
-+        case BISHOP: idx = 2; break;
-+        case ROOK:   idx = 3; break;
-+        case QUEEN:  idx = 4; break;
-+        case KING:   idx = 5; break;
-+        default: return -1;
-+        }
-+        if (piece.getColor() == BLACK) idx += 6;
-+        return idx;
-+    }
+     void computeInitialZobrist();
  
-     public:
-         // constructors
-         Chessboard();
-         
-         // getters
-+        uint64_t getZobristHash() const { return current_zobrist_hash; }
-         const Square& getSquare(int file, int rank) const; 
-         Square& getSquare(int file, int rank);
-         int getNumberOfOccupiedSquares() const;
+@@ -107,6 +106,7 @@ class Chessboard
+         bool checkInsufficientMaterial() const;
+         Color getTurn() const;
+         GameState getGameState() const;
++        bool checkThreefoldRepetition() const;
+         std::vector<float> getAlphaZeroTensor() const;
+         int encodeMove(const Move& move) const;
+         std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
 diff --git a/src/mcts.cpp b/src/mcts.cpp
-index fce2bcf..0405c4e 100644
+index 21a8544..3d498d9 100644
 --- a/src/mcts.cpp
 +++ b/src/mcts.cpp
-@@ -101,7 +101,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
+@@ -93,13 +93,25 @@ void MCTS::evaluate_onnx(const std::vector<float>& input_tensor, std::vector<flo
+ }
+ 
+ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
+-    std::vector<int> legal_indices = board.getLegalMoveIndices();
+ 
++
++    // --- DÉTECTION  DES NULLES  ---
++    if (board.checkThreefoldRepetition() ||
++        board.getHalfMoveClock() >= 100 ||
++        board.checkInsufficientMaterial()) {
++
++        node->is_terminal = true;
++        return 0.0f; // Score d'égalité stricte
++    }
++
++    // --- DÉTECTION MAT / PAT
++    std::vector<int> legal_indices = board.getLegalMoveIndices();
+     if (legal_indices.empty()) {
+         node->is_terminal = true;
+         return board.isInCheck() ? -1.0f : 0.0f;
      }
  
++    // --- GÉNÉRATION DU TENSEUR ET APPEL ONNX ---
      std::vector<float> tensor = board.getAlphaZeroTensor();
--    uint64_t hash = compute_hash(tensor);
-+    uint64_t hash = board.getZobristHash();
+     uint64_t hash = board.getZobristHash();
  
-     float value;
-     std::vector<std::pair<int, float>> legal_policy;
-diff --git a/src/mcts.hpp b/src/mcts.hpp
-index d6f518f..8ec7f67 100644
---- a/src/mcts.hpp
-+++ b/src/mcts.hpp
-@@ -56,17 +56,17 @@ private:
-     Ort::AllocatorWithDefaultOptions allocator;
-     std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
- 
--    // Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
--    uint64_t compute_hash(const std::vector<float>& tensor) const {
--        uint64_t hash = 14695981039346656037ULL;
--        for (float f : tensor) {
--            uint32_t bits;
--            std::memcpy(&bits, &f, sizeof(bits));
--            hash ^= bits;
--            hash *= 1099511628211ULL;
--        }
--        return hash;
--    }
-+    //// Fonction de hachage rapide (FNV-1a) pour hacher le tenseur d'état
-+    //uint64_t compute_hash(const std::vector<float>& tensor) const {
-+    //    uint64_t hash = 14695981039346656037ULL;
-+    //    for (float f : tensor) {
-+    //        uint32_t bits;
-+    //        std::memcpy(&bits, &f, sizeof(bits));
-+    //        hash ^= bits;
-+    //        hash *= 1099511628211ULL;
-+    //    }
-+    //    return hash;
-+    //}
- 
- public:
-     MCTS(const std::string& model_path);

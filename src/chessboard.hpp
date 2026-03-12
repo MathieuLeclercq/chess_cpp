@@ -64,7 +64,6 @@ class Chessboard
 
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
-    bool checkThreefoldRepetition() const;
     void evaluateGameState();
     void computeInitialZobrist();
 
@@ -107,6 +106,7 @@ class Chessboard
         bool checkInsufficientMaterial() const;
         Color getTurn() const;
         GameState getGameState() const;
+        bool checkThreefoldRepetition() const;
         std::vector<float> getAlphaZeroTensor() const;
         int encodeMove(const Move& move) const;
         std::vector<Move> getNaiveLegalMoves(int file, int rank) const;

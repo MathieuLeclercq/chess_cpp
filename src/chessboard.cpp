@@ -62,24 +62,27 @@ void Chessboard::print(std::array<Square, 64> some_board) const
     }
 }
 
-bool Chessboard::checkThreefoldRepetition() const
-{
-    if (this->boardHistory.size() < 5) return false;
+bool Chessboard::checkThreefoldRepetition() const {
+    int count = 1;
 
-    int count = 0;
-    const std::array<Square, 64>& current_board = this->board;
+    // On parcourt l'historique à l'envers (du snapshot le plus récent au plus ancien)
+    for (auto it = this->snapshotHistory.rbegin(); it != this->snapshotHistory.rend(); ++it) {
 
-    for (const auto& past_board : this->boardHistory)
-    {
-        if (past_board == current_board)
-        {
+        if (it->zobrist_hash == this->current_zobrist_hash) {
             count++;
+            if (count >= 3) {
+                return true; // Early exit : on a trouvé 3 occurrences, inutile de continuer
+            }
+        }
+
+        // Si ce snapshot résulte d'un coup irréversible (capture ou poussée de pion),
+        // toute position antérieure est fondamentalement différente. On coupe la recherche.
+        if (it->half_move_clock == 0) {
+            break;
         }
     }
 
-    // Le plateau actuel est déjà dans l'historique au moment où on l'appelle,
-    // on cherche donc au moins 3 occurrences.
-    return count >= 3;
+    return false;
 }
 
 bool Chessboard::checkInsufficientMaterial() const
@@ -971,7 +974,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
 
     // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
-    int new_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
+    int new_castling_idx = (this->short_castle_white ? 1 : 0) | 
+        (this->long_castle_white ? 2 : 0) | 
+        (this->short_castle_black ? 4 : 0) | 
+        (this->long_castle_black ? 8 : 0);
     this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
     if (this->en_passant && this->en_passant_file >= 0) {
         this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
@@ -1156,22 +1162,32 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
 
     Color p1_color = this->turn;
     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
-
     bool flip = (p1_color == BLACK);
+
+    // Construction d'un historique plat des Zobrist Hashs pour une vérification rapide
+    std::vector<uint64_t> all_hashes;
+    all_hashes.reserve(this->snapshotHistory.size() + 1);
+    for (const auto& snap : this->snapshotHistory) {
+        all_hashes.push_back(snap.zobrist_hash);
+    }
+    all_hashes.push_back(this->current_zobrist_hash);
 
     // Remplissage de l'historique (112 premiers plans)
     for (int t = 0; t < 8; t++)
     {
         int history_idx = this->boardHistory.size() - 1 - t;
-        if (history_idx < 0) break; // Padding implicite (les plans resteront à zéro si la partie a moins de 8 coups)
+        if (history_idx < 0) break;
 
         const std::array<Square, 64>& hist_board = this->boardHistory[history_idx];
         int plane_offset = t * 14 * 64;
 
-        // Calcul des répétitions à cet instant précis du passé
+        // --- CALCUL DES RÉPÉTITIONS VIA ZOBRIST ---
+        uint64_t target_hash = all_hashes[history_idx];
         int rep_count = 0;
         for (int i = 0; i <= history_idx; i++) {
-            if (this->boardHistory[i] == hist_board) rep_count++;
+            if (all_hashes[i] == target_hash) {
+                rep_count++;
+            }
         }
 
         for (int rank = 0; rank < 8; rank++)

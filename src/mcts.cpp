@@ -93,13 +93,25 @@ void MCTS::evaluate_onnx(const std::vector<float>& input_tensor, std::vector<flo
 }
 
 float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
-    std::vector<int> legal_indices = board.getLegalMoveIndices();
 
+
+    // --- DÉTECTION  DES NULLES  ---
+    if (board.checkThreefoldRepetition() ||
+        board.getHalfMoveClock() >= 100 ||
+        board.checkInsufficientMaterial()) {
+
+        node->is_terminal = true;
+        return 0.0f; // Score d'égalité stricte
+    }
+
+    // --- DÉTECTION MAT / PAT
+    std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
         node->is_terminal = true;
         return board.isInCheck() ? -1.0f : 0.0f;
     }
 
+    // --- GÉNÉRATION DU TENSEUR ET APPEL ONNX ---
     std::vector<float> tensor = board.getAlphaZeroTensor();
     uint64_t hash = board.getZobristHash();
 
