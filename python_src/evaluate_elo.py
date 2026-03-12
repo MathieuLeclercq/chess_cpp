@@ -11,9 +11,9 @@ from lib import decode_move_index, move_to_san, get_model_hash
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 2
+GAMES_PER_PAIR = 1
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "default"  # Options : "default", "all", ou "x-y"
+MODE = "all"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -229,8 +229,22 @@ def run_tournament():
             pairs_to_play.append((p1_h, p2_h))
 
     # --- EXECUTION DES MATCHS ---
-    for h1, h2 in pairs_to_play:
+    total_matches = len(pairs_to_play)
+
+    for i, (h1, h2) in enumerate(pairs_to_play):
         play_match(h1, h2, hash_to_filename, whr)
+
+        # Calcul du reste
+        matches_left = total_matches - (i + 1)
+        games_left = matches_left * GAMES_PER_PAIR
+
+        if matches_left > 0:
+            print(f"\n" + "-" * 50)
+            print(f"[PROGRESSION] Match {i + 1}/{total_matches} terminé.")
+            print(
+                f"[PROGRESSION] Il reste {matches_left} match(s) "
+                f"soit environ {games_left} partie(s).")
+            print("-" * 50 + "\n")
 
     # --- RESULTATS FINAUX ---
     whr.auto_iterate()
