@@ -11,9 +11,9 @@ from lib import decode_move_index, move_to_san, get_model_hash
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 1
+GAMES_PER_PAIR = 6
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "all"  # Options : "default", "all", ou "x-y"
+MODE = "default"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -30,7 +30,7 @@ def play_game(model_white, model_black, sims):
 
         # Logique de température
         move_count = len(san_moves)
-        current_tau = 0.3 if move_count < 8 else 0.01
+        current_tau = 1.0 if move_count < 8 else 0.1
 
         log_pi = np.log(pi.astype(np.float64) + 1e-10)
         logits = log_pi / current_tau

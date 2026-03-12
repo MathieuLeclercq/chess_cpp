@@ -21,9 +21,13 @@ from lib import (move_to_san, print_pgn, decode_move_index)
 # ============================================================
 
 HUMAN_COLOR = chess_engine.Color.WHITE
-CHECKPOINT_PATH = "checkpoints/2026_03_11_13h21_iter14_unsupervised.onnx"
+CHECKPOINT_PATH = "checkpoints/2026_03_12_02h16_iter18_unsupervised.onnx"
 
 NUM_SIMULATIONS = 1200
+
+TAU_OPENING = 1  # Plus de variété au début
+TAU_ENDGAME = 0.1  # Moins après
+TAU_THRESHOLD = 8  # Nombre de demi-coups avant de basculer sur TAU_ENDGAME
 
 
 # ============================================================
@@ -32,8 +36,7 @@ NUM_SIMULATIONS = 1200
 
 def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container):
     """
-    Exécute le MCTS en arrière-plan sur une copie indépendante du plateau
-    pour éviter les conflits de mémoire avec le thread principal (Pygame).
+    Exécute le MCTS en arrière-plan avec logique de température.
     """
     # 1. Recréation de l'état du plateau
     temp_board = chess_engine.Chessboard()
@@ -42,23 +45,33 @@ def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container):
         temp_board.move_piece_san(move)
 
     # 2. Lancement de la recherche C++ / ONNX
-    # On désactive le bruit de Dirichlet (False) car on joue un vrai match
     pi_raw = mcts_engine.mcts_search(temp_board, num_simulations, 1.4, False)
     pi = np.array(pi_raw, dtype=np.float32)
 
-    # 3. Sélection du meilleur coup (celui avec le plus de visites MCTS)
-    best_idx = int(np.argmax(pi))
+    # 3. Logique de température
+    move_count = len(san_moves_copy)
+    current_tau = TAU_OPENING if move_count < TAU_THRESHOLD else TAU_ENDGAME
 
-    # 4. Décodage et retour au thread principal
+    # Application de la température sur les probabilités (pi)
+    # On utilise float64 pour éviter les problèmes de précision avec les petites températures
+    log_pi = np.log(pi.astype(np.float64) + 1e-10)
+    logits = log_pi / current_tau
+    logits -= np.max(logits)  # Stabilité numérique
+    pi_temp = np.exp(logits)
+    pi_temp /= pi_temp.sum()
+
+    # 4. Sélection aléatoire pondérée au lieu de l'argmax
+    best_idx = int(np.random.choice(len(pi_temp), p=pi_temp))
+
+    # 5. Décodage
     is_black = (temp_board.turn == chess_engine.Color.BLACK)
     orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(temp_board, best_idx, is_black)
 
-    # Affichage optionnel dans la console
-    best_prob = pi[best_idx] * 100
+    # Affichage console
     san = move_to_san(temp_board, orig_f, orig_r, dest_f, dest_r, promo)
-    print(f"\n[AI] Coup choisi : {san} (Confiance : {best_prob:.1f}%)")
+    # On affiche la probabilité réelle de l'index choisi pour voir l'influence de Tau
+    print(f"\n[AI] Coup choisi : {san} (Tau: {current_tau})")
 
-    # Stockage du résultat (passage par référence via la liste)
     result_container.append((orig_f, orig_r, dest_f, dest_r, promo))
 
 
@@ -223,14 +236,15 @@ def main():
                         else:
                             pass
 
-        # 2. Tour de l'IA (inchangé)
+        # 2. Tour de l'IA
         if not is_human_turn and not game_over:
             if not ai_thinking:
                 ai_thinking = True
                 ai_result_container.clear()
                 thread = threading.Thread(
                     target=mcts_worker,
-                    args=(san_moves.copy(), mcts_engine, NUM_SIMULATIONS, ai_result_container)
+                    args=(san_moves.copy(), mcts_engine, NUM_SIMULATIONS,
+                          ai_result_container)
                 )
                 thread.start()
 
