@@ -115,10 +115,12 @@ class Chessboard
         void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
             int filter_dest_file = -1, int filter_dest_rank = -1);
         std::vector<int> getLegalMoveIndices();
+        uint64_t computeZobristFromScratch() const;
 
         // setters
         void Clear();
         void setStartupPieces();
+        void setKiwipete();
         void setBoard(std::array<Square, 64> some_board);
         bool movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion = NONE, bool check_game_end = true);
         bool movePiece(std::string orig_square, std::string square);

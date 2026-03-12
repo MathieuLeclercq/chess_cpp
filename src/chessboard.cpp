@@ -626,6 +626,70 @@ void Chessboard::setStartupPieces()
     computeInitialZobrist();
 }
 
+void Chessboard::setKiwipete() {
+    // 1. Vider le plateau
+    for (int i = 0; i < 64; i++) {
+        board[i].setPiece(Piece());
+    }
+
+    // 2. Placer les pièces Blanches
+    board[0 * 8 + 0].setPiece(Piece(WHITE, ROOK));   // a1
+    board[0 * 8 + 4].setPiece(Piece(WHITE, KING));   // e1
+    board[0 * 8 + 7].setPiece(Piece(WHITE, ROOK));   // h1
+    board[1 * 8 + 0].setPiece(Piece(WHITE, PAWN));   // a2
+    board[1 * 8 + 1].setPiece(Piece(WHITE, PAWN));   // b2
+    board[1 * 8 + 2].setPiece(Piece(WHITE, PAWN));   // c2
+    board[1 * 8 + 3].setPiece(Piece(WHITE, BISHOP)); // d2
+    board[1 * 8 + 4].setPiece(Piece(WHITE, BISHOP)); // e2
+    board[1 * 8 + 5].setPiece(Piece(WHITE, PAWN));   // f2
+    board[1 * 8 + 6].setPiece(Piece(WHITE, PAWN));   // g2
+    board[1 * 8 + 7].setPiece(Piece(WHITE, PAWN));   // h2
+    board[2 * 8 + 2].setPiece(Piece(WHITE, KNIGHT)); // c3
+    board[2 * 8 + 5].setPiece(Piece(WHITE, QUEEN));  // f3
+    board[3 * 8 + 4].setPiece(Piece(WHITE, PAWN));   // e4
+    board[4 * 8 + 3].setPiece(Piece(WHITE, PAWN));   // d5
+    board[4 * 8 + 4].setPiece(Piece(WHITE, KNIGHT)); // e5
+
+    // 3. Placer les pièces Noires
+    board[7 * 8 + 0].setPiece(Piece(BLACK, ROOK));   // a8
+    board[7 * 8 + 4].setPiece(Piece(BLACK, KING));   // e8
+    board[7 * 8 + 7].setPiece(Piece(BLACK, ROOK));   // h8
+    board[6 * 8 + 0].setPiece(Piece(BLACK, PAWN));   // a7
+    board[6 * 8 + 2].setPiece(Piece(BLACK, PAWN));   // c7
+    board[6 * 8 + 3].setPiece(Piece(BLACK, PAWN));   // d7
+    board[6 * 8 + 4].setPiece(Piece(BLACK, QUEEN));  // e7
+    board[6 * 8 + 5].setPiece(Piece(BLACK, PAWN));   // f7
+    board[6 * 8 + 6].setPiece(Piece(BLACK, BISHOP)); // g7
+    board[5 * 8 + 0].setPiece(Piece(BLACK, BISHOP)); // a6
+    board[5 * 8 + 1].setPiece(Piece(BLACK, KNIGHT)); // b6
+    board[5 * 8 + 4].setPiece(Piece(BLACK, PAWN));   // e6
+    board[5 * 8 + 5].setPiece(Piece(BLACK, KNIGHT)); // f6
+    board[5 * 8 + 6].setPiece(Piece(BLACK, PAWN));   // g6
+    board[3 * 8 + 1].setPiece(Piece(BLACK, PAWN));   // b4
+    board[2 * 8 + 7].setPiece(Piece(BLACK, PAWN));   // h3
+
+    // 4. Initialiser les métadonnées pour autoriser tous les roques
+    this->turn = WHITE;
+    this->short_castle_white = true;
+    this->long_castle_white = true;
+    this->short_castle_black = true;
+    this->long_castle_black = true;
+    this->en_passant = false;
+    this->half_move_clock = 0;
+    this->white_king_file = 4;
+    this->white_king_rank = 0;
+    this->black_king_file = 4;
+    this->black_king_rank = 7;
+
+    this->boardHistory.clear();
+    this->boardHistory.push_back(this->board);
+    this->moveHistory.clear();
+    this->snapshotHistory.clear();
+
+    // 5. Générer le hash initial
+    computeInitialZobrist();
+}
+
 void Chessboard::setBoard(std::array<Square, 64> some_board)
 {
     this->board = some_board;
@@ -1536,4 +1600,37 @@ void Chessboard::computeInitialZobrist() {
     if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
         this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
     }
+}
+
+uint64_t Chessboard::computeZobristFromScratch() const {
+    uint64_t hash = 0;
+
+    // 1. Placement des pièces
+    for (int i = 0; i < 64; i++) {
+        const Piece& p = this->board[i].getPiece();
+        if (p.getType() != NONE) {
+            int piece_idx = getPieceZobristIndex(p);
+            hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
+        }
+    }
+
+    // 2. Trait
+    if (this->turn == BLACK) {
+        hash ^= Zobrist::BLACK_TO_MOVE;
+    }
+
+    // 3. Droits de roque
+    int castling_idx = 0;
+    if (this->short_castle_white) castling_idx |= 1;
+    if (this->long_castle_white)  castling_idx |= 2;
+    if (this->short_castle_black) castling_idx |= 4;
+    if (this->long_castle_black)  castling_idx |= 8;
+    hash ^= Zobrist::CASTLING_KEYS[castling_idx];
+
+    // 4. Case en passant
+    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
+        hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    }
+
+    return hash;
 }

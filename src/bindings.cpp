@@ -62,6 +62,7 @@ PYBIND11_MODULE(chess_engine, m) {
     py::class_<Chessboard>(m, "Chessboard")
         .def(py::init<>())
         .def("set_startup_pieces", &Chessboard::setStartupPieces)
+        .def("set_kiwipete", &Chessboard::setKiwipete)
         .def("get_square", static_cast<const Square & (Chessboard::*)(int, int) const>(&Chessboard::getSquare))
         .def("get_legal_moves", static_cast<std::vector<Move>(Chessboard::*)(int, int)>(&Chessboard::getLegalMovesForSquare))
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType, bool)>(&Chessboard::movePiece),

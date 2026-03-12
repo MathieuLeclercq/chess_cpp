@@ -154,6 +154,12 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 }
 
 std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet) {
+
+    // --- SANITY CHECK ZOBRIST ---
+    if (board.getZobristHash() != board.computeZobristFromScratch()) {
+        throw std::runtime_error("Erreur fatale : Desynchronisation du Zobrist Hash detectee !");
+    }
+
     std::unique_ptr<MCTSNode> root = std::make_unique<MCTSNode>(0.0f);
     expand_node_single(root.get(), board);
 
