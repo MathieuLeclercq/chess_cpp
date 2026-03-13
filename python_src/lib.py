@@ -465,3 +465,49 @@ def chose_move_idx(pi, tau):
 
     chosen_idx = np.random.choice(4672, p=probs)
     return chosen_idx
+
+
+def parse_uci_to_coords(uci_str):
+    """
+    Transforme 'e2e4' ou 'a7a8q' en (orig_f, orig_r, dest_f, dest_r, promotion)
+    """
+    # 1. Coordonnées de base (a-h -> 0-7, 1-8 -> 0-7)
+    orig_f = ord(uci_str[0]) - ord('a')
+    orig_r = int(uci_str[1]) - 1
+    dest_f = ord(uci_str[2]) - ord('a')
+    dest_r = int(uci_str[3]) - 1
+
+    # 2. Gestion de la promotion (si la chaîne fait 5 caractères)
+    promotion = chess_engine.PieceType.NONE
+    if len(uci_str) == 5:
+        promo_char = uci_str[4].lower()
+        mapping = {
+            'q': chess_engine.PieceType.QUEEN,
+            'r': chess_engine.PieceType.ROOK,
+            'b': chess_engine.PieceType.BISHOP,
+            'n': chess_engine.PieceType.KNIGHT
+        }
+        promotion = mapping.get(promo_char, chess_engine.PieceType.NONE)
+
+    return orig_f, orig_r, dest_f, dest_r, promotion
+
+
+def coords_to_uci(orig_f, orig_r, dest_f, dest_r, promotion):
+    """
+    Transforme les coordonnées et le type de promotion en string UCI (ex: 'e7e8q')
+    """
+    files = "abcdefgh"
+    # Les rangs dans ton moteur sont 0-indexed, en UCI ils sont 1-8
+    move_uci = f"{files[orig_f]}{orig_r + 1}{files[dest_f]}{dest_r + 1}"
+
+    # Ajout du suffixe de promotion si nécessaire
+    if promotion != chess_engine.PieceType.NONE:
+        mapping = {
+            chess_engine.PieceType.QUEEN: 'q',
+            chess_engine.PieceType.ROOK: 'r',
+            chess_engine.PieceType.BISHOP: 'b',
+            chess_engine.PieceType.KNIGHT: 'n'
+        }
+        move_uci += mapping.get(promotion, '')
+
+    return move_uci

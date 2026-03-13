@@ -4,7 +4,12 @@ import numpy as np
 from whr import whole_history_rating
 
 import chess_engine
-from lib import decode_move_index, move_to_san, get_model_hash, chose_move_idx
+from lib import (
+    decode_move_index, move_to_san, get_model_hash, chose_move_idx, parse_uci_to_coords,
+    coords_to_uci)
+from stockfish_player import StockfishPlayer
+
+STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 
 # ============================================================
 #                     CONFIGURATION
@@ -13,40 +18,51 @@ CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
 GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "default"  # Options : "default", "all", ou "x-y"
+MODE = "7-9"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
+
+    # On garde la liste des coups en format UCI pour Stockfish
+    uci_moves = []
     san_moves = []
 
     while board.game_state == chess_engine.GameState.ONGOING:
         current_model = model_white if board.turn == chess_engine.Color.WHITE else model_black
 
-        # Appel au moteur MCTS C++ / ONNX
-        pi_raw = current_model.mcts_search(board, sims, 1.4, False)
-        pi = np.array(pi_raw, dtype=np.float32)
-        move_count = len(san_moves)
-        if move_count < 2:
-            current_tau = 2
-        elif move_count < 8:
-            current_tau = 1.0
-        else:
-            current_tau = 0.1
+        if isinstance(current_model, StockfishPlayer):
+            move_uci = current_model.get_move(uci_moves)
+            f_o, r_o, f_d, r_d, p = parse_uci_to_coords(move_uci)
 
-        best_idx = chose_move_idx(pi, current_tau)
-        is_black = (board.turn == chess_engine.Color.BLACK)
-        f_o, r_o, f_d, r_d, p = decode_move_index(board, best_idx, is_black)
+        else:
+            # Appel au moteur MCTS C++ / ONNX
+            pi_raw = current_model.mcts_search(board, sims, 1.4, False)
+            pi = np.array(pi_raw, dtype=np.float32)
+            move_count = len(san_moves)
+            if move_count < 2:
+                current_tau = 2
+            elif move_count < 8:
+                current_tau = 1.0
+            else:
+                current_tau = 0.1
+
+            best_idx = chose_move_idx(pi, current_tau)
+            is_black = (board.turn == chess_engine.Color.BLACK)
+            f_o, r_o, f_d, r_d, p = decode_move_index(board, best_idx, is_black)
+            move_uci = coords_to_uci(f_o, r_o, f_d, r_d, p)
 
         san = move_to_san(board, f_o, r_o, f_d, r_d, p)
         board.move_piece(f_o, r_o, f_d, r_d, p)
-
         if board.game_state == chess_engine.GameState.CHECKMATE:
             san += "#"
         elif board.is_in_check():
             san += "+"
+
         san_moves.append(san)
+        uci_moves.append(move_uci)
+
         if len(san_moves) > 300:
             break
 
@@ -102,13 +118,20 @@ def play_match(h1, h2, hash_to_filename, whr):
 
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
+    # Chargement intelligent
+    if h1 == "STOCKFISH_FIXED_1500":
+        m1 = StockfishPlayer(STOCKFISH_PATH, elo=1500)
+    else:
+        m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
+
+    if h2 == "STOCKFISH_FIXED_1500":
+        m2 = StockfishPlayer(STOCKFISH_PATH, elo=1500)
+    else:
+        m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
+
     # Initialisation des scores du match
     score_p1 = 0.0
     score_p2 = 0.0
-
-    # Instanciation des modèles MCTS C++
-    m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
-    m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
 
     for g in range(GAMES_PER_PAIR):
         if g % 2 == 0:
@@ -163,6 +186,9 @@ def run_tournament():
     for f in onnx_files:
         h = get_model_hash(os.path.join(CHECKPOINT_DIR, f))
         hash_to_filename[h] = f
+
+    SF_HASH = "STOCKFISH_FIXED_1500"
+    hash_to_filename[SF_HASH] = "STOCKFISH_1500_ANCHOR"
 
     all_hashes = list(hash_to_filename.keys())
 
@@ -245,14 +271,25 @@ def run_tournament():
             print("-" * 50 + "\n")
 
     # --- RESULTATS FINAUX ---
+
     whr.auto_iterate()
     whr.save_base(WHR_STATE_FILE)
 
-    print("\n" + "=" * 30 + "\n CLASSEMENT MIS À JOUR\n" + "=" * 30)
     final_ranking = get_ranked_players(whr, all_hashes)
+
+    sf_raw_elo = None
     for h, elo, games in final_ranking:
-        name = hash_to_filename.get(h, f"Fichier inconnu ({h})")
-        print(f"{name:35} : {elo:>6.1f} Elo | {games:>3} parties")
+        if h == "STOCKFISH_FIXED_1500":
+            sf_raw_elo = elo
+            break
+
+    # Si SF a joué au moins une partie, on calibre. Sinon offset = 0.
+    anchor_offset = 1500 - sf_raw_elo if sf_raw_elo is not None else 0
+
+    print("\n" + "=" * 40 + f"\n CLASSEMENT ANCRÉ (Stockfish = 1500)\n" + "=" * 40)
+    for h, elo, games in final_ranking:
+        name = hash_to_filename.get(h, "Unknown")
+        print(f"{name:35} : {elo + anchor_offset:>6.1f} Elo | {games:>3} parties")
 
 
 if __name__ == "__main__":
