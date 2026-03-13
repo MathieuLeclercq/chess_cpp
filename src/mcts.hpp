@@ -11,13 +11,16 @@
 #include <cstring>
 
 struct MCTSNode {
+    int visit_count;
     int move_idx;
+    bool is_terminal;
+
+    float prior;
+    float total_value;
+
     MCTSNode* parent;
     std::unordered_map<int, std::unique_ptr<MCTSNode>> children;
-    float prior;
-    int visit_count;
-    float total_value;
-    bool is_terminal;
+
 
     MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr)
         : prior(prior), move_idx(move_idx), parent(parent),
@@ -42,7 +45,6 @@ struct MCTSNode {
 };
 
 
-// Nouvelle structure optimisée en mémoire
 struct TranspositionEntry {
     std::vector<std::pair<int, float>> legal_policy; // Ne stocke que {index_du_coup, probabilité}
     float value;
@@ -63,9 +65,11 @@ public:
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
 
 private:
-    float expand_node_single(MCTSNode* node, Chessboard& board);
-    std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
     void backup(MCTSNode* node, float value);
     void evaluate_onnx(const std::vector<float>& input_tensor, std::vector<float>& policy, float& value);
     bool apply_move_by_index(Chessboard& board, int idx);
+    float expand_node_single(MCTSNode* node, Chessboard& board);
+    std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
+
+
 };

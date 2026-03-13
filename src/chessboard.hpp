@@ -24,12 +24,12 @@ struct StateSnapshot {
     bool en_passant;
     int en_passant_file;
     int half_move_clock;
-    GameState current_state;
     int white_king_file;
     int white_king_rank;
     int black_king_file;
     int black_king_rank;
     uint64_t zobrist_hash;
+    GameState current_state;
 };
 
 class Chessboard
@@ -39,23 +39,21 @@ class Chessboard
     const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
     std::array<Square, 64> board;
 
-    // utile pour checkForCheck() : pas besoin de chercher le roi à chaque fois
-    int white_king_file = 4;
+    int white_king_file = 4; // utile pour checkForCheck() : pas besoin de chercher le roi à chaque fois
     int white_king_rank = 0;
     int black_king_file = 4;
     int black_king_rank = 7;
+    int en_passant_file = -1;
+    int half_move_clock = 0;
 
-    Color turn = WHITE;
     bool short_castle_white = true;
     bool long_castle_white = true;
     bool short_castle_black = true;
     bool long_castle_black = true;
     bool en_passant = false;
-    int en_passant_file = -1;
-    int half_move_clock = 0;  // pour regle des 50 coups
 
     GameState current_state = ONGOING;
-
+    Color turn = WHITE;
 
     std::vector<Move> moveHistory;
     std::vector<std::array<Square, 64>> boardHistory;
@@ -89,33 +87,37 @@ class Chessboard
         
         // getters
         uint64_t getZobristHash() const { return current_zobrist_hash; }
-        const Square& getSquare(int file, int rank) const; 
-        Square& getSquare(int file, int rank);
+        uint64_t computeZobristFromScratch() const;
         int getNumberOfOccupiedSquares() const;
         int getHalfMoveClock() const;
-        void print() const;
-        void print(std::array<Square, 64> some_board) const;
-        void printPly() const;
-        const std::vector<Move>& getMoveHistory() const;
-        std::vector<Move>& getMoveHistory();
-        const std::vector<std::array<Square, 64>>& getBoardHistory() const;
-        std::vector<std::array<Square, 64>>& getBoardHistory();
-        void checkEnPassant();
-        bool isInCheck() const;
-        bool hasAnyLegalMove();
-        bool checkInsufficientMaterial() const;
+        int encodeMove(const Move& move) const;
+       
         Color getTurn() const;
         GameState getGameState() const;
-        bool checkThreefoldRepetition() const;
+        Square& getSquare(int file, int rank);
+        const Square& getSquare(int file, int rank) const;
+
+        std::vector<int> getLegalMoveIndices();
         std::vector<float> getAlphaZeroTensor() const;
-        int encodeMove(const Move& move) const;
         std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         std::vector<Move> getAllLegalMoves();
         std::vector<Move> getLegalMovesForSquare(int file, int rank);
+        std::vector<Move>& getMoveHistory();
+        const std::vector<Move>& getMoveHistory() const;
+        std::vector<std::array<Square, 64>>& getBoardHistory();
+        const std::vector<std::array<Square, 64>>& getBoardHistory() const;
+
+        void checkEnPassant();
+        void print() const;
+        void print(std::array<Square, 64> some_board) const;
+        void printPly() const;
         void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
-            int filter_dest_file = -1, int filter_dest_rank = -1);
-        std::vector<int> getLegalMoveIndices();
-        uint64_t computeZobristFromScratch() const;
+                                    int filter_dest_file = -1, int filter_dest_rank = -1);
+
+        bool checkThreefoldRepetition() const;
+        bool isInCheck() const;
+        bool hasAnyLegalMove();
+        bool checkInsufficientMaterial() const;
 
         // setters
         void Clear();

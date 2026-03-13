@@ -15,10 +15,10 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 #                     CONFIGURATION
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
-SIMULATIONS_EVAL = 600
+SIMULATIONS_EVAL = 800
 GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "7-9"  # Options : "default", "all", ou "x-y"
+MODE = "1-5"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -42,7 +42,7 @@ def play_game(model_white, model_black, sims):
             pi = np.array(pi_raw, dtype=np.float32)
             move_count = len(san_moves)
             if move_count < 2:
-                current_tau = 2
+                current_tau = 1.5
             elif move_count < 8:
                 current_tau = 1.0
             else:
@@ -119,13 +119,13 @@ def play_match(h1, h2, hash_to_filename, whr):
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
     # Chargement intelligent
-    if h1 == "STOCKFISH_FIXED_1500":
-        m1 = StockfishPlayer(STOCKFISH_PATH, elo=1500)
+    if h1 == "STOCKFISH_FIXED_2100":
+        m1 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
     else:
         m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
 
-    if h2 == "STOCKFISH_FIXED_1500":
-        m2 = StockfishPlayer(STOCKFISH_PATH, elo=1500)
+    if h2 == "STOCKFISH_FIXED_2100":
+        m2 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
     else:
         m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
 
@@ -187,13 +187,15 @@ def run_tournament():
         h = get_model_hash(os.path.join(CHECKPOINT_DIR, f))
         hash_to_filename[h] = f
 
-    SF_HASH = "STOCKFISH_FIXED_1500"
-    hash_to_filename[SF_HASH] = "STOCKFISH_1500_ANCHOR"
+    SF_HASH = "STOCKFISH_FIXED_2100"
+    hash_to_filename[SF_HASH] = "STOCKFISH_2100_ANCHOR"
 
     all_hashes = list(hash_to_filename.keys())
 
     # 3. Identification des nouveaux venus par rapport au WHR
     known_hashes = [p.name for p in whr.players.values()]
+    sf_player = whr.players.get(SF_HASH)
+    sf_needs_games = sf_player is None or len(sf_player.days) == 0
     new_hashes = [h for h in all_hashes if h not in known_hashes]
 
     # 4. Classement actuel
@@ -206,7 +208,13 @@ def run_tournament():
     # --- LOGIQUE DE SELECTION DES MATCHS ---
     pairs_to_play = []
 
-    if MODE == "all":
+    # PRIORITÉ 1 : Si l'ancre doit jouer pour calibrer le tournoi
+    if sf_needs_games and ranked_existing_hashes:
+        print(f" Calibration requise : Match contre l'ancre {SF_HASH}")
+        champion_hash = ranked_existing_hashes[0][0]
+        pairs_to_play.append((SF_HASH, champion_hash))
+
+    elif MODE == "all":
         print(f"\nMode 'all' activé : Tournoi complet entre les {len(all_hashes)} bots.")
         # Génère toutes les paires uniques possibles
         pairs_to_play = list(itertools.combinations(all_hashes, 2))
@@ -279,14 +287,14 @@ def run_tournament():
 
     sf_raw_elo = None
     for h, elo, games in final_ranking:
-        if h == "STOCKFISH_FIXED_1500":
+        if h == "STOCKFISH_FIXED_2100":
             sf_raw_elo = elo
             break
 
     # Si SF a joué au moins une partie, on calibre. Sinon offset = 0.
-    anchor_offset = 1500 - sf_raw_elo if sf_raw_elo is not None else 0
+    anchor_offset = 2100 - sf_raw_elo if sf_raw_elo is not None else 0
 
-    print("\n" + "=" * 40 + f"\n CLASSEMENT ANCRÉ (Stockfish = 1500)\n" + "=" * 40)
+    print("\n" + "=" * 40 + f"\n CLASSEMENT ANCRÉ (Stockfish = 2100)\n" + "=" * 40)
     for h, elo, games in final_ranking:
         name = hash_to_filename.get(h, "Unknown")
         print(f"{name:35} : {elo + anchor_offset:>6.1f} Elo | {games:>3} parties")
