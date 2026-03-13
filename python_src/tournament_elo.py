@@ -4,14 +4,14 @@ import numpy as np
 from whr import whole_history_rating
 
 import chess_engine
-from lib import decode_move_index, move_to_san, get_model_hash
+from lib import decode_move_index, move_to_san, get_model_hash, chose_move_idx
 
 # ============================================================
 #                     CONFIGURATION
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 600
-GAMES_PER_PAIR = 6
+GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
 MODE = "default"  # Options : "default", "all", ou "x-y"
 
@@ -27,18 +27,15 @@ def play_game(model_white, model_black, sims):
         # Appel au moteur MCTS C++ / ONNX
         pi_raw = current_model.mcts_search(board, sims, 1.4, False)
         pi = np.array(pi_raw, dtype=np.float32)
-
-        # Logique de température
         move_count = len(san_moves)
-        current_tau = 1.0 if move_count < 8 else 0.1
+        if move_count < 2:
+            current_tau = 2
+        elif move_count < 8:
+            current_tau = 1.0
+        else:
+            current_tau = 0.1
 
-        log_pi = np.log(pi.astype(np.float64) + 1e-10)
-        logits = log_pi / current_tau
-        logits -= np.max(logits)
-        pi_temp = np.exp(logits)
-        pi_temp /= pi_temp.sum()
-
-        best_idx = np.random.choice(len(pi), p=pi_temp)
+        best_idx = chose_move_idx(pi, current_tau)
         is_black = (board.turn == chess_engine.Color.BLACK)
         f_o, r_o, f_d, r_d, p = decode_move_index(board, best_idx, is_black)
 
@@ -50,7 +47,8 @@ def play_game(model_white, model_black, sims):
         elif board.is_in_check():
             san += "+"
         san_moves.append(san)
-        if len(san_moves) > 300: break
+        if len(san_moves) > 300:
+            break
 
     winner = "draw"
     if board.game_state == chess_engine.GameState.CHECKMATE:

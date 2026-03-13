@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import chess_engine
 from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer,
-                 export_model_to_onnx)
+                 export_model_to_onnx, chose_move_idx)
 
 from model import ChessNet
 
@@ -56,13 +56,7 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
 
         if move_num < 30:
             tau = 1.0
-            log_pi = np.log(pi + 1e-10)
-            logits = log_pi / tau
-            logits -= np.max(logits)
-            probs = np.exp(logits)
-            probs /= np.sum(probs)
-
-            chosen_idx = np.random.choice(4672, p=probs)
+            chosen_idx = chose_move_idx(pi, tau)
 
         else:
             chosen_idx = np.argmax(pi)

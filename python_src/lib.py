@@ -451,3 +451,17 @@ def get_model_hash(filepath):
         for chunk in iter(lambda: f.read(4096), b""):
             hasher.update(chunk)
     return hasher.hexdigest()[:16]
+
+
+def chose_move_idx(pi, tau):
+    mask = pi > 0
+    logits = np.full_like(pi, -1e20, dtype=np.float64)
+    logits[mask] = np.log(pi[mask].astype(np.float64)) / tau
+
+    logits -= np.max(logits)
+    probs = np.exp(logits)
+    probs[~mask] = 0
+    probs /= np.sum(probs)
+
+    chosen_idx = np.random.choice(4672, p=probs)
+    return chosen_idx

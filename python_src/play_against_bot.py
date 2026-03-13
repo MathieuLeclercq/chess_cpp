@@ -14,17 +14,18 @@ from lib_gui import (
     load_images,
     rendu
 )
-from lib import (move_to_san, print_pgn, decode_move_index)
+from lib import (move_to_san, print_pgn, decode_move_index, chose_move_idx)
 
 # ============================================================
 #                     CONFIGURATION
 # ============================================================
 
-HUMAN_COLOR = chess_engine.Color.BLACK
-CHECKPOINT_PATH = "checkpoints/2026_03_12_02h16_iter18_unsupervised.onnx"
+HUMAN_COLOR = chess_engine.Color.WHITE
+CHECKPOINT_PATH = "checkpoints/2026_03_13_01h31_iter18_unsupervised.onnx"
 
 NUM_SIMULATIONS = 1200
 
+TAU_FIRST_MOVE = 2
 TAU_OPENING = 1  # Plus de variété au début
 TAU_ENDGAME = 0.1  # Moins après
 TAU_THRESHOLD = 8  # Nombre de demi-coups avant de basculer sur TAU_ENDGAME
@@ -50,18 +51,14 @@ def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container):
 
     # 3. Logique de température
     move_count = len(san_moves_copy)
-    current_tau = TAU_OPENING if move_count < TAU_THRESHOLD else TAU_ENDGAME
+    if move_count < 2:
+        current_tau = TAU_FIRST_MOVE
+    elif move_count < TAU_THRESHOLD:
+        current_tau = TAU_OPENING
+    else:
+        current_tau = TAU_ENDGAME
 
-    # Application de la température sur les probabilités (pi)
-    # On utilise float64 pour éviter les problèmes de précision avec les petites températures
-    log_pi = np.log(pi.astype(np.float64) + 1e-10)
-    logits = log_pi / current_tau
-    logits -= np.max(logits)  # Stabilité numérique
-    pi_temp = np.exp(logits)
-    pi_temp /= pi_temp.sum()
-
-    # 4. Sélection aléatoire pondérée au lieu de l'argmax
-    best_idx = int(np.random.choice(len(pi_temp), p=pi_temp))
+    best_idx = chose_move_idx(pi, current_tau)
 
     # 5. Décodage
     is_black = (temp_board.turn == chess_engine.Color.BLACK)
