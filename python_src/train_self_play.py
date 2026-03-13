@@ -324,5 +324,5 @@ if __name__ == "__main__":
         batch_size=1024,
         learning_rate=1e-5,
         max_buffer_size=50_000,
-        checkpoint_path="checkpoints/2026_03_12_17h43_iter7_unsupervised.pt"
+        checkpoint_path="checkpoints/2026_03_12_22h52_iter3_unsupervised.pt"
     )
