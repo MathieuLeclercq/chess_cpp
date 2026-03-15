@@ -88,7 +88,7 @@ class ChessGame:
         self.mcts_engine: chess_engine.MCTS = mcts_engine
         self.human_color = human_color
 
-        self.selected_square: tuple[int, int] | None = None
+        self.selected_filerank: tuple[int, int] | None = None
         self.san_moves: list = []
         self.ai_result_container: list = []
         self.current_legal_moves: list[chess_engine.Move] = []
@@ -145,9 +145,10 @@ class ChessGame:
         return self._is_dragging
 
     def startDragging(self, clicked_sq, mouse_x, mouse_y):
+        self.clearActions()
         if self._is_dragging:
             raise Exception("Already currently dragging!")
-        self.selected_square = clicked_sq
+        self.selected_filerank = clicked_sq
         self._is_dragging = True
         self.drag_pos = (mouse_x, mouse_y)
 
@@ -169,24 +170,45 @@ class ChessGame:
         return clicked_sq, x, y
 
     def clearActions(self):
-        self.selected_square = None
+        self.selected_filerank = None
         self.current_legal_moves = []
+
+    def makeMove(self, clicked_file, clicked_rank, promotion_type):
+        orig_f, orig_r = self.selected_filerank
+        san = move_to_san(self.board, orig_f, orig_r, clicked_file, clicked_rank,
+                          promotion_type)
+        success = self.board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
+                                        promotion_type)
+
+        if success:
+            self.clearActions()
+            if self.board.game_state == chess_engine.GameState.CHECKMATE:
+                san += "#"
+            elif self.board.is_in_check():
+                san += "+"
+            self.san_moves.append(san)
+            if self.board.game_state != chess_engine.GameState.ONGOING:
+                self.endGame()
+        else:
+            raise Exception("Error while moving piece")
 
     def eventLeftClickDown(self, clicked_sq, mouse_x, mouse_y):
         # 2 possibilités : drag ou cliquer sur case d'arrivée pour bouger (move)
-
         clicked_file, clicked_rank = clicked_sq
         self.red_squares.clear()
-        if self.selected_square is None:
+        sq = self.board.get_square(clicked_file, clicked_rank)
+        if self.selected_filerank is None:
             # Cas 1 : Aucune pièce sélectionnée, on en saisit une
-            sq = self.board.get_square(clicked_file, clicked_rank)
             if sq.is_occupied():
                 self.startDragging(clicked_sq, mouse_x, mouse_y)
                 if sq.get_piece().get_color() == self.human_color:
                     self.current_legal_moves = self.board.get_legal_moves(clicked_file,
                                                                           clicked_rank)
+        elif (sq.get_file(), sq.get_rank()) == self.selected_filerank:
+            self.clearActions()  # On déselectionne si on reclique sur la même case
         else:
             # Cas 2 : Une pièce est déjà sélectionnée (Click-to-Click)
+            # soit on tente un move soit on resélectionne pour drag
             valid_move = None
             promotion_type = chess_engine.PieceType.NONE
 
@@ -199,26 +221,8 @@ class ChessGame:
                         break
 
             if valid_move is not None and self.is_human_turn and not self.gameEnded():
-                orig_f, orig_r = self.selected_square
-                san = move_to_san(self.board, orig_f, orig_r, clicked_file, clicked_rank,
-                                  promotion_type)
-                success = self.board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
-                                                promotion_type)
+                self.makeMove(clicked_file, clicked_rank, promotion_type)
 
-                if success:
-                    self.clearActions()
-                    if self.board.game_state == chess_engine.GameState.CHECKMATE:
-                        san += "#"
-                    elif self.board.is_in_check():
-                        san += "+"
-                    self.san_moves.append(san)
-                    if self.board.game_state != chess_engine.GameState.ONGOING:
-                        self.endGame()
-                else:
-                    raise Exception("Error while moving piece")
-
-                self.selected_square = None
-                self.current_legal_moves = []
             else:  # pas de coup valide donc on drag la pièce actuelle
                 sq = self.board.get_square(clicked_file, clicked_rank)
                 if sq.is_occupied():
@@ -259,7 +263,7 @@ class ChessGame:
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self.isDragging():
                     self.stopDragging()
-                    if (clicked_file, clicked_rank) == self.selected_square:
+                    if (clicked_file, clicked_rank) == self.selected_filerank:
                         pass
                     else:
                         valid_move = None
@@ -274,26 +278,7 @@ class ChessGame:
                                     break
 
                         if valid_move is not None:
-                            orig_f, orig_r = self.selected_square
-                            san = move_to_san(self.board, orig_f, orig_r, clicked_file,
-                                              clicked_rank,
-                                              promotion_type)
-                            success = self.board.move_piece(orig_f, orig_r, clicked_file,
-                                                            clicked_rank,
-                                                            promotion_type)
-
-                            if success:
-                                self.clearActions()
-                                if self.board.game_state == chess_engine.GameState.CHECKMATE:
-                                    san += "#"
-                                elif self.board.is_in_check():
-                                    san += "+"
-                                self.san_moves.append(san)
-                                if self.board.game_state != chess_engine.GameState.ONGOING:
-                                    self.endGame()
-
-                        else:
-                            pass
+                            self.makeMove(clicked_file, clicked_rank, promotion_type)
 
         # 2. Tour de l'IA
         if not self.is_human_turn and not self.gameEnded():
@@ -311,27 +296,15 @@ class ChessGame:
                 result = self.ai_result_container.pop()
                 if result is not None:
                     orig_f, orig_r, dest_f, dest_r, promo = result
-                    san = move_to_san(self.board, orig_f, orig_r, dest_f, dest_r, promo)
-                    success = self.board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
-                    self.clearActions()
-                    if not success:
-                        raise Exception("Error while getting AI's move.")
-
-                    if self.board.game_state == chess_engine.GameState.CHECKMATE:
-                        san += "#"
-                    elif self.board.is_in_check():
-                        san += "+"
-                    self.san_moves.append(san)
-
-                if self.board.game_state != chess_engine.GameState.ONGOING:
-                    self.endGame()
+                    self.selected_filerank = (orig_f, orig_r)
+                    self.makeMove(dest_f, dest_r, promo)
                 self.AiStopThinking()
 
         # 3. Appel de rendu mis à jour
         self.clock = rendu(
             self.screen,
             self.board,
-            self.selected_square,
+            self.selected_filerank,
             self.current_legal_moves,
             self.clock,
             self.isDragging(),

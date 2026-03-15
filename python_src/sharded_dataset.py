@@ -4,6 +4,11 @@ import numpy as np
 from torch.utils.data import IterableDataset, DataLoader
 import random
 
+"""
+Dataset pour entraînement supervisé
+sur des parties de Lichess
+"""
+
 
 class ShardedChessDataset(IterableDataset):
     def __init__(self, shard_dir, shuffle=True):
@@ -58,4 +63,3 @@ class ShardedChessDataset(IterableDataset):
                 y_value = torch.tensor([Y_v[idx]], dtype=torch.float32)
 
                 yield x_tensor, y_policy, y_value
-

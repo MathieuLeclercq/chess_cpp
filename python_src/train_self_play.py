@@ -311,12 +311,12 @@ if __name__ == "__main__":
 
     pipeline(
         num_iterations=40,
-        games_per_iter=64,
+        games_per_iter=128,
         num_workers=8,
         num_simulations=600,
         train_epochs=1,
         batch_size=1024,
-        learning_rate=1e-5,
+        learning_rate=3e-5,
         max_buffer_size=50_000,
-        checkpoint_path="checkpoints/2026_03_12_22h52_iter3_unsupervised.pt"
+        checkpoint_path="checkpoints/2026_03_13_01h31_iter18_unsupervised.pt"
     )
