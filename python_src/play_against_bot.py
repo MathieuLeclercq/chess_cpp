@@ -23,19 +23,21 @@ from lib import (move_to_san, print_pgn, decode_move_index, chose_move_idx)
 HUMAN_COLOR = chess_engine.Color.WHITE
 CHECKPOINT_PATH = "checkpoints/2026_03_13_01h31_iter18_unsupervised.onnx"
 
-NUM_SIMULATIONS = 1200
-
-TAU_FIRST_MOVE = 2
-TAU_OPENING = 1
-TAU_ENDGAME = 0.1
-TAU_THRESHOLD = 8  # Nombre de demi-coups avant de basculer sur TAU_ENDGAME
+MCTS_PARAMS = {
+    "num_sim": 1200,
+    "tau_first_move": 2,
+    "tau_opening": 1,
+    "tau_endgame": 0.1,
+    "tau_threshold": 8
+}
 
 
 # ============================================================
 #                     FONCTION WORKER (THREAD)
 # ============================================================
 
-def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container):
+def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container,
+                tau_first_move, tau_threshold, tau_opening, tau_endgame):
     """
     Exécute le MCTS en arrière-plan avec logique de température.
     """
@@ -46,17 +48,17 @@ def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container):
         temp_board.move_piece_san(move)
 
     # 2. Lancement de la recherche C++ / ONNX
-    pi_raw = mcts_engine.mcts_search(temp_board, num_simulations, 1.4, False)
+    pi_raw = mcts_engine.mcts_search(temp_board, num_simulations)
     pi = np.array(pi_raw, dtype=np.float32)
 
     # 3. Logique de température
     move_count = len(san_moves_copy)
     if move_count < 2:
-        current_tau = TAU_FIRST_MOVE
-    elif move_count < TAU_THRESHOLD:
-        current_tau = TAU_OPENING
+        current_tau = tau_first_move
+    elif move_count < tau_threshold:
+        current_tau = tau_opening
     else:
-        current_tau = TAU_ENDGAME
+        current_tau = tau_endgame
 
     best_idx = chose_move_idx(pi, current_tau)
 
@@ -82,10 +84,12 @@ class ChessGame:
             self,
             board: chess_engine.Chessboard,
             mcts_engine: chess_engine.MCTS,
-            human_color: chess_engine.Color = chess_engine.Color.WHITE
+            mcts_params: dict,
+            human_color: chess_engine.Color = chess_engine.Color.WHITE,
     ):
         self.board: chess_engine.Chessboard = board
         self.mcts_engine: chess_engine.MCTS = mcts_engine
+        self.mcts_params: dict = mcts_params
         self.human_color = human_color
 
         self.selected_filerank: tuple[int, int] | None = None
@@ -102,6 +106,7 @@ class ChessGame:
         self._game_over: bool = False  # chess game
         self._is_dragging: bool = False
         self._is_ai_thinking: bool = False
+        self._just_got_selected = False
 
         self.screen, self.clock = pygame_init()
         load_images()
@@ -145,9 +150,13 @@ class ChessGame:
         return self._is_dragging
 
     def startDragging(self, clicked_sq, mouse_x, mouse_y):
-        self.clearActions()
+        # self.clearActions()
         if self._is_dragging:
             raise Exception("Already currently dragging!")
+        if clicked_sq != self.selected_filerank:
+            self._just_got_selected = True
+        else:
+            self._just_got_selected = False
         self.selected_filerank = clicked_sq
         self._is_dragging = True
         self.drag_pos = (mouse_x, mouse_y)
@@ -172,11 +181,14 @@ class ChessGame:
     def clearActions(self):
         self.selected_filerank = None
         self.current_legal_moves = []
+        self.red_squares.clear()
+        self._just_got_selected = False
 
     def makeMove(self, clicked_file, clicked_rank, promotion_type):
         orig_f, orig_r = self.selected_filerank
         san = move_to_san(self.board, orig_f, orig_r, clicked_file, clicked_rank,
                           promotion_type)
+        print(f"{orig_f=}, {orig_r=}")
         success = self.board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
                                         promotion_type)
 
@@ -190,7 +202,8 @@ class ChessGame:
             if self.board.game_state != chess_engine.GameState.ONGOING:
                 self.endGame()
         else:
-            raise Exception("Error while moving piece")
+            # raise Exception("Error while moving piece")
+            print(f'board.move_piece() a renvoyé "False. Coup : {san}"')
 
     def eventLeftClickDown(self, clicked_sq, mouse_x, mouse_y):
         # 2 possibilités : drag ou cliquer sur case d'arrivée pour bouger (move)
@@ -204,8 +217,6 @@ class ChessGame:
                 if sq.get_piece().get_color() == self.human_color:
                     self.current_legal_moves = self.board.get_legal_moves(clicked_file,
                                                                           clicked_rank)
-        elif (sq.get_file(), sq.get_rank()) == self.selected_filerank:
-            self.clearActions()  # On déselectionne si on reclique sur la même case
         else:
             # Cas 2 : Une pièce est déjà sélectionnée (Click-to-Click)
             # soit on tente un move soit on resélectionne pour drag
@@ -234,8 +245,56 @@ class ChessGame:
                 else:
                     self.current_legal_moves = []
 
+    def eventLeftClickUp(self, clicked_file, clicked_rank):
+        if self.isDragging():
+            self.stopDragging()
+            if ((clicked_file, clicked_rank) == self.selected_filerank and
+                    not self._just_got_selected):
+                self.clearActions()  # On déselectionne si on reclique sur la même case
+            else:
+                valid_move = None
+                promotion_type = chess_engine.PieceType.NONE
+
+                for move in self.current_legal_moves:
+                    if (move.get_dest_square().get_file() == clicked_file and
+                            move.get_dest_square().get_rank() == clicked_rank):
+                        valid_move = move
+                        if move.get_promotion() == chess_engine.PieceType.QUEEN:
+                            promotion_type = chess_engine.PieceType.QUEEN
+                            break
+
+                if valid_move is not None:
+                    self.makeMove(clicked_file, clicked_rank, promotion_type)
+
+    def AiTurn(self):
+        if not self.isAiThinking():
+            self.AiStartThinking()
+            self.ai_result_container.clear()
+            thread = threading.Thread(
+                target=mcts_worker,
+                args=(self.san_moves.copy(),
+                      self.mcts_engine,
+                      self.mcts_params.get("num_sim", 1200),
+                      self.ai_result_container,
+                      self.mcts_params.get("tau_first_move", 2),
+                      self.mcts_params.get("tau_threshold", 8),
+                      self.mcts_params.get("tau_opening", 1),
+                      self.mcts_params.get("tau_endgame", 0.1),
+                      )
+
+            )
+            thread.start()
+
+        elif len(self.ai_result_container) > 0:
+            result = self.ai_result_container.pop()
+            if result is not None:
+                orig_f, orig_r, dest_f, dest_r, promo = result
+                self.selected_filerank = (orig_f, orig_r)
+                self.makeMove(dest_f, dest_r, promo)
+            self.AiStopThinking()
+
     def loop(self):
-        self.is_human_turn = (self.board.turn == HUMAN_COLOR)
+        self.is_human_turn = (self.board.turn == self.human_color)
         for event in pygame.event.get():
             clicked_sq, mouse_x, mouse_y = self.computeClickedSquare()
             clicked_file, clicked_rank = clicked_sq
@@ -243,62 +302,25 @@ class ChessGame:
             if event.type == pygame.QUIT:
                 self.stop()
 
-            # --- CLIC DROIT : Surlignage rouge ---
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 if clicked_sq in self.red_squares:
                     self.red_squares.remove(clicked_sq)
                 else:
                     self.red_squares.add(clicked_sq)
 
-            # --- CLIC GAUCHE (DOWN) : Saisir ou Cliquer-pour-bouger ---
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self.eventLeftClickDown(clicked_sq, mouse_x, mouse_y)
 
-            # --- SOURIS (MOTION) : Faire glisser ---
             elif event.type == pygame.MOUSEMOTION:
                 if self.isDragging():
                     self.drag_pos = event.pos
 
-            # --- CLIC GAUCHE (UP) : Relâcher la pièce (Drag-and-Drop) ---
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if self.isDragging():
-                    self.stopDragging()
-                    if (clicked_file, clicked_rank) == self.selected_filerank:
-                        pass
-                    else:
-                        valid_move = None
-                        promotion_type = chess_engine.PieceType.NONE
+                self.eventLeftClickUp(clicked_file, clicked_rank)
 
-                        for move in self.current_legal_moves:
-                            if (move.get_dest_square().get_file() == clicked_file and
-                                    move.get_dest_square().get_rank() == clicked_rank):
-                                valid_move = move
-                                if move.get_promotion() == chess_engine.PieceType.QUEEN:
-                                    promotion_type = chess_engine.PieceType.QUEEN
-                                    break
-
-                        if valid_move is not None:
-                            self.makeMove(clicked_file, clicked_rank, promotion_type)
-
-        # 2. Tour de l'IA
+        # Tour de l'IA
         if not self.is_human_turn and not self.gameEnded():
-            if not self.isAiThinking():
-                self.AiStartThinking()
-                self.ai_result_container.clear()
-                thread = threading.Thread(
-                    target=mcts_worker,
-                    args=(self.san_moves.copy(), self.mcts_engine, NUM_SIMULATIONS,
-                          self.ai_result_container)
-                )
-                thread.start()
-
-            elif len(self.ai_result_container) > 0:
-                result = self.ai_result_container.pop()
-                if result is not None:
-                    orig_f, orig_r, dest_f, dest_r, promo = result
-                    self.selected_filerank = (orig_f, orig_r)
-                    self.makeMove(dest_f, dest_r, promo)
-                self.AiStopThinking()
+            self.AiTurn()
 
         # 3. Appel de rendu mis à jour
         self.clock = rendu(
@@ -310,7 +332,7 @@ class ChessGame:
             self.isDragging(),
             self.drag_pos,
             self.red_squares,
-            perspective=HUMAN_COLOR
+            perspective=self.human_color
         )
 
 
@@ -323,6 +345,7 @@ def main():
     game = ChessGame(
         board=board,
         mcts_engine=mcts_engine,
+        mcts_params=MCTS_PARAMS,
         human_color=HUMAN_COLOR)
     game.start()
 
