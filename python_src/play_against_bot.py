@@ -188,7 +188,6 @@ class ChessGame:
         orig_f, orig_r = self.selected_filerank
         san = move_to_san(self.board, orig_f, orig_r, clicked_file, clicked_rank,
                           promotion_type)
-        print(f"{orig_f=}, {orig_r=}")
         success = self.board.move_piece(orig_f, orig_r, clicked_file, clicked_rank,
                                         promotion_type)
 
@@ -202,24 +201,26 @@ class ChessGame:
             if self.board.game_state != chess_engine.GameState.ONGOING:
                 self.endGame()
         else:
-            # raise Exception("Error while moving piece")
             print(f'board.move_piece() a renvoyé "False. Coup : {san}"')
 
     def eventLeftClickDown(self, clicked_sq, mouse_x, mouse_y):
-        # 2 possibilités : drag ou cliquer sur case d'arrivée pour bouger (move)
         clicked_file, clicked_rank = clicked_sq
         self.red_squares.clear()
         sq = self.board.get_square(clicked_file, clicked_rank)
+
         if self.selected_filerank is None:
-            # Cas 1 : Aucune pièce sélectionnée, on en saisit une
+            # Cas 1 : Aucune pièce sélectionnée
             if sq.is_occupied():
                 self.startDragging(clicked_sq, mouse_x, mouse_y)
-                if sq.get_piece().get_color() == self.human_color:
+
+                # SECURITE : On ne tape dans le C++ que si c'est notre tour
+                if sq.get_piece().get_color() == self.human_color and self.is_human_turn:
                     self.current_legal_moves = self.board.get_legal_moves(clicked_file,
                                                                           clicked_rank)
+                else:
+                    self.current_legal_moves = []
         else:
-            # Cas 2 : Une pièce est déjà sélectionnée (Click-to-Click)
-            # soit on tente un move soit on resélectionne pour drag
+            # Cas 2 : Une pièce est déjà sélectionnée
             valid_move = None
             promotion_type = chess_engine.PieceType.NONE
 
@@ -233,15 +234,15 @@ class ChessGame:
 
             if valid_move is not None and self.is_human_turn and not self.gameEnded():
                 self.makeMove(clicked_file, clicked_rank, promotion_type)
-
-            else:  # pas de coup valide donc on drag la pièce actuelle
+            else:
                 sq = self.board.get_square(clicked_file, clicked_rank)
                 if sq.is_occupied():
-                    # On change la sélection
                     self.startDragging(clicked_sq, mouse_x, mouse_y)
-                    if sq.get_piece().get_color() == self.human_color:
+                    if sq.get_piece().get_color() == self.human_color and self.is_human_turn:
                         self.current_legal_moves = self.board.get_legal_moves(clicked_file,
                                                                               clicked_rank)
+                    else:
+                        self.current_legal_moves = []
                 else:
                     self.current_legal_moves = []
 
@@ -281,7 +282,6 @@ class ChessGame:
                       self.mcts_params.get("tau_opening", 1),
                       self.mcts_params.get("tau_endgame", 0.1),
                       )
-
             )
             thread.start()
 
@@ -289,8 +289,22 @@ class ChessGame:
             result = self.ai_result_container.pop()
             if result is not None:
                 orig_f, orig_r, dest_f, dest_r, promo = result
-                self.selected_filerank = (orig_f, orig_r)
-                self.makeMove(dest_f, dest_r, promo)
+
+                san = move_to_san(self.board, orig_f, orig_r, dest_f, dest_r, promo)
+                success = self.board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
+
+                if success:
+                    if self.board.game_state == chess_engine.GameState.CHECKMATE:
+                        san += "#"
+                    elif self.board.is_in_check():
+                        san += "+"
+                    self.san_moves.append(san)
+                    if self.board.game_state != chess_engine.GameState.ONGOING:
+                        self.endGame()
+                else:
+                    print(f"FATAL ERROR: Le moteur a rejeté le coup de l'IA {san}.")
+                    self.endGame()
+
             self.AiStopThinking()
 
     def loop(self):
