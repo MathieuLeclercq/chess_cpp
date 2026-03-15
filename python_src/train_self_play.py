@@ -317,6 +317,6 @@ if __name__ == "__main__":
         train_epochs=1,
         batch_size=1024,
         learning_rate=3e-5,
-        max_buffer_size=50_000,
+        max_buffer_size=250_000,
         checkpoint_path="checkpoints/2026_03_13_01h31_iter18_unsupervised.pt"
     )
