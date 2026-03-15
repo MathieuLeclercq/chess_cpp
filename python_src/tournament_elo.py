@@ -15,10 +15,10 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 #                     CONFIGURATION
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
-SIMULATIONS_EVAL = 800
+SIMULATIONS_EVAL = 600
 GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "1-5"  # Options : "default", "all", ou "x-y"
+MODE = "1-3"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -41,9 +41,7 @@ def play_game(model_white, model_black, sims):
             pi_raw = current_model.mcts_search(board, sims, 1.4, False)
             pi = np.array(pi_raw, dtype=np.float32)
             move_count = len(san_moves)
-            if move_count < 2:
-                current_tau = 1.5
-            elif move_count < 8:
+            if move_count < 8:
                 current_tau = 1.0
             else:
                 current_tau = 0.1
@@ -111,35 +109,31 @@ def get_ranked_players(whr, files):
 
 
 def play_match(h1, h2, hash_to_filename, whr):
-    """Lance un face-à-face entre deux bots et met à jour le WHR."""
-
     p1 = hash_to_filename[h1]
     p2 = hash_to_filename[h2]
 
     print(f"\n--- MATCH : {p1} vs {p2} ---")
 
-    # Chargement intelligent
-    if h1 == "STOCKFISH_FIXED_2100":
-        m1 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
-    else:
-        m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
-
-    if h2 == "STOCKFISH_FIXED_2100":
-        m2 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
-    else:
-        m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
-
-    # Initialisation des scores du match
     score_p1 = 0.0
     score_p2 = 0.0
 
     for g in range(GAMES_PER_PAIR):
+        if h1 == "STOCKFISH_FIXED_2100":
+            m1 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
+        else:
+            m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
+
+        if h2 == "STOCKFISH_FIXED_2100":
+            m2 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
+        else:
+            m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
+
         if g % 2 == 0:
             white_n, black_n, white_m, black_m = p1, p2, m1, m2
-            white_h, black_h = h1, h2  # Ajout des identifiants Hash
+            white_h, black_h = h1, h2
         else:
             white_n, black_n, white_m, black_m = p2, p1, m2, m1
-            white_h, black_h = h2, h1  # Ajout des identifiants Hash
+            white_h, black_h = h2, h1
 
         winner, moves = play_game(white_m, black_m, SIMULATIONS_EVAL)
         print(format_pgn(white_n, black_n, winner, moves))
@@ -147,27 +141,20 @@ def play_match(h1, h2, hash_to_filename, whr):
         if winner == "draw":
             score_p1 += 0.5
             score_p2 += 0.5
-            # On passe bien les Hashs au WHR
             whr.create_game(black_h, white_h, "B", 0, 0)
             whr.create_game(black_h, white_h, "W", 0, 0)
         else:
             if winner == "white":
-                if white_h == h1:
-                    score_p1 += 1
-                else:
-                    score_p2 += 1
+                if white_h == h1: score_p1 += 1
+                else: score_p2 += 1
             else:
-                if black_h == h1:
-                    score_p1 += 1
-                else:
-                    score_p2 += 1
+                if black_h == h1: score_p1 += 1
+                else: score_p2 += 1
 
             outcome = "W" if winner == "white" else "B"
-            # On passe bien les Hashs au WHR
             whr.create_game(black_h, white_h, outcome, 0, 0)
 
     print(f"\n>>>> FIN DU MATCH : {p1} ({score_p1}) - {p2} ({score_p2})")
-
     whr.iterate(10)
     whr.save_base(WHR_STATE_FILE)
 

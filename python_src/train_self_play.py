@@ -1,3 +1,4 @@
+import os.path
 import warnings
 
 warnings.filterwarnings("ignore", module="requests")
@@ -14,6 +15,7 @@ from tqdm import tqdm
 import chess_engine
 from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer,
                  export_model_to_onnx, chose_move_idx)
+from stockfish_player import evaluate_against_anchor
 
 from model import ChessNet
 
@@ -40,7 +42,7 @@ class SelfPlayDataset(Dataset):
 # ============================================================
 #                     WORKER & SELF-PLAY
 # ============================================================
-def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
+def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0.25, max_moves=200):
     board = chess_engine.Chessboard()
     board.set_startup_pieces()
 
@@ -49,19 +51,24 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
     move_num = 0
 
     while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
-        tensor_np = board.get_alphazero_tensor()
+        is_slow_play = (np.random.rand() < slow_ratio)
+        current_sims = num_simulations if is_slow_play else fast_sims
 
-        pi_raw = mcts_engine.mcts_search(board, num_simulations, 1.4, True)
+        tensor_np = board.get_alphazero_tensor()
+        current_turn_color = board.turn  # On mémorise la couleur de la position actuelle
+
+        pi_raw = mcts_engine.mcts_search(board, current_sims, 1.4, True)
         pi = np.array(pi_raw, dtype=np.float32)
 
         if move_num < 30:
             tau = 1.0
             chosen_idx = chose_move_idx(pi, tau)
-
         else:
             chosen_idx = np.argmax(pi)
 
-        history.append((tensor_np, pi))
+        # Sauvegarde conditionnelle : on ne garde que les calculs profonds
+        if is_slow_play:
+            history.append((tensor_np, pi, current_turn_color))
 
         is_black = (board.turn == chess_engine.Color.BLACK)
         orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, chosen_idx, is_black)
@@ -79,14 +86,20 @@ def self_play_game(mcts_engine, num_simulations=200, max_moves=200):
         san_moves.append(san)
         move_num += 1
 
-    z = 0.0
-    if board.game_state == chess_engine.GameState.CHECKMATE:
-        z = 1.0
-
+    # Distribution des récompenses basée sur la couleur
     dataset = []
-    for i, (tensor_np, pi) in enumerate(history):
-        value = z if (len(history) - i) % 2 == 1 else -z
-        dataset.append((tensor_np, pi, value))
+    if board.game_state == chess_engine.GameState.CHECKMATE:
+        if board.turn == chess_engine.Color.WHITE:
+            winner_color = chess_engine.Color.BLACK
+        else:
+            winner_color = chess_engine.Color.WHITE
+
+        for tensor_np, pi, color in history:
+            value = 1.0 if color == winner_color else -1.0
+            dataset.append((tensor_np, pi, value))
+    else:
+        for tensor_np, pi, color in history:
+            dataset.append((tensor_np, pi, 0.0))
 
     return dataset, move_num, board.game_state
 
@@ -109,7 +122,7 @@ def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
     total_moves = 0
 
     results = {
-        "CHECKMATE": 0, "STALEMATE": 0,  "DRAW_REPETITION": 0,
+        "CHECKMATE": 0, "STALEMATE": 0, "DRAW_REPETITION": 0,
         "DRAW_50_MOVES": 0, "DRAW_INSUFF_MATERIAL": 0, "ONGOING": 0
     }
 
@@ -223,10 +236,12 @@ def pipeline(
         max_buffer_size=100_000,
         num_workers=4,
         checkpoint_path=None,
+        stockfish_path=None
 ):
     timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     assert torch.cuda.is_available()
     gpu_device = torch.device("cuda")
+    assert os.path.isfile(stockfish_path)
 
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(gpu_device)
 
@@ -299,6 +314,25 @@ def pipeline(
         export_model_to_onnx(model, onnx_path, gpu_device)
         save_buffer(replay_buffer, buffer_filepath)
 
+        # ── 4. Évaluation Rapide (Nouveau) ──
+        # On teste l'ONNX fraîchement généré contre Stockfish 1400 (50ms par coup)
+        eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
+            onnx_path=onnx_path,
+            stockfish_path=stockfish_path,
+            num_games=5,
+            mcts_sims=100,
+            sf_elo=2500,
+            sf_time=0.05
+        )
+
+        wandb.log({
+            "eval/winrate": eval_winrate,
+            "eval/wins": eval_wins,
+            "eval/draws": eval_draws,
+            "eval/losses": eval_losses,
+            "eval/iteration": iteration + 1,
+        }, step=global_step)
+
     last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     ckpt_onnx_final_path = f"checkpoints/{last_timestamp}_last_unsupervised.onnx"
     export_model_to_onnx(model, ckpt_onnx_final_path, gpu_device)
@@ -309,14 +343,21 @@ def pipeline(
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
 
-    pipeline(
-        num_iterations=40,
-        games_per_iter=128,
-        num_workers=8,
-        num_simulations=600,
-        train_epochs=1,
-        batch_size=1024,
-        learning_rate=3e-5,
-        max_buffer_size=250_000,
-        checkpoint_path="checkpoints/2026_03_13_01h31_iter18_unsupervised.pt"
-    )
+    try:
+        pipeline(
+            num_iterations=40,
+            games_per_iter=8,
+            num_workers=8,
+            num_simulations=50,
+            train_epochs=1,
+            batch_size=1024,
+            learning_rate=3e-5,
+            max_buffer_size=250_000,
+            checkpoint_path="checkpoints/2026_03_13_01h31_iter18_unsupervised.pt",
+            stockfish_path=r"D:\logiciels\stockfish\stockfish.exe"
+        )
+    except KeyboardInterrupt:
+        print("\n[Interruption] Entraînement stoppé manuellement.")
+        print("Synchronisation des dernières métriques avec WandB en cours...")
+        wandb.finish()
+        print("Arrêt propre terminé.")
