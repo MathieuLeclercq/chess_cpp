@@ -21,9 +21,10 @@ IMAGES = {}
 def pygame_init():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("AlphaZero Maison — Jouer contre l'IA")
+    pygame.display.set_caption("Échecs : Humain VS Bot")
     clock = pygame.time.Clock()
     return screen, clock
+
 
 def rendu(screen,
           board,
@@ -33,7 +34,7 @@ def rendu(screen,
           dragging=False,
           drag_pos=(0, 0),
           red_squares=None,
-          perspective=chess_engine.Color.WHITE  # Ajout du paramètre
+          perspective=chess_engine.Color.WHITE
           ):
     if red_squares is None:
         red_squares = set()
@@ -100,7 +101,8 @@ def draw_board(screen, perspective):
 def draw_last_move(screen, board, perspective):
     try:
         orig_f, orig_r, dest_f, dest_r, _ = board.get_last_move_data()
-        if orig_f == -1: return
+        if orig_f == -1:
+            return
 
         for f, r in [(orig_f, orig_r), (dest_f, dest_r)]:
             dx, dy = get_screen_coords(f, r, perspective)
