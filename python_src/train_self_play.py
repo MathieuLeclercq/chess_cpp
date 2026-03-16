@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 import torch.multiprocessing as mp
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torch.amp import GradScaler
 from datetime import datetime
 from tqdm import tqdm
@@ -55,7 +55,7 @@ def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0
         current_sims = num_simulations if is_slow_play else fast_sims
 
         tensor_np = board.get_alphazero_tensor()
-        current_turn_color = board.turn  # On mémorise la couleur de la position actuelle
+        current_turn_color = board.turn
 
         pi_raw = mcts_engine.mcts_search(board, current_sims, 1.4, True)
         pi = np.array(pi_raw, dtype=np.float32)
@@ -66,7 +66,6 @@ def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0
         else:
             chosen_idx = np.argmax(pi)
 
-        # Sauvegarde conditionnelle : on ne garde que les calculs profonds
         if is_slow_play:
             history.append((tensor_np, pi, current_turn_color))
 
@@ -86,7 +85,6 @@ def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0
         san_moves.append(san)
         move_num += 1
 
-    # Distribution des récompenses basée sur la couleur
     dataset = []
     if board.game_state == chess_engine.GameState.CHECKMATE:
         if board.turn == chess_engine.Color.WHITE:
@@ -105,19 +103,16 @@ def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0
 
 
 def worker_self_play(args):
-    """Fonction isolée exécutée par chaque processus (Cœur CPU)."""
-    onnx_path, num_simulations, max_moves = args
+    onnx_path, num_simulations, fast_sims, max_moves = args
 
-    # Initialisation du moteur MCTS en C++ pour ce thread
     mcts_engine = chess_engine.MCTS(onnx_path)
-
-    # Génération d'une seule partie
-    game_data, move_count, state = self_play_game(mcts_engine, num_simulations, max_moves)
+    game_data, move_count, state = self_play_game(mcts_engine, num_simulations, fast_sims=fast_sims,
+                                                  max_moves=max_moves)
 
     return game_data, move_count, state
 
 
-def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
+def generate_games(onnx_path, num_games, num_simulations, fast_sims, num_workers=4):
     all_data = []
     total_moves = 0
 
@@ -126,7 +121,8 @@ def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
         "DRAW_50_MOVES": 0, "DRAW_INSUFF_MATERIAL": 0, "ONGOING": 0
     }
 
-    args_list = [(onnx_path, num_simulations, 200) for _ in range(num_games)]
+    # Injection de fast_sims dans les arguments
+    args_list = [(onnx_path, num_simulations, fast_sims, 200) for _ in range(num_games)]
 
     print(f"Lancement de {num_games} parties sur {num_workers} processus (MCTS C++ / ONNX)...")
 
@@ -172,10 +168,16 @@ def generate_games(onnx_path, num_games, num_simulations, num_workers=4):
 #                     TRAINING
 # ============================================================
 def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
-                    epochs=10, batch_size=256, global_step=0):
+                    epochs=10, batch_size=256, global_step=0, samples_per_epoch=15000):
     model.train()
     dataset = SelfPlayDataset(replay_buffer)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    # Sécurité : on prend 15000, ou la taille du buffer s'il est plus petit au début
+    num_samples = min(len(dataset), samples_per_epoch)
+    sampler = RandomSampler(dataset, replacement=True, num_samples=num_samples)
+
+    # On passe le sampler au DataLoader (shuffle doit être retiré quand on utilise un sampler)
+    loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -227,13 +229,15 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
 def pipeline(
         num_iterations=2,
         games_per_iter=4,
-        num_simulations=100,
+        num_simulations=600,
+        fast_sims=100,
         train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
         num_res_blocks=10,
         num_filters=128,
         max_buffer_size=100_000,
+        samples_per_epoch=15_000,
         num_workers=4,
         checkpoint_path=None,
         stockfish_path=None
@@ -270,7 +274,7 @@ def pipeline(
 
         # ── 1. Phase Self-Play (C++ / ONNX) ──
         new_data, results, avg_length = generate_games(
-            onnx_path, games_per_iter, num_simulations, num_workers=num_workers
+            onnx_path, games_per_iter, num_simulations, fast_sims, num_workers=num_workers
         )
 
         replay_buffer.extend(new_data)
@@ -293,12 +297,12 @@ def pipeline(
             global_step = train_on_buffer(
                 model, optimizer, scaler, gpu_device, replay_buffer,
                 epochs=train_epochs, batch_size=current_batch_size, global_step=global_step,
+                samples_per_epoch=samples_per_epoch
             )
         else:
             print("  Pas assez de données pour entraîner.")
 
         # ── 3. Sauvegarde ──
-
         ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
         save_path = f"checkpoints/{ckpt_filename}.pt"
         torch.save({
@@ -314,13 +318,12 @@ def pipeline(
         export_model_to_onnx(model, onnx_path, gpu_device)
         save_buffer(replay_buffer, buffer_filepath)
 
-        # ── 4. Évaluation Rapide (Nouveau) ──
-        # On teste l'ONNX fraîchement généré contre Stockfish 1400 (50ms par coup)
+        # ── 4. Évaluation Rapide ──
         eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
             onnx_path=onnx_path,
             stockfish_path=stockfish_path,
-            num_games=5,
-            mcts_sims=100,
+            num_games=8,
+            mcts_sims=400,
             sf_elo=2500,
             sf_time=0.05
         )
@@ -346,14 +349,16 @@ if __name__ == "__main__":
     try:
         pipeline(
             num_iterations=40,
-            games_per_iter=8,
+            games_per_iter=128,
             num_workers=8,
-            num_simulations=50,
-            train_epochs=1,
+            num_simulations=700,
+            fast_sims=100,
+            train_epochs=4,
             batch_size=1024,
             learning_rate=3e-5,
             max_buffer_size=250_000,
-            checkpoint_path="checkpoints/2026_03_13_01h31_iter18_unsupervised.pt",
+            samples_per_epoch=15_000,
+            checkpoint_path="checkpoints/2026_03_16_01h10_iter17_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe"
         )
     except KeyboardInterrupt:

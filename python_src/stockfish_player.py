@@ -28,7 +28,10 @@ class StockfishPlayer:
 
     def __del__(self):
         if hasattr(self, 'engine'):
-            self.engine.quit()
+            try:
+                self.engine.quit()
+            except chess.engine.EngineTerminatedError:
+                pass
 
 
 def evaluate_against_anchor(onnx_path, stockfish_path, num_games=10, mcts_sims=100, sf_elo=2500,
@@ -78,6 +81,7 @@ def evaluate_against_anchor(onnx_path, stockfish_path, num_games=10, mcts_sims=1
 
             if len(san_moves) > 250:
                 break
+        sf.engine.quit()
 
         # Résultat
         if board.game_state == chess_engine.GameState.CHECKMATE:
