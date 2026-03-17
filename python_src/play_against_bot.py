@@ -31,49 +31,6 @@ MCTS_PARAMS = {
     "tau_threshold": 8
 }
 
-
-# ============================================================
-#                     FONCTION WORKER (THREAD)
-# ============================================================
-
-def mcts_worker(san_moves_copy, mcts_engine, num_simulations, result_container,
-                tau_first_move, tau_threshold, tau_opening, tau_endgame):
-    """
-    Exécute le MCTS en arrière-plan avec logique de température.
-    """
-    # 1. Recréation de l'état du plateau
-    temp_board = chess_engine.Chessboard()
-    temp_board.set_startup_pieces()
-    for move in san_moves_copy:
-        temp_board.move_piece_san(move)
-
-    # 2. Lancement de la recherche C++ / ONNX
-    pi_raw = mcts_engine.mcts_search(temp_board, num_simulations)
-    pi = np.array(pi_raw, dtype=np.float32)
-
-    # 3. Logique de température
-    move_count = len(san_moves_copy)
-    if move_count < 2:
-        current_tau = tau_first_move
-    elif move_count < tau_threshold:
-        current_tau = tau_opening
-    else:
-        current_tau = tau_endgame
-
-    best_idx = chose_move_idx(pi, current_tau)
-
-    # 5. Décodage
-    is_black = (temp_board.turn == chess_engine.Color.BLACK)
-    orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(temp_board, best_idx, is_black)
-
-    # Affichage console
-    san = move_to_san(temp_board, orig_f, orig_r, dest_f, dest_r, promo)
-    # On affiche la probabilité réelle de l'index choisi pour voir l'influence de Tau
-    print(f"\n[AI] Coup choisi : {san} (Tau: {current_tau})")
-
-    result_container.append((orig_f, orig_r, dest_f, dest_r, promo))
-
-
 # ============================================================
 #                     BOUCLE PRINCIPALE
 # ============================================================
@@ -184,6 +141,20 @@ class ChessGame:
         self.red_squares.clear()
         self._just_got_selected = False
 
+    def checkIfValidMove(self, clicked_file, clicked_rank):
+        valid_move = None
+        promotion_type = chess_engine.PieceType.NONE
+
+        for move in self.current_legal_moves:
+            if (move.get_dest_square().get_file() == clicked_file and
+                    move.get_dest_square().get_rank() == clicked_rank):
+                valid_move = move
+                if move.get_promotion() == chess_engine.PieceType.QUEEN:
+                    promotion_type = chess_engine.PieceType.QUEEN
+                    break
+
+        return valid_move, promotion_type
+
     def makeMove(self, clicked_file, clicked_rank, promotion_type):
         orig_f, orig_r = self.selected_filerank
         san = move_to_san(self.board, orig_f, orig_r, clicked_file, clicked_rank,
@@ -221,16 +192,7 @@ class ChessGame:
                     self.current_legal_moves = []
         else:
             # Cas 2 : Une pièce est déjà sélectionnée
-            valid_move = None
-            promotion_type = chess_engine.PieceType.NONE
-
-            for move in self.current_legal_moves:
-                if (move.get_dest_square().get_file() == clicked_file and
-                        move.get_dest_square().get_rank() == clicked_rank):
-                    valid_move = move
-                    if move.get_promotion() == chess_engine.PieceType.QUEEN:
-                        promotion_type = chess_engine.PieceType.QUEEN
-                        break
+            valid_move, promotion_type = self.checkIfValidMove(clicked_file, clicked_rank)
 
             if valid_move is not None and self.is_human_turn and not self.gameEnded():
                 self.makeMove(clicked_file, clicked_rank, promotion_type)
@@ -253,35 +215,55 @@ class ChessGame:
                     not self._just_got_selected):
                 self.clearActions()  # On déselectionne si on reclique sur la même case
             else:
-                valid_move = None
-                promotion_type = chess_engine.PieceType.NONE
-
-                for move in self.current_legal_moves:
-                    if (move.get_dest_square().get_file() == clicked_file and
-                            move.get_dest_square().get_rank() == clicked_rank):
-                        valid_move = move
-                        if move.get_promotion() == chess_engine.PieceType.QUEEN:
-                            promotion_type = chess_engine.PieceType.QUEEN
-                            break
+                valid_move, promotion_type = self.checkIfValidMove(clicked_file, clicked_rank)
 
                 if valid_move is not None:
                     self.makeMove(clicked_file, clicked_rank, promotion_type)
+
+    def mcts_worker(self):
+        """
+        Exécute le MCTS en arrière-plan avec logique de température.
+        """
+        # 1. Recréation de l'état du plateau
+        temp_board = chess_engine.Chessboard()
+        temp_board.set_startup_pieces()
+        for move in self.san_moves:
+            temp_board.move_piece_san(move)
+
+        # 2. Lancement de la recherche C++ / ONNX
+        pi_raw = self.mcts_engine.mcts_search(
+            temp_board, self.mcts_params.get("num_sim", 1200))
+        pi = np.array(pi_raw, dtype=np.float32)
+
+        # 3. Logique de température
+        move_count = len(self.san_moves)
+        if move_count < 2:
+            current_tau = self.mcts_params.get("tau_first_move", 2)
+        elif move_count < self.mcts_params.get("tau_threshold", 8):
+            current_tau = self.mcts_params.get("tau_opening", 1)
+        else:
+            current_tau = self.mcts_params.get("tau_endgame", 0.1)
+
+        best_idx = chose_move_idx(pi, current_tau)
+
+        # 5. Décodage
+        is_black = (temp_board.turn == chess_engine.Color.BLACK)
+        orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(temp_board, best_idx, is_black)
+
+        # Affichage console
+        san = move_to_san(temp_board, orig_f, orig_r, dest_f, dest_r, promo)
+        # On affiche la probabilité réelle de l'index choisi pour voir l'influence de Tau
+        print(f"\n[AI] Coup choisi : {san} (Tau: {current_tau})")
+
+        self.ai_result_container.append((orig_f, orig_r, dest_f, dest_r, promo))
 
     def AiTurn(self):
         if not self.isAiThinking():
             self.AiStartThinking()
             self.ai_result_container.clear()
             thread = threading.Thread(
-                target=mcts_worker,
-                args=(self.san_moves.copy(),
-                      self.mcts_engine,
-                      self.mcts_params.get("num_sim", 1200),
-                      self.ai_result_container,
-                      self.mcts_params.get("tau_first_move", 2),
-                      self.mcts_params.get("tau_threshold", 8),
-                      self.mcts_params.get("tau_opening", 1),
-                      self.mcts_params.get("tau_endgame", 0.1),
-                      )
+                target=self.mcts_worker,
+                args=()
             )
             thread.start()
 

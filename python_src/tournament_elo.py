@@ -15,10 +15,10 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 #                     CONFIGURATION
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
-SIMULATIONS_EVAL = 600
+SIMULATIONS_EVAL = 1000
 GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_state.whr"
-MODE = "1-3"  # Options : "default", "all", ou "x-y"
+MODE = "2-8"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -228,7 +228,9 @@ def run_tournament():
     else:
         # Mode par défaut
         if new_hashes:
-            print(f"\nNouveaux modèles détectés (via Hash) : {len(new_hashes)}")
+            print(f"\nNouveau(x) modèle(s) détecté(s) : {len(new_hashes)}")
+            new_filenames = [hash_to_filename[_hash] for _hash in new_hashes]
+            print(f"Nouveau(x) modèle(s) : {new_filenames}")
             # On utilise le meilleur hash connu comme champion
             if ranked_existing_hashes:
                 champion_hash = ranked_existing_hashes[0][0]
