@@ -1,5 +1,6 @@
 import os
 import itertools
+import json
 import numpy as np
 from whr import whole_history_rating
 
@@ -17,8 +18,9 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 1000
 GAMES_PER_PAIR = 2
-WHR_STATE_FILE = "tournament_state.whr"
-MODE = "2-8"  # Options : "default", "all", ou "x-y"
+WHR_STATE_FILE = "tournament_data/tournament_state.whr"
+STATS_FILE = "tournament_data/tournament_stats.json"
+MODE = "default"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -85,30 +87,21 @@ def format_pgn(white_name, black_name, winner, moves):
     return pgn
 
 
-def get_ranked_players(whr, files):
-    """Retourne la liste des joueurs triée par Elo décroissant avec le nombre de parties."""
-    # 1. Comptage des parties pour chaque hash
-    game_counts = {f: 0 for f in files}
-    for game in whr.games:
-        w_name = game.white_player.name
-        b_name = game.black_player.name
-        if w_name in game_counts:
-            game_counts[w_name] += 1
-        if b_name in game_counts:
-            game_counts[b_name] += 1
-
-    # 2. Construction du classement
+def get_ranked_players(whr, files, stats):
+    """Retourne la liste des joueurs triée par Elo décroissant."""
     players = []
     for f in files:
         rating = whr.ratings_for_player(f)
         if rating:
-            players.append((f, rating[-1][1], game_counts[f]))
+            # Utilisation du dictionnaire des stats pour le nombre réel de parties
+            played = stats.get(f, 0)
+            players.append((f, rating[-1][1], played))
 
     players.sort(key=lambda x: x[1], reverse=True)
     return players
 
 
-def play_match(h1, h2, hash_to_filename, whr):
+def play_match(h1, h2, hash_to_filename, whr, stats):
     p1 = hash_to_filename[h1]
     p2 = hash_to_filename[h2]
 
@@ -117,46 +110,59 @@ def play_match(h1, h2, hash_to_filename, whr):
     score_p1 = 0.0
     score_p2 = 0.0
 
-    for g in range(GAMES_PER_PAIR):
-        if h1 == "STOCKFISH_FIXED_2100":
-            m1 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
-        else:
-            m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
-
-        if h2 == "STOCKFISH_FIXED_2100":
-            m2 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
-        else:
-            m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
-
-        if g % 2 == 0:
-            white_n, black_n, white_m, black_m = p1, p2, m1, m2
-            white_h, black_h = h1, h2
-        else:
-            white_n, black_n, white_m, black_m = p2, p1, m2, m1
-            white_h, black_h = h2, h1
-
-        winner, moves = play_game(white_m, black_m, SIMULATIONS_EVAL)
-        print(format_pgn(white_n, black_n, winner, moves))
-
-        if winner == "draw":
-            score_p1 += 0.5
-            score_p2 += 0.5
-            whr.create_game(black_h, white_h, "B", 0, 0)
-            whr.create_game(black_h, white_h, "W", 0, 0)
-        else:
-            if winner == "white":
-                if white_h == h1: score_p1 += 1
-                else: score_p2 += 1
+    try:
+        for g in range(GAMES_PER_PAIR):
+            if h1 == "STOCKFISH_FIXED_2100":
+                m1 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
             else:
-                if black_h == h1: score_p1 += 1
-                else: score_p2 += 1
+                m1 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p1))
 
-            outcome = "W" if winner == "white" else "B"
-            whr.create_game(black_h, white_h, outcome, 0, 0)
+            if h2 == "STOCKFISH_FIXED_2100":
+                m2 = StockfishPlayer(STOCKFISH_PATH, elo=2100)
+            else:
+                m2 = chess_engine.MCTS(os.path.join(CHECKPOINT_DIR, p2))
 
-    print(f"\n>>>> FIN DU MATCH : {p1} ({score_p1}) - {p2} ({score_p2})")
-    whr.iterate(10)
-    whr.save_base(WHR_STATE_FILE)
+            if g % 2 == 0:
+                white_n, black_n, white_m, black_m = p1, p2, m1, m2
+                white_h, black_h = h1, h2
+            else:
+                white_n, black_n, white_m, black_m = p2, p1, m2, m1
+                white_h, black_h = h2, h1
+
+            winner, moves = play_game(white_m, black_m, SIMULATIONS_EVAL)
+            print(format_pgn(white_n, black_n, winner, moves))
+
+            # Incrémentation stricte : la partie est totalement terminée ici
+            stats[h1] = stats.get(h1, 0) + 1
+            stats[h2] = stats.get(h2, 0) + 1
+
+            if winner == "draw":
+                score_p1 += 0.5
+                score_p2 += 0.5
+                whr.create_game(black_h, white_h, "B", 0, 0)
+                whr.create_game(black_h, white_h, "W", 0, 0)
+            else:
+                if winner == "white":
+                    if white_h == h1: score_p1 += 1
+                    else: score_p2 += 1
+                else:
+                    if black_h == h1: score_p1 += 1
+                    else: score_p2 += 1
+
+                outcome = "W" if winner == "white" else "B"
+                whr.create_game(black_h, white_h, outcome, 0, 0)
+
+    except KeyboardInterrupt:
+        print(f"\n[Interruption] Match {p1} vs {p2} stoppé en cours.")
+        raise  # Remonte l'erreur vers run_tournament() pour tout sauvegarder
+
+    finally:
+        # S'exécute toujours, assurant la sauvegarde de l'avancement partiel
+        print(f"\n>>>> FIN DU MATCH : {p1} ({score_p1}) - {p2} ({score_p2})")
+        whr.iterate(10)
+        whr.save_base(WHR_STATE_FILE)
+        with open(STATS_FILE, "w") as f:
+            json.dump(stats, f)
 
 
 def run_tournament():
@@ -164,6 +170,12 @@ def run_tournament():
         whr = whole_history_rating.Base.load_base(WHR_STATE_FILE)
     else:
         whr = whole_history_rating.Base({"w2": 14})
+
+    # Chargement des statistiques pures
+    stats = {}
+    if os.path.exists(STATS_FILE):
+        with open(STATS_FILE, "r") as f:
+            stats = json.load(f)
 
     # 1. Scan des fichiers physiques
     onnx_files = [f for f in os.listdir(CHECKPOINT_DIR) if f.endswith(".onnx")]
@@ -186,7 +198,7 @@ def run_tournament():
     new_hashes = [h for h in all_hashes if h not in known_hashes]
 
     # 4. Classement actuel
-    ranked_existing_hashes = get_ranked_players(whr, all_hashes)
+    ranked_existing_hashes = get_ranked_players(whr, all_hashes, stats)
 
     print("\n" + "=" * 30 + "\n CLASSEMENT ACTUEL\n" + "=" * 30)
     for h, elo, games in ranked_existing_hashes:
@@ -220,7 +232,8 @@ def run_tournament():
             else:
                 h1 = ranked_existing_hashes[idx1][0]
                 h2 = ranked_existing_hashes[idx2][0]
-                print(f"\nMode spécifique activé : Match entre le rang {rank1} et le rang {rank2}.")
+                print(f"\nMode spécifique activé : "
+                      f"Match entre le rang {rank1} et le rang {rank2}.")
                 pairs_to_play.append((h1, h2))
         except ValueError:
             print(f"\nErreur : Format de MODE invalide '{MODE}'. Utilisez un format comme '1-3'.")
@@ -252,27 +265,30 @@ def run_tournament():
     # --- EXECUTION DES MATCHS ---
     total_matches = len(pairs_to_play)
 
-    for i, (h1, h2) in enumerate(pairs_to_play):
-        play_match(h1, h2, hash_to_filename, whr)
+    try:
+        for i, (h1, h2) in enumerate(pairs_to_play):
+            play_match(h1, h2, hash_to_filename, whr, stats)
 
-        # Calcul du reste
-        matches_left = total_matches - (i + 1)
-        games_left = matches_left * GAMES_PER_PAIR
+            # Calcul du reste
+            matches_left = total_matches - (i + 1)
+            games_left = matches_left * GAMES_PER_PAIR
 
-        if matches_left > 0:
-            print(f"\n" + "-" * 50)
-            print(f"[PROGRESSION] Match {i + 1}/{total_matches} terminé.")
-            print(
-                f"[PROGRESSION] Il reste {matches_left} match(s) "
-                f"soit environ {games_left} partie(s).")
-            print("-" * 50 + "\n")
+            if matches_left > 0:
+                print(f"\n" + "-" * 50)
+                print(f"[PROGRESSION] Match {i + 1}/{total_matches} terminé.")
+                print(
+                    f"[PROGRESSION] Il reste {matches_left} match(s) "
+                    f"soit environ {games_left} partie(s).")
+                print("-" * 50 + "\n")
+    except KeyboardInterrupt:
+        print("\n[Tournoi] Arrêt demandé par l'utilisateur. Sauvegarde effectuée.")
 
     # --- RESULTATS FINAUX ---
 
     whr.auto_iterate()
     whr.save_base(WHR_STATE_FILE)
 
-    final_ranking = get_ranked_players(whr, all_hashes)
+    final_ranking = get_ranked_players(whr, all_hashes, stats)
 
     sf_raw_elo = None
     for h, elo, games in final_ranking:

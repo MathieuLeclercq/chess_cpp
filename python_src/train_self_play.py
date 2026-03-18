@@ -253,28 +253,34 @@ def pipeline(
     assert os.path.isfile(stockfish_path)
 
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(gpu_device)
-
-    if checkpoint_path:
-        model = load_model(checkpoint_path, num_res_blocks, num_filters, gpu_device)
-        print(f"Checkpoint chargé : {checkpoint_path}")
-
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scaler = GradScaler("cuda", enabled=True)
+
+    global_step = 0
+    start_iteration = 0
+
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_path, map_location=gpu_device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        start_iteration = checkpoint.get("iteration", 0)
+        global_step = checkpoint.get("global_step", 0)
+        print(f"Checkpoint chargé : {checkpoint_path} (Reprise à l'itération {start_iteration})")
 
     wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
     buffer_filepath = "checkpoints/replay_buffer.npz"
     replay_buffer = load_buffer(buffer_filepath)
-    global_step = 0
 
     init_onnx_filename = f"{timestamp}_iter0_unsupervised"
     print("  Exportation et quantification du modèle vers ONNX...")
     onnx_path = f"checkpoints/{init_onnx_filename}.onnx"
     export_model_to_onnx(model, onnx_path, gpu_device)
 
-    for iteration in range(num_iterations):
+    for iteration in range(start_iteration, start_iteration + num_iterations):
         print(f"\n{'=' * 50}")
-        print(f"  ITERATION {iteration + 1}/{num_iterations}")
+        print(f"  ITERATION {iteration + 1}/{start_iteration + num_iterations}")
         print(f"{'=' * 50}")
 
         # ── 1. Phase Self-Play (C++ / ONNX) ──
@@ -368,7 +374,7 @@ if __name__ == "__main__":
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_03_16_12h35_iter28_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_03_17_15h08_iter34_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2500,
             stockfish_thinking_time=0.05
