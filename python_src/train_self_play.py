@@ -239,9 +239,14 @@ def pipeline(
         max_buffer_size=100_000,
         samples_per_epoch=15_000,
         num_workers=4,
+        eval_stockfish_every=4,
         checkpoint_path=None,
-        stockfish_path=None
+        stockfish_path=None,
+        stockfish_elo=2500,
+        stockfish_thinking_time=0.05
 ):
+    hyperparams = locals().copy()
+
     timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     assert torch.cuda.is_available()
     gpu_device = torch.device("cuda")
@@ -256,7 +261,7 @@ def pipeline(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scaler = GradScaler("cuda", enabled=True)
 
-    wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play")
+    wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
     buffer_filepath = "checkpoints/replay_buffer.npz"
     replay_buffer = load_buffer(buffer_filepath)
@@ -319,22 +324,26 @@ def pipeline(
         save_buffer(replay_buffer, buffer_filepath)
 
         # ── 4. Évaluation Rapide ──
-        eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
-            onnx_path=onnx_path,
-            stockfish_path=stockfish_path,
-            num_games=8,
-            mcts_sims=400,
-            sf_elo=2500,
-            sf_time=0.05
-        )
+        if (iteration + 1) % eval_stockfish_every == 0:
+            eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
+                onnx_path=onnx_path,
+                stockfish_path=stockfish_path,
+                num_games=8,
+                mcts_sims=400,
+                sf_elo=stockfish_elo,
+                sf_time=stockfish_thinking_time
+            )
 
-        wandb.log({
-            "eval/winrate": eval_winrate,
-            "eval/wins": eval_wins,
-            "eval/draws": eval_draws,
-            "eval/losses": eval_losses,
-            "eval/iteration": iteration + 1,
-        }, step=global_step)
+            wandb.log({
+                "eval/winrate": eval_winrate,
+                "eval/wins": eval_wins,
+                "eval/draws": eval_draws,
+                "eval/losses": eval_losses,
+                "eval/iteration": iteration + 1,
+                "eval/global_step": global_step,
+            })
+        else:
+            print(f"  Évaluation ignorée.")
 
     last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     ckpt_onnx_final_path = f"checkpoints/{last_timestamp}_last_unsupervised.onnx"
@@ -353,13 +362,16 @@ if __name__ == "__main__":
             num_workers=8,
             num_simulations=700,
             fast_sims=100,
-            train_epochs=4,
+            train_epochs=1,
             batch_size=1024,
             learning_rate=3e-5,
-            max_buffer_size=250_000,
-            samples_per_epoch=15_000,
-            checkpoint_path="checkpoints/2026_03_16_01h10_iter17_unsupervised.pt",
-            stockfish_path=r"D:\logiciels\stockfish\stockfish.exe"
+            max_buffer_size=100_000,
+            samples_per_epoch=60_000,
+            eval_stockfish_every=4,
+            checkpoint_path="checkpoints/2026_03_16_12h35_iter28_unsupervised.pt",
+            stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
+            stockfish_elo=2500,
+            stockfish_thinking_time=0.05
         )
     except KeyboardInterrupt:
         print("\n[Interruption] Entraînement stoppé manuellement.")

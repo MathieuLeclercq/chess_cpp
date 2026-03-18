@@ -62,6 +62,7 @@ class Chessboard
 
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
+    bool isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool is_en_passant, bool is_king_move);
     void evaluateGameState();
     void computeInitialZobrist();
 
