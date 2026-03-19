@@ -51,7 +51,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("get_file", &Square::getFile)
         .def("get_rank", &Square::getRank)
         .def("get_piece", static_cast<const Piece & (Square::*)() const>(&Square::getPiece))
-        .def("is_occupied", &Square::CheckOccupied)
+        .def("is_occupied", &Square::checkOccupied)
         .def("get_name", &Square::getName);
 
     py::class_<Move>(m, "Move")

@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <array>
+#include <cstdint>
 #include "piece.hpp"
 #include "square.hpp"
 #include "move.hpp"
@@ -35,30 +36,28 @@ struct StateSnapshot {
 class Chessboard
 {
     private:
-    const std::array<char, 8> files = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
-    const std::array<char, 8> ranks = {'1', '2', '3', '4', '5', '6', '7', '8'};
-    std::array<Square, 64> board;
+    std::array<Square, 64> m_board;
 
-    int white_king_file = 4; // utile pour checkForCheck() : pas besoin de chercher le roi à chaque fois
-    int white_king_rank = 0;
-    int black_king_file = 4;
-    int black_king_rank = 7;
-    int en_passant_file = -1;
-    int half_move_clock = 0;
+    int m_white_king_file = 4; // utile pour checkForCheck() : pas besoin de chercher le roi à chaque fois
+    int m_white_king_rank = 0;
+    int m_black_king_file = 4;
+    int m_black_king_rank = 7;
+    int m_en_passant_file = -1;
+    int m_half_move_clock = 0;
 
-    bool short_castle_white = true;
-    bool long_castle_white = true;
-    bool short_castle_black = true;
-    bool long_castle_black = true;
-    bool en_passant = false;
+    bool m_short_castle_white = true;
+    bool m_long_castle_white = true;
+    bool m_short_castle_black = true;
+    bool m_long_castle_black = true;
+    bool m_en_passant = false;
 
-    GameState current_state = ONGOING;
-    Color turn = WHITE;
+    GameState m_current_state = ONGOING;
+    Color m_turn = WHITE;
 
-    std::vector<Move> moveHistory;
-    std::vector<std::array<Square, 64>> boardHistory;
-    std::vector<StateSnapshot> snapshotHistory;
-    uint64_t current_zobrist_hash = 0;
+    std::vector<Move> m_moveHistory;
+    std::vector<std::array<Square, 64>> m_boardHistory;
+    std::vector<StateSnapshot> m_snapshotHistory;
+    uint64_t m_current_zobrist_hash = 0;
 
 
     bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
@@ -66,28 +65,12 @@ class Chessboard
     void evaluateGameState();
     void computeInitialZobrist();
 
-    inline int getPieceZobristIndex(const Piece& piece) const {
-        if (piece.getType() == NONE) return -1;
-        int idx = 0;
-        switch (piece.getType()) {
-        case PAWN:   idx = 0; break;
-        case KNIGHT: idx = 1; break;
-        case BISHOP: idx = 2; break;
-        case ROOK:   idx = 3; break;
-        case QUEEN:  idx = 4; break;
-        case KING:   idx = 5; break;
-        default: return -1;
-        }
-        if (piece.getColor() == BLACK) idx += 6;
-        return idx;
-    }
-
     public:
         // constructors
         Chessboard();
         
         // getters
-        uint64_t getZobristHash() const { return current_zobrist_hash; }
+        uint64_t getZobristHash() const { return m_current_zobrist_hash; }
         uint64_t computeZobristFromScratch() const;
         int getNumberOfOccupiedSquares() const;
         int getHalfMoveClock() const;
@@ -121,11 +104,12 @@ class Chessboard
         bool checkInsufficientMaterial() const;
 
         // setters
-        void Clear();
+        void clear();
         void setStartupPieces();
         void setKiwipete();
         void setBoard(std::array<Square, 64> some_board);
-        bool movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion = NONE, bool check_game_end = true);
+        bool movePiece(int orig_file, int orig_rank, int file, int rank, 
+                       PieceType promotion = NONE, bool check_game_end = true);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
         void undoMove();

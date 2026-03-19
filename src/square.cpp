@@ -38,7 +38,7 @@ Piece& Square::getPiece()
     return this->piece;
 }
 
-bool Square::CheckOccupied() const
+bool Square::checkOccupied() const
 {
     return this->piece.getType() != NONE;
 }

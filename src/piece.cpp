@@ -5,15 +5,15 @@
 
 Piece::Piece()
 {
-    this->type = NONE;
-    this->color = NO_COLOR;
-    this->value = 0;
+    m_type = NONE;
+    m_color = NO_COLOR;
+    m_value = 0;
 }
 
 Piece::Piece(Color color, PieceType type)
 {
-    this->color = color;
-    this->type = type;
+    m_color = color;
+    m_type = type;
     this->setValue();
 }
 
@@ -21,34 +21,34 @@ Piece::Piece(Color color, PieceType type)
 //...............Getters...............
 const PieceType& Piece::getType() const
 {
-    return this->type;
+    return m_type;
 }
 
 Color Piece::getColor()
 {
-    return this->color;
+    return m_color;
 }
 
 const Color& Piece::getColor() const
 {
-    return this->color;
+    return m_color;
 }
 
 int Piece::getValue() const
 {
-    int value = this->value;
+    int value = m_value;
     return value;
 }
 
 bool Piece::operator==(const Piece& other) const
 {
-    return (this->type == other.type && this->color == other.color);
+    return (m_type == other.m_type && m_color == other.m_color);
 }
 
 //...............Setters...............
 void Piece::setType(PieceType type)
 {
-    this->type = type;
+    m_type = type;
 
 }
 
@@ -56,22 +56,17 @@ void Piece::setType(PieceType type)
 
 void Piece::setValue()
 {
-    if (this->type == KING)
-        this->value = 2; //  king : no sense of value
-    else if (this->type == QUEEN)
-        this->value = 9;
-    else if (this->type == ROOK)
-        this->value = 5;
-    else if (this->type == BISHOP || this->type == KNIGHT)
-        this->value = 3;
-    else if (this->type == PAWN)
-        this->value = 1;
+    if (m_type == KING)
+        m_value = 2; //  king : no sense of value
+    else if (m_type == QUEEN)
+        m_value = 9;
+    else if (m_type == ROOK)
+        m_value = 5;
+    else if (m_type == BISHOP || m_type == KNIGHT)
+        m_value = 3;
+    else if (m_type == PAWN)
+        m_value = 1;
     else
-        this->value = 0;
-}
-
-void Piece::move(int file, int rank)
-{
-    // move the piece
+        m_value = 0;
 }
 

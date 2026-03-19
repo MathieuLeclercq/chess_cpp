@@ -1,15 +1,15 @@
 #pragma once
 #include <iostream>
 
-enum PieceType
+enum PieceType 
 {
-    KING,
-    QUEEN,
-    ROOK,
-    BISHOP,
-    KNIGHT,
-    PAWN,
-    NONE
+    PAWN,   // 0
+    KNIGHT, // 1
+    BISHOP, // 2
+    ROOK,   // 3
+    QUEEN,  // 4
+    KING,   // 5
+    NONE    // 6
 };
 
 enum Color
@@ -22,9 +22,9 @@ enum Color
 class Piece
 {
     private:
-        PieceType type;
-        Color color;
-        int value;
+        PieceType m_type;
+        Color m_color;
+        int m_value;
 
     public:
         // constructors
@@ -37,12 +37,14 @@ class Piece
         const Color& getColor() const;
         Color getColor();
         int getValue() const;
-
+        inline int Piece::getZobristIndex() const {
+            if (m_type == NONE) return -1;
+            return static_cast<int>(m_type) + (m_color == BLACK ? 6 : 0);
+        }
         bool operator==(const Piece& other) const;
 
         // setters
         void setType(PieceType type);
-        void move(int file, int rank);
         void setValue();
 
 };

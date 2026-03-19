@@ -174,14 +174,14 @@ class PieceType:
     
       KING
     """
-    BISHOP: typing.ClassVar[PieceType]  # value = <PieceType.BISHOP: 3>
-    KING: typing.ClassVar[PieceType]  # value = <PieceType.KING: 0>
-    KNIGHT: typing.ClassVar[PieceType]  # value = <PieceType.KNIGHT: 4>
+    BISHOP: typing.ClassVar[PieceType]  # value = <PieceType.BISHOP: 2>
+    KING: typing.ClassVar[PieceType]  # value = <PieceType.KING: 5>
+    KNIGHT: typing.ClassVar[PieceType]  # value = <PieceType.KNIGHT: 1>
     NONE: typing.ClassVar[PieceType]  # value = <PieceType.NONE: 6>
-    PAWN: typing.ClassVar[PieceType]  # value = <PieceType.PAWN: 5>
-    QUEEN: typing.ClassVar[PieceType]  # value = <PieceType.QUEEN: 1>
-    ROOK: typing.ClassVar[PieceType]  # value = <PieceType.ROOK: 2>
-    __members__: typing.ClassVar[dict[str, PieceType]]  # value = {'NONE': <PieceType.NONE: 6>, 'PAWN': <PieceType.PAWN: 5>, 'KNIGHT': <PieceType.KNIGHT: 4>, 'BISHOP': <PieceType.BISHOP: 3>, 'ROOK': <PieceType.ROOK: 2>, 'QUEEN': <PieceType.QUEEN: 1>, 'KING': <PieceType.KING: 0>}
+    PAWN: typing.ClassVar[PieceType]  # value = <PieceType.PAWN: 0>
+    QUEEN: typing.ClassVar[PieceType]  # value = <PieceType.QUEEN: 4>
+    ROOK: typing.ClassVar[PieceType]  # value = <PieceType.ROOK: 3>
+    __members__: typing.ClassVar[dict[str, PieceType]]  # value = {'NONE': <PieceType.NONE: 6>, 'PAWN': <PieceType.PAWN: 0>, 'KNIGHT': <PieceType.KNIGHT: 1>, 'BISHOP': <PieceType.BISHOP: 2>, 'ROOK': <PieceType.ROOK: 3>, 'QUEEN': <PieceType.QUEEN: 4>, 'KING': <PieceType.KING: 5>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -225,19 +225,19 @@ class Square:
         ...
     def is_occupied(self) -> bool:
         ...
-BISHOP: PieceType  # value = <PieceType.BISHOP: 3>
+BISHOP: PieceType  # value = <PieceType.BISHOP: 2>
 BLACK: Color  # value = <Color.BLACK: 1>
 CHECKMATE: GameState  # value = <GameState.CHECKMATE: 1>
 DRAW_50_MOVES: GameState  # value = <GameState.DRAW_50_MOVES: 4>
 DRAW_INSUFF_MATERIAL: GameState  # value = <GameState.DRAW_INSUFF_MATERIAL: 5>
 DRAW_REPETITION: GameState  # value = <GameState.DRAW_REPETITION: 3>
-KING: PieceType  # value = <PieceType.KING: 0>
-KNIGHT: PieceType  # value = <PieceType.KNIGHT: 4>
+KING: PieceType  # value = <PieceType.KING: 5>
+KNIGHT: PieceType  # value = <PieceType.KNIGHT: 1>
 NONE: PieceType  # value = <PieceType.NONE: 6>
 NO_COLOR: Color  # value = <Color.NO_COLOR: 2>
 ONGOING: GameState  # value = <GameState.ONGOING: 0>
-PAWN: PieceType  # value = <PieceType.PAWN: 5>
-QUEEN: PieceType  # value = <PieceType.QUEEN: 1>
-ROOK: PieceType  # value = <PieceType.ROOK: 2>
+PAWN: PieceType  # value = <PieceType.PAWN: 0>
+QUEEN: PieceType  # value = <PieceType.QUEEN: 4>
+ROOK: PieceType  # value = <PieceType.ROOK: 3>
 STALEMATE: GameState  # value = <GameState.STALEMATE: 2>
 WHITE: Color  # value = <Color.WHITE: 0>

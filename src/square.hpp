@@ -18,7 +18,7 @@ public:
     // getters
     const Piece& getPiece() const;
     Piece& getPiece();
-    bool CheckOccupied() const;
+    bool checkOccupied() const;
     int getFile() const;
     int getRank() const;
     std::string getName() const;

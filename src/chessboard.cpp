@@ -19,33 +19,30 @@
 
 Chessboard::Chessboard()
 {
-    // initialize the board
-    Clear();
+    // setup an empty chessboard
+    clear();
 }
 
 //...............Getters...............
 
 const Square& Chessboard::getSquare(int file, int rank) const
 {
-    return board[rank * 8 + file];
+    return m_board[rank * 8 + file];
 }
 
 Square& Chessboard::getSquare(int file, int rank)
 {
-    return board[rank * 8 + file];
+    return m_board[rank * 8 + file];
 }
 
 int Chessboard::getNumberOfOccupiedSquares() const
 {
     int count = 0;
-    for (int i = 0; i < 8; i++)
+    for (const auto& square : m_board)
     {
-        for (int j = 0; j < 8; j++)
+        if (square.checkOccupied())
         {
-            if (board[i * 8 + j].CheckOccupied())
-            {
-                count++;
-            }
+            count++;
         }
     }
     return count;
@@ -57,7 +54,7 @@ void Chessboard::print() const
     {
         for (int j = 0; j < 8; j++)
         {
-            std::cout << this->board[i * 8 + j].getPiece().getValue() << " ";
+            std::cout << m_board[i * 8 + j].getPiece().getValue() << " ";
         }
         std::cout << std::endl;
     }
@@ -79,9 +76,9 @@ bool Chessboard::checkThreefoldRepetition() const {
     int count = 1;
 
     // On parcourt l'historique à l'envers (du snapshot le plus récent au plus ancien)
-    for (auto it = this->snapshotHistory.rbegin(); it != this->snapshotHistory.rend(); ++it) {
+    for (auto it = m_snapshotHistory.rbegin(); it != m_snapshotHistory.rend(); ++it) {
 
-        if (it->zobrist_hash == this->current_zobrist_hash) {
+        if (it->zobrist_hash == m_current_zobrist_hash) {
             count++;
             if (count >= 3) {
                 return true; // Early exit : on a trouvé 3 occurrences, inutile de continuer
@@ -105,8 +102,8 @@ bool Chessboard::checkInsufficientMaterial() const
     int wCount = 0;
     int bCount = 0;
     for (int i = 0; i < 64; ++i) {
-        if (board[i].CheckOccupied()) {
-            if (board[i].getPiece().getColor() == WHITE) wCount++;
+        if (m_board[i].checkOccupied()) {
+            if (m_board[i].getPiece().getColor() == WHITE) wCount++;
             else bCount++;
         }
     }
@@ -120,7 +117,7 @@ bool Chessboard::checkInsufficientMaterial() const
     std::vector<std::pair<PieceType, int>> blackPieces;
 
     for (int i = 0; i < 64; ++i) {
-        const Piece& p = board[i].getPiece();
+        const Piece& p = m_board[i].getPiece();
         if (p.getType() == NONE) continue;
 
         // On stocke le type et l'indice de case (pour la couleur des fous)
@@ -171,59 +168,60 @@ bool Chessboard::checkInsufficientMaterial() const
 
 const std::vector<Move>& Chessboard::getMoveHistory() const
 {
-    return moveHistory;
+    return m_moveHistory;
 }
 
 std::vector<Move>& Chessboard::getMoveHistory()
 {
-    return moveHistory;
+    return m_moveHistory;
 }
 
 const std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory() const
 {
-    return boardHistory;
+    return m_boardHistory;
 }
 
 std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory()
 {
-    return boardHistory;
+    return m_boardHistory;
 }
 
 int Chessboard::getHalfMoveClock() const
 {
-    return this->half_move_clock;
+    return m_half_move_clock;
 }
 
 Color Chessboard::getTurn() const
 {
-    return this->turn;
+    return m_turn;
 }
 
 GameState Chessboard::getGameState() const
 {
-    return this->current_state;
+    return m_current_state;
 }
 
 
 bool Chessboard::isInCheck() const
 {
     // On part du roi et on regarde si des pièces le menacent
-    Color color = this->turn;
+    Color color = m_turn;
     Color oppositeColor = (color == WHITE) ? BLACK : WHITE;
 
     // 1. Récupérer les coordonnées de notre roi
-    int king_file = (color == WHITE) ? this->white_king_file : this->black_king_file;
-    int king_rank = (color == WHITE) ? this->white_king_rank : this->black_king_rank;
+    int king_file = (color == WHITE) ? m_white_king_file : m_black_king_file;
+    int king_rank = (color == WHITE) ? m_white_king_rank : m_black_king_rank;
 
     // 2. Vérifier les menaces de Cavaliers
-    static constexpr int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
+    static constexpr int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, 
+                                                {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
     for (int i = 0; i < 8; i++)
     {
         int r = king_rank + knight_moves[i][0];
         int f = king_file + knight_moves[i][1];
         if (r >= 0 && r < 8 && f >= 0 && f < 8)
         {
-            const Piece& p = this->board[r * 8 + f].getPiece();
+            const Piece& p = m_board[r * 8 + f].getPiece();
             if (p.getType() == KNIGHT && p.getColor() == oppositeColor)
                 return true;
         }
@@ -236,12 +234,12 @@ bool Chessboard::isInCheck() const
     {
         if (king_file - 1 >= 0)
         {
-            const Piece& p = this->board[pr * 8 + (king_file - 1)].getPiece();
+            const Piece& p = m_board[pr * 8 + (king_file - 1)].getPiece();
             if (p.getType() == PAWN && p.getColor() == oppositeColor) return true;
         }
         if (king_file + 1 < 8)
         {
-            const Piece& p = this->board[pr * 8 + (king_file + 1)].getPiece();
+            const Piece& p = m_board[pr * 8 + (king_file + 1)].getPiece();
             if (p.getType() == PAWN && p.getColor() == oppositeColor) return true;
         }
     }
@@ -256,7 +254,7 @@ bool Chessboard::isInCheck() const
             int f = king_file + orth_dirs[d][1] * i;
             if (r < 0 || r >= 8 || f < 0 || f >= 8) break;
 
-            const Piece& p = this->board[r * 8 + f].getPiece();
+            const Piece& p = m_board[r * 8 + f].getPiece();
             if (p.getType() != NONE)
             {
                 if (p.getColor() == oppositeColor && (p.getType() == ROOK || p.getType() == QUEEN))
@@ -276,7 +274,7 @@ bool Chessboard::isInCheck() const
             int f = king_file + diag_dirs[d][1] * i;
             if (r < 0 || r >= 8 || f < 0 || f >= 8) break;
 
-            const Piece& p = this->board[r * 8 + f].getPiece();
+            const Piece& p = m_board[r * 8 + f].getPiece();
             if (p.getType() != NONE)
             {
                 if (p.getColor() == oppositeColor && (p.getType() == BISHOP || p.getType() == QUEEN))
@@ -287,14 +285,15 @@ bool Chessboard::isInCheck() const
     }
 
     // 6. Vérifier le Roi adverse
-    static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
+    static constexpr int king_moves[8][2] = { {1, 0}, {1, 1}, {0, 1}, {-1, 1}, 
+                                              {-1, 0}, {-1, -1}, {0, -1}, {1, -1} };
     for (int i = 0; i < 8; i++)
     {
         int r = king_rank + king_moves[i][0];
         int f = king_file + king_moves[i][1];
         if (r >= 0 && r < 8 && f >= 0 && f < 8)
         {
-            const Piece& p = this->board[r * 8 + f].getPiece();
+            const Piece& p = m_board[r * 8 + f].getPiece();
             if (p.getType() == KING && p.getColor() == oppositeColor)
                 return true;
         }
@@ -306,14 +305,15 @@ bool Chessboard::isInCheck() const
 std::vector<Move> Chessboard::getLegalMovesForSquare(int file, int rank)
 {
     std::vector<Move> result;
-    this->getLegalMovesForSquare(file, rank, result);
+    getLegalMovesForSquare(file, rank, result);
     return result;
 }
 
-void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& result, int filter_dest_file, int filter_dest_rank)
+void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& result, 
+                                        int filter_dest_file, int filter_dest_rank)
 {
-    std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(file, rank);
-    PieceType p_type = this->board[rank * 8 + file].getPiece().getType();
+    std::vector<Move> pseudo_moves = getNaiveLegalMoves(file, rank);
+    PieceType p_type = m_board[rank * 8 + file].getPiece().getType();
     bool is_king_move = (p_type == KING);
     bool is_pawn = (p_type == PAWN);
 
@@ -327,14 +327,14 @@ void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& r
 
         if (is_king_move && std::abs(file - dest_file) == 2)
         {
-            if (!this->isCastlePossible(file, rank, dest_file, dest_rank))
+            if (!isCastlePossible(file, rank, dest_file, dest_rank))
                 continue;
         }
 
         bool is_en_passant = (is_pawn && std::abs(file - dest_file) == 1 &&
-            this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
+            m_board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
-        if (this->isMoveSafe(file, rank, dest_file, dest_rank, is_en_passant, is_king_move))
+        if (isMoveSafe(file, rank, dest_file, dest_rank, is_en_passant, is_king_move))
         {
             result.push_back(move);
         }
@@ -344,14 +344,13 @@ void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& r
 std::vector<Move> Chessboard::getAllLegalMoves()
 {
     std::vector<Move> result;
-    Color color = this->turn;
     for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
         {
-            if (this->board[j * 8 + i].getPiece().getColor() != color)
+            if (m_board[j * 8 + i].getPiece().getColor() != m_turn)
                 continue;
-            std::vector<Move> moves = this->getLegalMovesForSquare(i, j);
+            std::vector<Move> moves = getLegalMovesForSquare(i, j);
             result.insert(result.end(), moves.begin(), moves.end());
         }
     }
@@ -360,17 +359,15 @@ std::vector<Move> Chessboard::getAllLegalMoves()
 
 bool Chessboard::hasAnyLegalMove()
 {
-    Color color = this->turn;
-
     for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
         {
-            if (this->board[j * 8 + i].getPiece().getColor() != color)
+            if (m_board[j * 8 + i].getPiece().getColor() != m_turn)
                 continue;
 
             std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(i, j);
-            PieceType p_type = this->board[j * 8 + i].getPiece().getType();
+            PieceType p_type = m_board[j * 8 + i].getPiece().getType();
             bool is_king_move = (p_type == KING);
             bool is_pawn = (p_type == PAWN);
 
@@ -386,7 +383,7 @@ bool Chessboard::hasAnyLegalMove()
                 }
 
                 bool is_en_passant = (is_pawn && std::abs(i - dest_file) == 1 &&
-                    this->board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
+                    m_board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
                 if (this->isMoveSafe(i, j, dest_file, dest_rank, is_en_passant, is_king_move))
                 {
@@ -405,7 +402,7 @@ int Chessboard::encodeMove(const Move& move) const
     int dest_f = move.getDestSquare().getFile();
     int dest_r = move.getDestSquare().getRank();
     PieceType promotion = move.getPromotion();
-    bool is_black = (this->turn == BLACK);
+    bool is_black = (this->m_turn == BLACK);
 
     if (is_black)
     {
@@ -483,21 +480,22 @@ std::vector<int> Chessboard::getLegalMoveIndices()
 
 void Chessboard::checkEnPassant()
 {
-    Move lastMove = this->moveHistory.back();
-    if (lastMove.getPiece().getType() == PAWN && abs(lastMove.getDestSquare().getRank() - lastMove.getOrigSquare().getRank()) == 2)
+    Move lastMove = this->m_moveHistory.back();
+    if (lastMove.getPiece().getType() == PAWN && 
+        abs(lastMove.getDestSquare().getRank() - lastMove.getOrigSquare().getRank()) == 2)
     {
-        this->en_passant = true;
-        this->en_passant_file = lastMove.getDestSquare().getFile();
+        this->m_en_passant = true;
+        this->m_en_passant_file = lastMove.getDestSquare().getFile();
     }
     else
-        this->en_passant = false;
+        this->m_en_passant = false;
 }
 
 void Chessboard::printPly() const
 {
-    std::cout << "ply " << this->boardHistory.size() << "." << std::endl;
+    std::cout << "ply " << this->m_boardHistory.size() << "." << std::endl;
     this->print();
-    std::string color_str = (this->turn == WHITE) ? "White" : "Black";
+    std::string color_str = (this->m_turn == WHITE) ? "White" : "Black";
     std::cout << color_str << " to move" << "\n\n" << std::endl;
     bool check = this->isInCheck();
     //if (check)
@@ -506,30 +504,30 @@ void Chessboard::printPly() const
 
 //...............Setters...............
 
-void Chessboard::Clear()
+void Chessboard::clear()
 {
-    this->board = std::array<Square, 64>();
+    m_board = std::array<Square, 64>();
     for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
         {
-            this->board[j * 8 + i].setPosition(i, j);
+            m_board[j * 8 + i].setPosition(i, j);
         }
     }
-    this->current_state = ONGOING;
-    this->half_move_clock = 0;
+    this->m_current_state = ONGOING;
+    this->m_half_move_clock = 0;
 
-    this->moveHistory.clear();
-    this->boardHistory.clear();
-    this->snapshotHistory.clear();
+    this->m_moveHistory.clear();
+    this->m_boardHistory.clear();
+    this->m_snapshotHistory.clear();
 }
 
 void Chessboard::setStartupPieces()
 {
-    this->white_king_file = 4;
-    this->white_king_rank = 0;
-    this->black_king_file = 4;
-    this->black_king_rank = 7;
+    this->m_white_king_file = 4;
+    this->m_white_king_rank = 0;
+    this->m_black_king_file = 4;
+    this->m_black_king_rank = 7;
 
     for (int i = 0; i < 8; i++) // i = file index
     {
@@ -541,127 +539,133 @@ void Chessboard::setStartupPieces()
             // pawns
             if (rank == 2)
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, PAWN));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, PAWN));
             }
             else if (rank == 7)
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, PAWN));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, PAWN));
             }
             // rooks
             else if (rank == 1 && (file == 1 || file == 8))
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, ROOK));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, ROOK));
             }
             else if (rank == 8 && (file == 1 || file == 8))
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, ROOK));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, ROOK));
             }
             // knights
             else if (rank == 1 && (file == 2 || file == 7))
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, KNIGHT));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, KNIGHT));
             }
             else if (rank == 8 && (file == 2 || file == 7))
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, KNIGHT));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, KNIGHT));
             }
             // bishops
             else if (rank == 1 && (file == 3 || file == 6))
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, BISHOP));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, BISHOP));
             }
             else if (rank == 8 && (file == 3 || file == 6))
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, BISHOP));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, BISHOP));
             }
             // queen
             else if (rank == 1 && file == 4)
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, QUEEN));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, QUEEN));
             }
             else if (rank == 8 && file == 4)
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, QUEEN));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, QUEEN));
             }
             // king
             else if (rank == 1 && file == 5)
             {
-                board[j * 8 + i].setPiece(Piece(WHITE, KING));
+                m_board[j * 8 + i].setPiece(Piece(WHITE, KING));
             }
             else if (rank == 8 && file == 5)
             {
-                board[j * 8 + i].setPiece(Piece(BLACK, KING));
+                m_board[j * 8 + i].setPiece(Piece(BLACK, KING));
             }
             // empty squares
             else
             {
-                board[j * 8 + i].setPiece(Piece());
+                m_board[j * 8 + i].setPiece(Piece());
             }
         }
     }
-    this->boardHistory.push_back(this->board);
+    this->m_boardHistory.push_back(m_board);
     computeInitialZobrist();
 }
 
 void Chessboard::setKiwipete() {
+
+    ///
+    /// Test pour voir si les hashes zobrist marchent bien.
+    /// c'est une position connue pour faire du débug de moteur d'échecs
+    ///
+    
     // 1. Vider le plateau
     for (int i = 0; i < 64; i++) {
-        board[i].setPiece(Piece());
+        m_board[i].setPiece(Piece());
     }
 
     // 2. Placer les pièces Blanches
-    board[0 * 8 + 0].setPiece(Piece(WHITE, ROOK));   // a1
-    board[0 * 8 + 4].setPiece(Piece(WHITE, KING));   // e1
-    board[0 * 8 + 7].setPiece(Piece(WHITE, ROOK));   // h1
-    board[1 * 8 + 0].setPiece(Piece(WHITE, PAWN));   // a2
-    board[1 * 8 + 1].setPiece(Piece(WHITE, PAWN));   // b2
-    board[1 * 8 + 2].setPiece(Piece(WHITE, PAWN));   // c2
-    board[1 * 8 + 3].setPiece(Piece(WHITE, BISHOP)); // d2
-    board[1 * 8 + 4].setPiece(Piece(WHITE, BISHOP)); // e2
-    board[1 * 8 + 5].setPiece(Piece(WHITE, PAWN));   // f2
-    board[1 * 8 + 6].setPiece(Piece(WHITE, PAWN));   // g2
-    board[1 * 8 + 7].setPiece(Piece(WHITE, PAWN));   // h2
-    board[2 * 8 + 2].setPiece(Piece(WHITE, KNIGHT)); // c3
-    board[2 * 8 + 5].setPiece(Piece(WHITE, QUEEN));  // f3
-    board[3 * 8 + 4].setPiece(Piece(WHITE, PAWN));   // e4
-    board[4 * 8 + 3].setPiece(Piece(WHITE, PAWN));   // d5
-    board[4 * 8 + 4].setPiece(Piece(WHITE, KNIGHT)); // e5
+    m_board[0 * 8 + 0].setPiece(Piece(WHITE, ROOK));   // a1
+    m_board[0 * 8 + 4].setPiece(Piece(WHITE, KING));   // e1
+    m_board[0 * 8 + 7].setPiece(Piece(WHITE, ROOK));   // h1
+    m_board[1 * 8 + 0].setPiece(Piece(WHITE, PAWN));   // a2
+    m_board[1 * 8 + 1].setPiece(Piece(WHITE, PAWN));   // b2
+    m_board[1 * 8 + 2].setPiece(Piece(WHITE, PAWN));   // c2
+    m_board[1 * 8 + 3].setPiece(Piece(WHITE, BISHOP)); // d2
+    m_board[1 * 8 + 4].setPiece(Piece(WHITE, BISHOP)); // e2
+    m_board[1 * 8 + 5].setPiece(Piece(WHITE, PAWN));   // f2
+    m_board[1 * 8 + 6].setPiece(Piece(WHITE, PAWN));   // g2
+    m_board[1 * 8 + 7].setPiece(Piece(WHITE, PAWN));   // h2
+    m_board[2 * 8 + 2].setPiece(Piece(WHITE, KNIGHT)); // c3
+    m_board[2 * 8 + 5].setPiece(Piece(WHITE, QUEEN));  // f3
+    m_board[3 * 8 + 4].setPiece(Piece(WHITE, PAWN));   // e4
+    m_board[4 * 8 + 3].setPiece(Piece(WHITE, PAWN));   // d5
+    m_board[4 * 8 + 4].setPiece(Piece(WHITE, KNIGHT)); // e5
 
     // 3. Placer les pièces Noires
-    board[7 * 8 + 0].setPiece(Piece(BLACK, ROOK));   // a8
-    board[7 * 8 + 4].setPiece(Piece(BLACK, KING));   // e8
-    board[7 * 8 + 7].setPiece(Piece(BLACK, ROOK));   // h8
-    board[6 * 8 + 0].setPiece(Piece(BLACK, PAWN));   // a7
-    board[6 * 8 + 2].setPiece(Piece(BLACK, PAWN));   // c7
-    board[6 * 8 + 3].setPiece(Piece(BLACK, PAWN));   // d7
-    board[6 * 8 + 4].setPiece(Piece(BLACK, QUEEN));  // e7
-    board[6 * 8 + 5].setPiece(Piece(BLACK, PAWN));   // f7
-    board[6 * 8 + 6].setPiece(Piece(BLACK, BISHOP)); // g7
-    board[5 * 8 + 0].setPiece(Piece(BLACK, BISHOP)); // a6
-    board[5 * 8 + 1].setPiece(Piece(BLACK, KNIGHT)); // b6
-    board[5 * 8 + 4].setPiece(Piece(BLACK, PAWN));   // e6
-    board[5 * 8 + 5].setPiece(Piece(BLACK, KNIGHT)); // f6
-    board[5 * 8 + 6].setPiece(Piece(BLACK, PAWN));   // g6
-    board[3 * 8 + 1].setPiece(Piece(BLACK, PAWN));   // b4
-    board[2 * 8 + 7].setPiece(Piece(BLACK, PAWN));   // h3
+    m_board[7 * 8 + 0].setPiece(Piece(BLACK, ROOK));   // a8
+    m_board[7 * 8 + 4].setPiece(Piece(BLACK, KING));   // e8
+    m_board[7 * 8 + 7].setPiece(Piece(BLACK, ROOK));   // h8
+    m_board[6 * 8 + 0].setPiece(Piece(BLACK, PAWN));   // a7
+    m_board[6 * 8 + 2].setPiece(Piece(BLACK, PAWN));   // c7
+    m_board[6 * 8 + 3].setPiece(Piece(BLACK, PAWN));   // d7
+    m_board[6 * 8 + 4].setPiece(Piece(BLACK, QUEEN));  // e7
+    m_board[6 * 8 + 5].setPiece(Piece(BLACK, PAWN));   // f7
+    m_board[6 * 8 + 6].setPiece(Piece(BLACK, BISHOP)); // g7
+    m_board[5 * 8 + 0].setPiece(Piece(BLACK, BISHOP)); // a6
+    m_board[5 * 8 + 1].setPiece(Piece(BLACK, KNIGHT)); // b6
+    m_board[5 * 8 + 4].setPiece(Piece(BLACK, PAWN));   // e6
+    m_board[5 * 8 + 5].setPiece(Piece(BLACK, KNIGHT)); // f6
+    m_board[5 * 8 + 6].setPiece(Piece(BLACK, PAWN));   // g6
+    m_board[3 * 8 + 1].setPiece(Piece(BLACK, PAWN));   // b4
+    m_board[2 * 8 + 7].setPiece(Piece(BLACK, PAWN));   // h3
 
     // 4. Initialiser les métadonnées pour autoriser tous les roques
-    this->turn = WHITE;
-    this->short_castle_white = true;
-    this->long_castle_white = true;
-    this->short_castle_black = true;
-    this->long_castle_black = true;
-    this->en_passant = false;
-    this->half_move_clock = 0;
-    this->white_king_file = 4;
-    this->white_king_rank = 0;
-    this->black_king_file = 4;
-    this->black_king_rank = 7;
+    this->m_turn = WHITE;
+    this->m_short_castle_white = true;
+    this->m_long_castle_white = true;
+    this->m_short_castle_black = true;
+    this->m_long_castle_black = true;
+    this->m_en_passant = false;
+    this->m_half_move_clock = 0;
+    this->m_white_king_file = 4;
+    this->m_white_king_rank = 0;
+    this->m_black_king_file = 4;
+    this->m_black_king_rank = 7;
 
-    this->boardHistory.clear();
-    this->boardHistory.push_back(this->board);
-    this->moveHistory.clear();
-    this->snapshotHistory.clear();
+    this->m_boardHistory.clear();
+    this->m_boardHistory.push_back(m_board);
+    this->m_moveHistory.clear();
+    this->m_snapshotHistory.clear();
 
     // 5. Générer le hash initial
     computeInitialZobrist();
@@ -669,14 +673,14 @@ void Chessboard::setKiwipete() {
 
 void Chessboard::setBoard(std::array<Square, 64> some_board)
 {
-    this->board = some_board;
+    m_board = some_board;
     computeInitialZobrist();
 }
 
 void Chessboard::updateHistory(const Move& move)
 {
-    this->moveHistory.push_back(move);
-    this->boardHistory.push_back(this->board);
+    this->m_moveHistory.push_back(move);
+    this->m_boardHistory.push_back(m_board);
 }
 
 void Chessboard::updateCastleFlags()
@@ -686,20 +690,20 @@ void Chessboard::updateCastleFlags()
     // tour a bougé
     // tour capturée (sans forcément avoir bougé avant)
 
-    Move lastMove = this->moveHistory.back();
+    Move lastMove = this->m_moveHistory.back();
 
     // 1. Perte des deux droits si le roi bouge
     if (lastMove.getPiece().getType() == KING)
     {
         if (lastMove.getPiece().getColor() == WHITE)
         {
-            this->short_castle_white = false;
-            this->long_castle_white = false;
+            this->m_short_castle_white = false;
+            this->m_long_castle_white = false;
         }
         else if (lastMove.getPiece().getColor() == BLACK)
         {
-            this->short_castle_black = false;
-            this->long_castle_black = false;
+            this->m_short_castle_black = false;
+            this->m_long_castle_black = false;
         }
     }
 
@@ -711,19 +715,19 @@ void Chessboard::updateCastleFlags()
 
     // Tour blanche a1 (Grand roque blanc)
     if ((orig_f == 0 && orig_r == 0) || (dest_f == 0 && dest_r == 0))
-        this->long_castle_white = false;
+        this->m_long_castle_white = false;
 
     // Tour blanche h1 (Petit roque blanc)
     if ((orig_f == 7 && orig_r == 0) || (dest_f == 7 && dest_r == 0))
-        this->short_castle_white = false;
+        this->m_short_castle_white = false;
 
     // Tour noire a8 (Grand roque noir)
     if ((orig_f == 0 && orig_r == 7) || (dest_f == 0 && dest_r == 7))
-        this->long_castle_black = false;
+        this->m_long_castle_black = false;
 
     // Tour noire h8 (Petit roque noir)
     if ((orig_f == 7 && orig_r == 7) || (dest_f == 7 && dest_r == 7))
-        this->short_castle_black = false;
+        this->m_short_castle_black = false;
 }
 
 
@@ -758,10 +762,12 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     return true;
 }
 
-bool Chessboard::isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool is_en_passant, bool is_king_move)
+bool Chessboard::isMoveSafe(int orig_f, int orig_r, 
+                            int dest_f, int dest_r, 
+                            bool is_en_passant, bool is_king_move)
 {
-    Square& orig_sq = this->board[orig_r * 8 + orig_f];
-    Square& dest_sq = this->board[dest_r * 8 + dest_f];
+    Square& orig_sq = m_board[orig_r * 8 + orig_f];
+    Square& dest_sq = m_board[dest_r * 8 + dest_f];
 
     Piece moving_piece = orig_sq.getPiece();
     Piece captured_piece = dest_sq.getPiece();
@@ -772,8 +778,8 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool
 
     // 1. Sauvegarde locale et modification
     if (is_en_passant) {
-        ep_captured_piece = this->board[ep_rank * 8 + ep_file].getPiece();
-        this->board[ep_rank * 8 + ep_file].setPiece(Piece());
+        ep_captured_piece = m_board[ep_rank * 8 + ep_file].getPiece();
+        m_board[ep_rank * 8 + ep_file].setPiece(Piece());
     }
 
     if (orig_f != dest_f || orig_r != dest_r) {
@@ -783,13 +789,13 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool
 
     int old_king_f = -1, old_king_r = -1;
     if (is_king_move) {
-        if (this->turn == WHITE) {
-            old_king_f = this->white_king_file; old_king_r = this->white_king_rank;
-            this->white_king_file = dest_f; this->white_king_rank = dest_r;
+        if (this->m_turn == WHITE) {
+            old_king_f = this->m_white_king_file; old_king_r = this->m_white_king_rank;
+            this->m_white_king_file = dest_f; this->m_white_king_rank = dest_r;
         }
         else {
-            old_king_f = this->black_king_file; old_king_r = this->black_king_rank;
-            this->black_king_file = dest_f; this->black_king_rank = dest_r;
+            old_king_f = this->m_black_king_file; old_king_r = this->m_black_king_rank;
+            this->m_black_king_file = dest_f; this->m_black_king_rank = dest_r;
         }
     }
 
@@ -803,15 +809,15 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool
     }
 
     if (is_en_passant) {
-        this->board[ep_rank * 8 + ep_file].setPiece(ep_captured_piece);
+        m_board[ep_rank * 8 + ep_file].setPiece(ep_captured_piece);
     }
 
     if (is_king_move) {
-        if (this->turn == WHITE) {
-            this->white_king_file = old_king_f; this->white_king_rank = old_king_r;
+        if (this->m_turn == WHITE) {
+            this->m_white_king_file = old_king_f; this->m_white_king_rank = old_king_r;
         }
         else {
-            this->black_king_file = old_king_f; this->black_king_rank = old_king_r;
+            this->m_black_king_file = old_king_f; this->m_black_king_rank = old_king_r;
         }
     }
 
@@ -820,57 +826,59 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool
 
 void Chessboard::evaluateGameState()
 {
-    if (!this->hasAnyLegalMove())  // soit mat soit pat
+    if (!hasAnyLegalMove())  // soit mat soit pat
     {
-        if (this->isInCheck())
+        if (isInCheck())
         {
-            this->current_state = CHECKMATE;
+            m_current_state = CHECKMATE;
         }
         else
         {
-            this->current_state = STALEMATE;
+            m_current_state = STALEMATE;
         }
     }
-    else if (this->checkThreefoldRepetition())
+    else if (checkThreefoldRepetition())
     {
-        this->current_state = DRAW_REPETITION;
+        m_current_state = DRAW_REPETITION;
     }
-    else if (this->half_move_clock >= 100) // Fin de partie par la règle des 50 coups
+    else if (m_half_move_clock >= 100) // Fin de partie par la règle des 50 coups
     {
-        this->current_state = DRAW_50_MOVES;
+        m_current_state = DRAW_50_MOVES;
     }
 
-    else if (this->checkInsufficientMaterial())
+    else if (checkInsufficientMaterial())
     {
-        this->current_state = DRAW_INSUFF_MATERIAL;
+        m_current_state = DRAW_INSUFF_MATERIAL;
     }
 }
 
 void Chessboard::updateStateSnapshot()
 {
     StateSnapshot current_snapshot;
-    current_snapshot.short_castle_white = this->short_castle_white;
-    current_snapshot.long_castle_white = this->long_castle_white;
-    current_snapshot.short_castle_black = this->short_castle_black;
-    current_snapshot.long_castle_black = this->long_castle_black;
-    current_snapshot.en_passant = this->en_passant;
-    current_snapshot.en_passant_file = this->en_passant_file;
-    current_snapshot.half_move_clock = this->half_move_clock;
-    current_snapshot.current_state = this->current_state;
-    current_snapshot.white_king_file = this->white_king_file;
-    current_snapshot.white_king_rank = this->white_king_rank;
-    current_snapshot.black_king_file = this->black_king_file;
-    current_snapshot.black_king_rank = this->black_king_rank;
-    current_snapshot.zobrist_hash = this->current_zobrist_hash;
-    this->snapshotHistory.push_back(current_snapshot);
+    current_snapshot.short_castle_white = this->m_short_castle_white;
+    current_snapshot.long_castle_white = this->m_long_castle_white;
+    current_snapshot.short_castle_black = this->m_short_castle_black;
+    current_snapshot.long_castle_black = this->m_long_castle_black;
+    current_snapshot.en_passant = this->m_en_passant;
+    current_snapshot.en_passant_file = this->m_en_passant_file;
+    current_snapshot.half_move_clock = this->m_half_move_clock;
+    current_snapshot.current_state = this->m_current_state;
+    current_snapshot.white_king_file = this->m_white_king_file;
+    current_snapshot.white_king_rank = this->m_white_king_rank;
+    current_snapshot.black_king_file = this->m_black_king_file;
+    current_snapshot.black_king_rank = this->m_black_king_rank;
+    current_snapshot.zobrist_hash = m_current_zobrist_hash;
+    this->m_snapshotHistory.push_back(current_snapshot);
 }
 
-bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, PieceType promotion, bool check_game_end)
+bool Chessboard::movePiece(int orig_file, int orig_rank, 
+                           int file, int rank, 
+                           PieceType promotion, bool check_game_end)
 {
-    Square& first_square = this->board[orig_rank * 8 + orig_file];
-    Square& second_square = this->board[rank * 8 + file];
+    Square& first_square = m_board[orig_rank * 8 + orig_file];
+    Square& second_square = m_board[rank * 8 + file];
 
-    if (first_square.getPiece().getColor() != this->turn)
+    if (first_square.getPiece().getColor() != this->m_turn)
     {
         return false;
     }
@@ -896,42 +904,45 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
     bool is_en_passant_capture = (is_pawn_move && second_square.getPiece().getType() == NONE &&
         abs(orig_file - file) == 1);  // pion a bougé en diagonale sur une case vide
-    bool is_capture = second_square.CheckOccupied() || is_en_passant_capture;
+    bool is_capture = second_square.checkOccupied() || is_en_passant_capture;
 
 
     // --- ZOBRIST (Partie 1) : Retrait de l'ancien état ---
-    this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE; // On change le trait
+    m_current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE; // On change le trait
 
     // On retire les anciens droits de roque et en_passant
-    int old_castling_idx = (this->short_castle_white ? 1 : 0) | (this->long_castle_white ? 2 : 0) | (this->short_castle_black ? 4 : 0) | (this->long_castle_black ? 8 : 0);
-    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
-    if (this->en_passant && this->en_passant_file >= 0) {
-        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    int old_castling_idx = (m_short_castle_white ? 1 : 0) | 
+                           (m_long_castle_white ? 2 : 0)  | 
+                           (m_short_castle_black ? 4 : 0) | 
+                           (m_long_castle_black ? 8 : 0);
+    m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
+    if (this->m_en_passant && this->m_en_passant_file >= 0) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
     }
 
     // Retrait de la pièce de sa case de départ
     int orig_square_idx = orig_rank * 8 + orig_file;
     int dest_square_idx = rank * 8 + file;
-    int moving_piece_idx = getPieceZobristIndex(moving_piece);
-    this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_square_idx][moving_piece_idx];
+    int moving_piece_idx = moving_piece.getZobristIndex();
+    m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_square_idx][moving_piece_idx];
 
     // Ajout à la case d'arrivée (Gestion de la promotion)
     if (promotion != NONE) {
         Piece promoted_piece(moving_color, promotion);
-        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(promoted_piece)];
+        m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][promoted_piece.getZobristIndex()];
     }
     else {
-        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][moving_piece_idx];
+        m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][moving_piece_idx];
     }
 
     // Retrait de la pièce capturée
     if (is_capture) {
         if (is_en_passant_capture) {
-            Piece captured_pawn(this->turn == WHITE ? BLACK : WHITE, PAWN);
-            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][getPieceZobristIndex(captured_pawn)];
+            Piece captured_pawn(this->m_turn == WHITE ? BLACK : WHITE, PAWN);
+            m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][captured_pawn.getZobristIndex()];
         }
         else {
-            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][getPieceZobristIndex(second_square.getPiece())];
+            m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[dest_square_idx][second_square.getPiece().getZobristIndex()];
         }
     }
 
@@ -940,10 +951,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         int rook_orig_file = (file > orig_file) ? 7 : 0;
         int rook_dest_file = (file > orig_file) ? 5 : 3;
         Piece rook(moving_color, ROOK);
-        int rook_idx = getPieceZobristIndex(rook);
+        int rook_idx = rook.getZobristIndex();
 
-        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_orig_file][rook_idx]; // Retire la tour
-        this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_dest_file][rook_idx]; // Replace la tour
+        m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_orig_file][rook_idx]; // Retire la tour
+        m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[rank * 8 + rook_dest_file][rook_idx]; // Replace la tour
     }
 
 
@@ -956,13 +967,13 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
         int rook_orig_file = (file > orig_file) ? 7 : 0; // Tour h (7) pour petit roque, a (0) pour grand
         int rook_dest_file = (file > orig_file) ? 5 : 3; // Tour atterrit en f (5) ou d (3)
 
-        this->board[rank * 8 + rook_dest_file].setPiece(this->board[rank * 8 + rook_orig_file].getPiece());
-        this->board[rank * 8 + rook_orig_file].setPiece(Piece());
+        m_board[rank * 8 + rook_dest_file].setPiece(m_board[rank * 8 + rook_orig_file].getPiece());
+        m_board[rank * 8 + rook_orig_file].setPiece(Piece());
     }
 
     if (is_en_passant_capture)
     {
-        this->board[orig_rank * 8 + file].setPiece(Piece()); // suppression du pion PAS SUR CASE D'ARRIVEE !!
+        m_board[orig_rank * 8 + file].setPiece(Piece()); // suppression du pion PAS SUR CASE D'ARRIVEE !!
     }
 
     // déplacement de la pièce qui a fait le coup actuel
@@ -973,10 +984,10 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
     if (is_king_move)
     {
         if (moving_color == WHITE) {
-            this->white_king_file = file; this->white_king_rank = rank;
+            this->m_white_king_file = file; this->m_white_king_rank = rank;
         }
         else {
-            this->black_king_file = file; this->black_king_rank = rank;
+            this->m_black_king_file = file; this->m_black_king_rank = rank;
         }
     }
     
@@ -990,23 +1001,23 @@ bool Chessboard::movePiece(int orig_file, int orig_rank, int file, int rank, Pie
 
 
     // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
-    int new_castling_idx = (this->short_castle_white ? 1 : 0) | 
-        (this->long_castle_white ? 2 : 0) | 
-        (this->short_castle_black ? 4 : 0) | 
-        (this->long_castle_black ? 8 : 0);
-    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
-    if (this->en_passant && this->en_passant_file >= 0) {
-        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    int new_castling_idx = (this->m_short_castle_white ? 1 : 0) | 
+        (this->m_long_castle_white ? 2 : 0) | 
+        (this->m_short_castle_black ? 4 : 0) | 
+        (this->m_long_castle_black ? 8 : 0);
+    m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
+    if (this->m_en_passant && this->m_en_passant_file >= 0) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
     }
 
-    this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+    this->m_turn = (this->m_turn == WHITE) ? BLACK : WHITE;
 
     // maj du compteur de la règle des 50 coups
     if (is_capture || is_pawn_move) {
-        this->half_move_clock = 0;
+        this->m_half_move_clock = 0;
     }
     else {
-        this->half_move_clock++;
+        this->m_half_move_clock++;
     }
 
     if (check_game_end)
@@ -1039,7 +1050,7 @@ bool Chessboard::movePieceSAN(std::string san)
     // 2. Traitement des roques
     if (san == "O-O" || san == "O-O-O")
     {
-        int rank = (this->turn == WHITE) ? 0 : 7;
+        int rank = (this->m_turn == WHITE) ? 0 : 7;
         int orig_file = 4;
         int dest_file = (san == "O-O") ? 6 : 2;
         return this->movePiece(orig_file, rank, dest_file, rank);
@@ -1104,8 +1115,8 @@ bool Chessboard::movePieceSAN(std::string san)
     {
         for (int j = 0; j < 8; j++)
         {
-            const Square& sq = this->board[j * 8 + i];
-            if (!sq.CheckOccupied() || sq.getPiece().getColor() != this->turn || sq.getPiece().getType() != p_type)
+            const Square& sq = m_board[j * 8 + i];
+            if (!sq.checkOccupied() || sq.getPiece().getColor() != this->m_turn || sq.getPiece().getType() != p_type)
                 continue;
             if (orig_file_hint != -1 && i != orig_file_hint) continue;
             if (orig_rank_hint != -1 && j != orig_rank_hint) continue;
@@ -1139,36 +1150,36 @@ bool Chessboard::movePieceSAN(std::string san)
 
 void Chessboard::undoMove()
 {
-    if (this->moveHistory.empty()) return;
+    if (this->m_moveHistory.empty()) return;
 
     // 1. Retrait du dernier coup
-    this->moveHistory.pop_back();
-    this->boardHistory.pop_back();
+    this->m_moveHistory.pop_back();
+    this->m_boardHistory.pop_back();
 
     // La position précédente est maintenant le dernier élément de boardHistory
     // (car l'état initial est indexé en 0 par setStartupPieces)
-    this->board = this->boardHistory.back();
+    m_board = this->m_boardHistory.back();
 
     // 2. Restauration des métadonnées via le snapshot
-    StateSnapshot snapshot = this->snapshotHistory.back();
-    this->snapshotHistory.pop_back();
+    StateSnapshot snapshot = this->m_snapshotHistory.back();
+    this->m_snapshotHistory.pop_back();
 
-    this->short_castle_white = snapshot.short_castle_white;
-    this->long_castle_white = snapshot.long_castle_white;
-    this->short_castle_black = snapshot.short_castle_black;
-    this->long_castle_black = snapshot.long_castle_black;
-    this->en_passant = snapshot.en_passant;
-    this->en_passant_file = snapshot.en_passant_file;
-    this->half_move_clock = snapshot.half_move_clock;
-    this->current_state = snapshot.current_state;
-    this->white_king_file = snapshot.white_king_file;
-    this->white_king_rank = snapshot.white_king_rank;
-    this->black_king_file = snapshot.black_king_file;
-    this->black_king_rank = snapshot.black_king_rank;
-    this->current_zobrist_hash = snapshot.zobrist_hash;
+    this->m_short_castle_white = snapshot.short_castle_white;
+    this->m_long_castle_white = snapshot.long_castle_white;
+    this->m_short_castle_black = snapshot.short_castle_black;
+    this->m_long_castle_black = snapshot.long_castle_black;
+    this->m_en_passant = snapshot.en_passant;
+    this->m_en_passant_file = snapshot.en_passant_file;
+    this->m_half_move_clock = snapshot.half_move_clock;
+    this->m_current_state = snapshot.current_state;
+    this->m_white_king_file = snapshot.white_king_file;
+    this->m_white_king_rank = snapshot.white_king_rank;
+    this->m_black_king_file = snapshot.black_king_file;
+    this->m_black_king_rank = snapshot.black_king_rank;
+    m_current_zobrist_hash = snapshot.zobrist_hash;
 
     // 3. Restitution du trait
-    this->turn = (this->turn == WHITE) ? BLACK : WHITE;
+    this->m_turn = (this->m_turn == WHITE) ? BLACK : WHITE;
 }
 
 std::vector<float> Chessboard::getAlphaZeroTensor() const
@@ -1176,25 +1187,25 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
     // Allocation d'un vecteur plat de 7616 valeurs (119 plans * 8 rangées * 8 colonnes), initialisé à 0
     std::vector<float> tensor(119 * 64, 0.0f);
 
-    Color p1_color = this->turn;
+    Color p1_color = this->m_turn;
     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
     bool flip = (p1_color == BLACK);
 
     // Construction d'un historique plat des Zobrist Hashs pour une vérification rapide
     std::vector<uint64_t> all_hashes;
-    all_hashes.reserve(this->snapshotHistory.size() + 1);
-    for (const auto& snap : this->snapshotHistory) {
+    all_hashes.reserve(this->m_snapshotHistory.size() + 1);
+    for (const auto& snap : this->m_snapshotHistory) {
         all_hashes.push_back(snap.zobrist_hash);
     }
-    all_hashes.push_back(this->current_zobrist_hash);
+    all_hashes.push_back(m_current_zobrist_hash);
 
     // Remplissage de l'historique (112 premiers plans)
     for (int t = 0; t < 8; t++)
     {
-        int history_idx = this->boardHistory.size() - 1 - t;
+        int history_idx = this->m_boardHistory.size() - 1 - t;
         if (history_idx < 0) break;
 
-        const std::array<Square, 64>& hist_board = this->boardHistory[history_idx];
+        const std::array<Square, 64>& hist_board = this->m_boardHistory[history_idx];
         int plane_offset = t * 14 * 64;
 
         // --- CALCUL DES RÉPÉTITIONS VIA ZOBRIST ---
@@ -1251,14 +1262,18 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
     // Remplissage des 7 plans de contexte (Offset = 112 * 64 = 7168)
     int constant_offset = 112 * 64;
 
-    float color_val = (this->turn == WHITE) ? 1.0f : 0.0f;
+    float color_val = (m_turn == WHITE) ? 1.0f : 0.0f;
     // Normalisation des compteurs pour le réseau de neurones (sur une base arbitraire de 100)
-    float total_moves_val = std::min(1.0f, (float)(this->boardHistory.size() / 2) / 100.0f);
-    float p1_castle_k = (p1_color == WHITE) ? (this->short_castle_white ? 1.0f : 0.0f) : (this->short_castle_black ? 1.0f : 0.0f);
-    float p1_castle_q = (p1_color == WHITE) ? (this->long_castle_white ? 1.0f : 0.0f) : (this->long_castle_black ? 1.0f : 0.0f);
-    float p2_castle_k = (p2_color == WHITE) ? (this->short_castle_white ? 1.0f : 0.0f) : (this->short_castle_black ? 1.0f : 0.0f);
-    float p2_castle_q = (p2_color == WHITE) ? (this->long_castle_white ? 1.0f : 0.0f) : (this->long_castle_black ? 1.0f : 0.0f);
-    float no_progress_val = (float)this->half_move_clock / 100.0f;
+    float total_moves_val = std::min(1.0f, (float)(m_boardHistory.size() / 2) / 100.0f);
+    float p1_castle_k = (p1_color == WHITE) ? 
+        (m_short_castle_white ? 1.0f : 0.0f) : (m_short_castle_black ? 1.0f : 0.0f);
+    float p1_castle_q = (p1_color == WHITE) ? 
+        (m_long_castle_white ? 1.0f : 0.0f) : (m_long_castle_black ? 1.0f : 0.0f);
+    float p2_castle_k = (p2_color == WHITE) ? 
+        (m_short_castle_white ? 1.0f : 0.0f) : (m_short_castle_black ? 1.0f : 0.0f);
+    float p2_castle_q = (p2_color == WHITE) ? 
+        (m_long_castle_white ? 1.0f : 0.0f) : (m_long_castle_black ? 1.0f : 0.0f);
+    float no_progress_val = (float)this->m_half_move_clock / 100.0f;
 
     for (int i = 0; i < 64; i++)
     {
@@ -1281,7 +1296,7 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     // C'est un check naïf : il ne repère pas les clouages.
     // Il ne check pas non plus si le roque est safe
 
-    Square orig_square = board[rank * 8 + file];
+    Square orig_square = m_board[rank * 8 + file];
     std::vector<Move> legalMoves;
     PieceType type = orig_square.getPiece().getType();
     Color color = orig_square.getPiece().getColor();
@@ -1307,51 +1322,51 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     {
     case PAWN:
     {
-        if (color == WHITE && rank < 7 && this->board[(rank + 1) * 8 + file].CheckOccupied() == false)
+        if (color == WHITE && rank < 7 && m_board[(rank + 1) * 8 + file].checkOccupied() == false)
         {
-            addMove(this->board[(rank + 1) * 8 + file]);
-            if (rank == 1 && this->board[(rank + 2) * 8 + file].CheckOccupied() == false) // peut avancer de 2 au premier coup
+            addMove(m_board[(rank + 1) * 8 + file]);
+            if (rank == 1 && m_board[(rank + 2) * 8 + file].checkOccupied() == false)
             {
-                addMove(this->board[(rank + 2) * 8 + file]);
+                addMove(m_board[(rank + 2) * 8 + file]);
             }
         }
-        else if (color == BLACK && rank > 0 && this->board[(rank - 1) * 8 + file].CheckOccupied() == false)
+        else if (color == BLACK && rank > 0 && m_board[(rank - 1) * 8 + file].checkOccupied() == false)
         {
-            addMove(this->board[(rank - 1) * 8 + file]);
-            if (rank == 6 && this->board[(rank - 2) * 8 + file].CheckOccupied() == false)  // peut avancer de 2 au premier coup
+            addMove(m_board[(rank - 1) * 8 + file]);
+            if (rank == 6 && m_board[(rank - 2) * 8 + file].checkOccupied() == false)
             {
-                addMove(this->board[(rank - 2) * 8 + file]);
+                addMove(m_board[(rank - 2) * 8 + file]);
             }
         }
 
         if (color == WHITE && rank < 7)
         {
-            if (file < 7 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
+            if (file < 7 && m_board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + 1) * 8 + (file + 1)]);
+                addMove(m_board[(rank + 1) * 8 + (file + 1)]);
             }
-            if (file > 0 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
+            if (file > 0 && m_board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + 1) * 8 + (file - 1)]);
+                addMove(m_board[(rank + 1) * 8 + (file - 1)]);
             }
-            if (this->en_passant && rank == 4 && abs(file - this->en_passant_file) == 1)
+            if (this->m_en_passant && rank == 4 && abs(file - this->m_en_passant_file) == 1)
             {
-                addMove(this->board[(rank + 1) * 8 + this->en_passant_file]);
+                addMove(m_board[(rank + 1) * 8 + this->m_en_passant_file]);
             }
         }
         else if (color == BLACK && rank > 0)
         {
-            if (file < 7 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
+            if (file < 7 && m_board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - 1) * 8 + (file + 1)]);
+                addMove(m_board[(rank - 1) * 8 + (file + 1)]);
             }
-            if (file > 0 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
+            if (file > 0 && m_board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - 1) * 8 + (file - 1)]);
+                addMove(m_board[(rank - 1) * 8 + (file - 1)]);
             }
-            if (this->en_passant && rank == 3 && abs(file - this->en_passant_file) == 1)
+            if (this->m_en_passant && rank == 3 && abs(file - this->m_en_passant_file) == 1)
             {
-                addMove(this->board[(rank - 1) * 8 + this->en_passant_file]);
+                addMove(m_board[(rank - 1) * 8 + this->m_en_passant_file]);
             }
         }
         break;
@@ -1360,44 +1375,44 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     {
         for (int i = rank + 1; i < 8; i++) // top
         {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            if (m_board[i * 8 + file].checkOccupied() == false)
+                addMove(m_board[i * 8 + file]);
+            else if (m_board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[i * 8 + file]);
+                addMove(m_board[i * 8 + file]);
                 break;
             }
             else break;
         }
         for (int i = rank - 1; i > -1; i--) // bottom
         {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            if (m_board[i * 8 + file].checkOccupied() == false)
+                addMove(m_board[i * 8 + file]);
+            else if (m_board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[i * 8 + file]);
+                addMove(m_board[i * 8 + file]);
                 break;
             }
             else break;
         }
         for (int i = file + 1; i < 8; i++) // right
         {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            if (m_board[rank * 8 + i].checkOccupied() == false)
+                addMove(m_board[rank * 8 + i]);
+            else if (m_board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[rank * 8 + i]);
+                addMove(m_board[rank * 8 + i]);
                 break;
             }
             else break;
         }
         for (int i = file - 1; i > -1; i--) // left
         {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            if (m_board[rank * 8 + i].checkOccupied() == false)
+                addMove(m_board[rank * 8 + i]);
+            else if (m_board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[rank * 8 + i]);
+                addMove(m_board[rank * 8 + i]);
                 break;
             }
             else break;
@@ -1406,66 +1421,70 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     }
     case KNIGHT:
     {
-        if (file + 2 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file + 2)]);
-        if (file + 2 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file + 2)]);
-        if (file - 2 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file - 2)]);
-        if (file - 2 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 2)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file - 2)]);
-        if (file + 1 < 8 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 2) * 8 + (file + 1)]);
-        if (file + 1 < 8 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 2) * 8 + (file + 1)]);
-        if (file - 1 > -1 && rank + 2 < 8 && this->board[(rank + 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 2) * 8 + (file - 1)]);
-        if (file - 1 > -1 && rank - 2 > -1 && this->board[(rank - 2) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 2) * 8 + (file - 1)]);
+        if (file + 2 < 8 && rank + 1 < 8 && m_board[(rank + 1) * 8 + (file + 2)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 1) * 8 + (file + 2)]);
+        if (file + 2 < 8 && rank - 1 > -1 && m_board[(rank - 1) * 8 + (file + 2)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 1) * 8 + (file + 2)]);
+        if (file - 2 > -1 && rank + 1 < 8 && m_board[(rank + 1) * 8 + (file - 2)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 1) * 8 + (file - 2)]);
+        if (file - 2 > -1 && rank - 1 > -1 && m_board[(rank - 1) * 8 + (file - 2)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 1) * 8 + (file - 2)]);
+        if (file + 1 < 8 && rank + 2 < 8 && m_board[(rank + 2) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 2) * 8 + (file + 1)]);
+        if (file + 1 < 8 && rank - 2 > -1 && m_board[(rank - 2) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 2) * 8 + (file + 1)]);
+        if (file - 1 > -1 && rank + 2 < 8 && m_board[(rank + 2) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 2) * 8 + (file - 1)]);
+        if (file - 1 > -1 && rank - 2 > -1 && m_board[(rank - 2) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 2) * 8 + (file - 1)]);
         break;
     }
     case BISHOP:
     {
         for (int i = 1; i < 8; i++) // up right
         {
-            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            if (file + i < 8 && rank + i < 8 && m_board[(rank + i) * 8 + (file + i)].checkOccupied() == false)
+                addMove(m_board[(rank + i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank + i < 8 && 
+                     m_board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(m_board[(rank + i) * 8 + (file + i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // up left
         {
-            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            if (file - i > -1 && rank + i < 8 && m_board[(rank + i) * 8 + (file - i)].checkOccupied() == false)
+                addMove(m_board[(rank + i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank + i < 8 && 
+                     m_board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(m_board[(rank + i) * 8 + (file - i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // down right
         {
-            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            if (file + i < 8 && rank - i > -1 && m_board[(rank - i) * 8 + (file + i)].checkOccupied() == false)
+                addMove(m_board[(rank - i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank - i > -1 && 
+                     m_board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(m_board[(rank - i) * 8 + (file + i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // down left
         {
-            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            if (file - i > -1 && rank - i > -1 && m_board[(rank - i) * 8 + (file - i)].checkOccupied() == false)
+                addMove(m_board[(rank - i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank - i > -1 && 
+                     m_board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(m_board[(rank - i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -1477,88 +1496,92 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
         // Combinaison des logiques ROOK et BISHOP
         for (int i = rank + 1; i < 8; i++)  // up
         {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            if (m_board[i * 8 + file].checkOccupied() == false)
+                addMove(m_board[i * 8 + file]);
+            else if (m_board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[i * 8 + file]);
+                addMove(m_board[i * 8 + file]);
                 break;
             }
             else break;
         }
         for (int i = rank - 1; i > -1; i--) // down
         {
-            if (this->board[i * 8 + file].CheckOccupied() == false)
-                addMove(this->board[i * 8 + file]);
-            else if (this->board[i * 8 + file].getPiece().getColor() == oppositeColor)
+            if (m_board[i * 8 + file].checkOccupied() == false)
+                addMove(m_board[i * 8 + file]);
+            else if (m_board[i * 8 + file].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[i * 8 + file]);
+                addMove(m_board[i * 8 + file]);
                 break;
             }
             else break;
         }
         for (int i = file + 1; i < 8; i++) // right
         {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            if (m_board[rank * 8 + i].checkOccupied() == false)
+                addMove(m_board[rank * 8 + i]);
+            else if (m_board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[rank * 8 + i]);
+                addMove(m_board[rank * 8 + i]);
                 break;
             }
             else break;
         }
         for (int i = file - 1; i > -1; i--) // left
         {
-            if (this->board[rank * 8 + i].CheckOccupied() == false)
-                addMove(this->board[rank * 8 + i]);
-            else if (this->board[rank * 8 + i].getPiece().getColor() == oppositeColor)
+            if (m_board[rank * 8 + i].checkOccupied() == false)
+                addMove(m_board[rank * 8 + i]);
+            else if (m_board[rank * 8 + i].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[rank * 8 + i]);
+                addMove(m_board[rank * 8 + i]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // up right
         {
-            if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank + i < 8 && this->board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            if (file + i < 8 && rank + i < 8 && m_board[(rank + i) * 8 + (file + i)].checkOccupied() == false)
+                addMove(m_board[(rank + i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank + i < 8 && 
+                     m_board[(rank + i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + i) * 8 + (file + i)]);
+                addMove(m_board[(rank + i) * 8 + (file + i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // up left
         {
-            if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank + i < 8 && this->board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            if (file - i > -1 && rank + i < 8 && m_board[(rank + i) * 8 + (file - i)].checkOccupied() == false)
+                addMove(m_board[(rank + i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank + i < 8 && 
+                     m_board[(rank + i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank + i) * 8 + (file - i)]);
+                addMove(m_board[(rank + i) * 8 + (file - i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // down right
         {
-            if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
-            else if (file + i < 8 && rank - i > -1 && this->board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
+            if (file + i < 8 && rank - i > -1 && m_board[(rank - i) * 8 + (file + i)].checkOccupied() == false)
+                addMove(m_board[(rank - i) * 8 + (file + i)]);
+            else if (file + i < 8 && rank - i > -1 && 
+                     m_board[(rank - i) * 8 + (file + i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - i) * 8 + (file + i)]);
+                addMove(m_board[(rank - i) * 8 + (file + i)]);
                 break;
             }
             else break;
         }
         for (int i = 1; i < 8; i++) // down left
         {
-            if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].CheckOccupied() == false)
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
-            else if (file - i > -1 && rank - i > -1 && this->board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
+            if (file - i > -1 && rank - i > -1 && m_board[(rank - i) * 8 + (file - i)].checkOccupied() == false)
+                addMove(m_board[(rank - i) * 8 + (file - i)]);
+            else if (file - i > -1 && rank - i > -1 && 
+                     m_board[(rank - i) * 8 + (file - i)].getPiece().getColor() == oppositeColor)
             {
-                addMove(this->board[(rank - i) * 8 + (file - i)]);
+                addMove(m_board[(rank - i) * 8 + (file - i)]);
                 break;
             }
             else break;
@@ -1567,35 +1590,43 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
     }
     case KING:
     {
-        if (file + 1 < 8 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file + 1)]);
-        if (file + 1 < 8 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file + 1)]);
-        if (file - 1 > -1 && rank + 1 < 8 && this->board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + (file - 1)]);
-        if (file - 1 > -1 && rank - 1 > -1 && this->board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + (file - 1)]);
-        if (file + 1 < 8 && this->board[rank * 8 + (file + 1)].getPiece().getColor() != color)
-            addMove(this->board[rank * 8 + (file + 1)]);
-        if (file - 1 > -1 && this->board[rank * 8 + (file - 1)].getPiece().getColor() != color)
-            addMove(this->board[rank * 8 + (file - 1)]);
-        if (rank + 1 < 8 && this->board[(rank + 1) * 8 + file].getPiece().getColor() != color)
-            addMove(this->board[(rank + 1) * 8 + file]);
-        if (rank - 1 > -1 && this->board[(rank - 1) * 8 + file].getPiece().getColor() != color)
-            addMove(this->board[(rank - 1) * 8 + file]);
+        if (file + 1 < 8 && rank + 1 < 8 && m_board[(rank + 1) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 1) * 8 + (file + 1)]);
+        if (file + 1 < 8 && rank - 1 > -1 && m_board[(rank - 1) * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 1) * 8 + (file + 1)]);
+        if (file - 1 > -1 && rank + 1 < 8 && m_board[(rank + 1) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank + 1) * 8 + (file - 1)]);
+        if (file - 1 > -1 && rank - 1 > -1 && m_board[(rank - 1) * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(m_board[(rank - 1) * 8 + (file - 1)]);
+        if (file + 1 < 8 && m_board[rank * 8 + (file + 1)].getPiece().getColor() != color)
+            addMove(m_board[rank * 8 + (file + 1)]);
+        if (file - 1 > -1 && m_board[rank * 8 + (file - 1)].getPiece().getColor() != color)
+            addMove(m_board[rank * 8 + (file - 1)]);
+        if (rank + 1 < 8 && m_board[(rank + 1) * 8 + file].getPiece().getColor() != color)
+            addMove(m_board[(rank + 1) * 8 + file]);
+        if (rank - 1 > -1 && m_board[(rank - 1) * 8 + file].getPiece().getColor() != color)
+            addMove(m_board[(rank - 1) * 8 + file]);
 
         // short castle
-        if (color == WHITE && this->short_castle_white == true && this->board[0 * 8 + 5].CheckOccupied() == false && this->board[0 * 8 + 6].CheckOccupied() == false)
-            addMove(this->board[0 * 8 + 6]);
-        if (color == BLACK && this->short_castle_black == true && this->board[7 * 8 + 5].CheckOccupied() == false && this->board[7 * 8 + 6].CheckOccupied() == false)
-            addMove(this->board[7 * 8 + 6]);
+        if (color == WHITE && m_short_castle_white == true && 
+            m_board[0 * 8 + 5].checkOccupied() == false && 
+            m_board[0 * 8 + 6].checkOccupied() == false)
+            addMove(m_board[0 * 8 + 6]);
+        if (color == BLACK && m_short_castle_black == true && 
+            m_board[7 * 8 + 5].checkOccupied() == false && 
+            m_board[7 * 8 + 6].checkOccupied() == false)
+            addMove(m_board[7 * 8 + 6]);
         // long castle
-        if (color == WHITE && this->long_castle_white == true && this->board[0 * 8 + 1].CheckOccupied() == false &&
-            this->board[0 * 8 + 2].CheckOccupied() == false && this->board[0 * 8 + 3].CheckOccupied() == false)
-            addMove(this->board[0 * 8 + 2]);
-        if (color == BLACK && this->long_castle_black == true && this->board[7 * 8 + 1].CheckOccupied() == false &&
-            this->board[7 * 8 + 2].CheckOccupied() == false && this->board[7 * 8 + 3].CheckOccupied() == false)
-            addMove(this->board[7 * 8 + 2]);
+        if (color == WHITE && m_long_castle_white == true && 
+            m_board[0 * 8 + 1].checkOccupied() == false &&
+            m_board[0 * 8 + 2].checkOccupied() == false && 
+            m_board[0 * 8 + 3].checkOccupied() == false)
+            addMove(m_board[0 * 8 + 2]);
+        if (color == BLACK && m_long_castle_black == true && 
+            m_board[7 * 8 + 1].checkOccupied() == false &&
+            m_board[7 * 8 + 2].checkOccupied() == false && 
+            m_board[7 * 8 + 3].checkOccupied() == false)
+            addMove(m_board[7 * 8 + 2]);
         break;
     }
     }
@@ -1603,34 +1634,34 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
 }
 
 void Chessboard::computeInitialZobrist() {
-    this->current_zobrist_hash = 0;
+    m_current_zobrist_hash = 0;
 
     // 1. Placement des pièces
     for (int i = 0; i < 64; i++) {
-        const Piece& p = this->board[i].getPiece();
+        const Piece& p = m_board[i].getPiece();
         if (p.getType() != NONE) {
-            int piece_idx = getPieceZobristIndex(p);
-            this->current_zobrist_hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
+            int piece_idx = p.getZobristIndex();
+            m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
         }
     }
 
     // 2. Trait
-    if (this->turn == BLACK) {
-        this->current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
+    if (this->m_turn == BLACK) {
+        m_current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
     }
 
     // 3. Droits de roque (Encodage sur 4 bits de 0 à 15)
     int castling_idx = 0;
-    if (this->short_castle_white) castling_idx |= 1; // Bit 0
-    if (this->long_castle_white)  castling_idx |= 2; // Bit 1
-    if (this->short_castle_black) castling_idx |= 4; // Bit 2
-    if (this->long_castle_black)  castling_idx |= 8; // Bit 3
+    if (this->m_short_castle_white) castling_idx |= 1; // Bit 0
+    if (this->m_long_castle_white)  castling_idx |= 2; // Bit 1
+    if (this->m_short_castle_black) castling_idx |= 4; // Bit 2
+    if (this->m_long_castle_black)  castling_idx |= 8; // Bit 3
 
-    this->current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
+    m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
 
     // 4. Case en passant
-    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
-        this->current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    if (this->m_en_passant && this->m_en_passant_file >= 0 && this->m_en_passant_file < 8) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
     }
 }
 
@@ -1639,29 +1670,29 @@ uint64_t Chessboard::computeZobristFromScratch() const {
 
     // 1. Placement des pièces
     for (int i = 0; i < 64; i++) {
-        const Piece& p = this->board[i].getPiece();
+        const Piece& p = m_board[i].getPiece();
         if (p.getType() != NONE) {
-            int piece_idx = getPieceZobristIndex(p);
+            int piece_idx = p.getZobristIndex();
             hash ^= Zobrist::PIECE_KEYS[i][piece_idx];
         }
     }
 
     // 2. Trait
-    if (this->turn == BLACK) {
+    if (this->m_turn == BLACK) {
         hash ^= Zobrist::BLACK_TO_MOVE;
     }
 
     // 3. Droits de roque
     int castling_idx = 0;
-    if (this->short_castle_white) castling_idx |= 1;
-    if (this->long_castle_white)  castling_idx |= 2;
-    if (this->short_castle_black) castling_idx |= 4;
-    if (this->long_castle_black)  castling_idx |= 8;
+    if (this->m_short_castle_white) castling_idx |= 1;
+    if (this->m_long_castle_white)  castling_idx |= 2;
+    if (this->m_short_castle_black) castling_idx |= 4;
+    if (this->m_long_castle_black)  castling_idx |= 8;
     hash ^= Zobrist::CASTLING_KEYS[castling_idx];
 
     // 4. Case en passant
-    if (this->en_passant && this->en_passant_file >= 0 && this->en_passant_file < 8) {
-        hash ^= Zobrist::EN_PASSANT_KEYS[this->en_passant_file];
+    if (this->m_en_passant && this->m_en_passant_file >= 0 && this->m_en_passant_file < 8) {
+        hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
     }
 
     return hash;
