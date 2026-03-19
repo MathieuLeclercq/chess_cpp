@@ -1,6 +1,19 @@
+#include <array>
+#include <vector>
+#include <string>
+#include <memory>
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <utility>
+#include <cmath>
+#include <iostream>
+
 #include "chessboard.hpp"
+#include "piece.hpp"
+#include "square.hpp"
 #include "zobrist.hpp"
-#include <assert.h>
+#include "move.hpp"
 
 //...............Constructors...............
 

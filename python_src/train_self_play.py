@@ -217,7 +217,7 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
                 "train/epoch_value_loss": epoch_value_loss / num_batches,
                 "train/epoch": epoch + 1,
                 "train/global_step": global_step,
-            })
+            }, step=global_step)
             print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
 
     return global_step
@@ -260,7 +260,7 @@ def pipeline(
     start_iteration = 0
 
     if checkpoint_path:
-        checkpoint = torch.load(checkpoint_path, map_location=gpu_device)
+        checkpoint = torch.load(checkpoint_path, map_location=gpu_device, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scaler.load_state_dict(checkpoint["scaler_state_dict"])
@@ -297,7 +297,7 @@ def pipeline(
             "selfplay/new_positions": len(new_data),
             "selfplay/avg_game_length": avg_length,
             "selfplay/iteration": iteration + 1,
-        })
+        }, step=global_step)
 
         print(f"  Buffer: {len(replay_buffer)} positions")
 

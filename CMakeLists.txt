@@ -43,7 +43,7 @@ target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB})
 # ==========================================
 # 2. Exécutable de test (C++ pur)
 # ==========================================
-add_executable(chess_tests src/main.cpp "src/mcts.cpp")
+add_executable(chess_tests src/main.cpp)
 target_link_libraries(chess_tests PRIVATE chess_core)
 
 # ==========================================
