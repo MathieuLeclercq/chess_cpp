@@ -212,22 +212,8 @@ bool Chessboard::isInCheck() const
     int king_file = (color == WHITE) ? m_white_king_file : m_black_king_file;
     int king_rank = (color == WHITE) ? m_white_king_rank : m_black_king_rank;
 
-    // 2. Vérifier les menaces de Cavaliers
-    static constexpr int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, 
-                                                {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
-    for (int i = 0; i < 8; i++)
-    {
-        int r = king_rank + knight_moves[i][0];
-        int f = king_file + knight_moves[i][1];
-        if (r >= 0 && r < 8 && f >= 0 && f < 8)
-        {
-            const Piece& p = m_board[r * 8 + f].getPiece();
-            if (p.getType() == KNIGHT && p.getColor() == oppositeColor)
-                return true;
-        }
-    }
 
-    // 3. Vérifier les menaces de Pions
+    // 2. Vérifier les menaces de Pions
     int pawn_direction = (color == WHITE) ? 1 : -1;
     int pr = king_rank + pawn_direction;
     if (pr >= 0 && pr < 8)
@@ -241,6 +227,21 @@ bool Chessboard::isInCheck() const
         {
             const Piece& p = m_board[pr * 8 + (king_file + 1)].getPiece();
             if (p.getType() == PAWN && p.getColor() == oppositeColor) return true;
+        }
+    }
+
+    // 3. Vérifier les menaces de Cavaliers
+    static constexpr int knight_moves[8][2] = { {1, 2}, {2, 1}, {2, -1}, {1, -2}, 
+                                                {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2} };
+    for (int i = 0; i < 8; i++)
+    {
+        int r = king_rank + knight_moves[i][0];
+        int f = king_file + knight_moves[i][1];
+        if (r >= 0 && r < 8 && f >= 0 && f < 8)
+        {
+            const Piece& p = m_board[r * 8 + f].getPiece();
+            if (p.getType() == KNIGHT && p.getColor() == oppositeColor)
+                return true;
         }
     }
 
@@ -462,10 +463,11 @@ int Chessboard::encodeMove(const Move& move) const
     return plane * 64 + orig_r * 8 + orig_f;
 }
 
-std::vector<int> Chessboard::getLegalMoveIndices()
-{
-    std::vector<int> indices;
+std::vector<int> Chessboard::getLegalMoveIndices() {
     std::vector<Move> all_legal_moves = this->getAllLegalMoves();
+
+    std::vector<int> indices;
+    indices.reserve(all_legal_moves.size());
 
     for (const Move& move : all_legal_moves)
     {
@@ -762,10 +764,9 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     return true;
 }
 
-bool Chessboard::isMoveSafe(int orig_f, int orig_r, 
-                            int dest_f, int dest_r, 
-                            bool is_en_passant, bool is_king_move)
-{
+bool Chessboard::isMoveSafe(int orig_f, int orig_r,
+    int dest_f, int dest_r,
+    bool is_en_passant, bool is_king_move) {
     Square& orig_sq = m_board[orig_r * 8 + orig_f];
     Square& dest_sq = m_board[dest_r * 8 + dest_f];
 
@@ -782,10 +783,9 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r,
         m_board[ep_rank * 8 + ep_file].setPiece(Piece());
     }
 
-    if (orig_f != dest_f || orig_r != dest_r) {
-        dest_sq.setPiece(moving_piece);
-        orig_sq.setPiece(Piece());
-    }
+    // Application du coup
+    dest_sq.setPiece(moving_piece);
+    orig_sq.setPiece(Piece());
 
     int old_king_f = -1, old_king_r = -1;
     if (is_king_move) {
@@ -802,11 +802,9 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r,
     // 2. Vérification
     bool in_check = isInCheck();
 
-    // 3. Restauration (Undo)
-    if (orig_f != dest_f || orig_r != dest_r) {
-        orig_sq.setPiece(moving_piece);
-        dest_sq.setPiece(captured_piece);
-    }
+    // 3. Restauration
+    orig_sq.setPiece(moving_piece);
+    dest_sq.setPiece(captured_piece);
 
     if (is_en_passant) {
         m_board[ep_rank * 8 + ep_file].setPiece(ep_captured_piece);
