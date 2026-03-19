@@ -243,7 +243,7 @@ def pipeline(
         checkpoint_path=None,
         stockfish_path=None,
         stockfish_elo=2500,
-        stockfish_thinking_time=0.05
+        stockfish_nodes=35_000
 ):
     hyperparams = locals().copy()
 
@@ -337,7 +337,7 @@ def pipeline(
                 num_games=8,
                 mcts_sims=400,
                 sf_elo=stockfish_elo,
-                sf_time=stockfish_thinking_time
+                sf_nodes=stockfish_nodes
             )
 
             wandb.log({
@@ -376,8 +376,8 @@ if __name__ == "__main__":
             eval_stockfish_every=4,
             checkpoint_path="checkpoints/2026_03_17_15h08_iter34_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
-            stockfish_elo=2500,
-            stockfish_thinking_time=0.05
+            stockfish_elo=2200,
+            stockfish_nodes=200_000
         )
     except KeyboardInterrupt:
         print("\n[Interruption] Entraînement stoppé manuellement.")

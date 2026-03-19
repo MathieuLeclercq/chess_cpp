@@ -22,8 +22,6 @@ class StockfishPlayer:
 
         # On demande à Stockfish de jouer (limite en temps ou en noeuds)
         result = self.engine.play(internal_board, chess.engine.Limit(time=0.5))
-
-        # On récupère le coup au format UCI (ex: "e2e4")
         return result.move.uci()
 
     def __del__(self):
@@ -35,7 +33,7 @@ class StockfishPlayer:
 
 
 def evaluate_against_anchor(onnx_path, stockfish_path, num_games=10, mcts_sims=100, sf_elo=2500,
-                            sf_time=0.05):
+                            sf_nodes=200_000):
     print(f"  Évaluation contre Stockfish {sf_elo} Elo ({num_games} parties, {mcts_sims} sims)...")
     wins, draws, losses = 0, 0, 0
 
@@ -66,11 +64,10 @@ def evaluate_against_anchor(onnx_path, stockfish_path, num_games=10, mcts_sims=1
                 f_o, r_o, f_d, r_d, p = decode_move_index(board, best_idx, is_black)
                 move_uci = coords_to_uci(f_o, r_o, f_d, r_d, p)
             else:
-                # Bypass de get_move pour imposer un temps très court spécifiquement pour l'éval
                 internal_board = chess.Board()
                 for u in uci_moves:
                     internal_board.push_uci(u)
-                result = sf.engine.play(internal_board, chess.engine.Limit(time=sf_time))
+                result = sf.engine.play(internal_board, chess.engine.Limit(nodes=sf_nodes))
                 move_uci = result.move.uci()
                 f_o, r_o, f_d, r_d, p = parse_uci_to_coords(move_uci)
 
