@@ -83,9 +83,12 @@ class Chessboard
 
         std::vector<int> getLegalMoveIndices();
         std::vector<float> getAlphaZeroTensor() const;
-        std::vector<Move> getNaiveLegalMoves(int file, int rank) const;
         std::vector<Move> getAllLegalMoves();
-        std::vector<Move> getLegalMovesForSquare(int file, int rank);
+        void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
+            std::vector<Move>& pseudo_buffer,
+            int filter_dest_file = -1, int filter_dest_rank = -1);
+        void getNaiveLegalMoves(int file, int rank, std::vector<Move>& pseudo_buffer) const;
+
         std::vector<Move>& getMoveHistory();
         const std::vector<Move>& getMoveHistory() const;
         std::vector<std::array<Square, 64>>& getBoardHistory();
@@ -95,9 +98,6 @@ class Chessboard
         void print() const;
         void print(std::array<Square, 64> some_board) const;
         void printPly() const;
-        void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
-                                    int filter_dest_file = -1, int filter_dest_rank = -1);
-
         bool checkThreefoldRepetition() const;
         bool isInCheck() const;
         bool hasAnyLegalMove();

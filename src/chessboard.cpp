@@ -302,31 +302,27 @@ bool Chessboard::isInCheck() const
     return false;
 }
 
-std::vector<Move> Chessboard::getLegalMovesForSquare(int file, int rank)
-{
-    std::vector<Move> result;
-    getLegalMovesForSquare(file, rank, result);
-    return result;
-}
+void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
+    std::vector<Move>& pseudo_buffer,
+    int filter_dest_file, int filter_dest_rank) {
 
-void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& result, 
-                                        int filter_dest_file, int filter_dest_rank)
-{
-    std::vector<Move> pseudo_moves = getNaiveLegalMoves(file, rank);
+    pseudo_buffer.clear(); // O(1), remet la taille à 0 mais garde la capacité (capacity)
+
+    // Remplissage du buffer par la fonction naïve, sans nouvelle allocation
+    getNaiveLegalMoves(file, rank, pseudo_buffer);
+
     PieceType p_type = m_board[rank * 8 + file].getPiece().getType();
     bool is_king_move = (p_type == KING);
     bool is_pawn = (p_type == PAWN);
 
-    for (const Move& move : pseudo_moves)
-    {
+    for (const Move& move : pseudo_buffer) {
         int dest_file = move.getDestSquare().getFile();
         int dest_rank = move.getDestSquare().getRank();
 
         if (filter_dest_file != -1 && (dest_file != filter_dest_file || dest_rank != filter_dest_rank))
             continue;
 
-        if (is_king_move && std::abs(file - dest_file) == 2)
-        {
+        if (is_king_move && std::abs(file - dest_file) == 2) {
             if (!isCastlePossible(file, rank, dest_file, dest_rank))
                 continue;
         }
@@ -334,50 +330,55 @@ void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& r
         bool is_en_passant = (is_pawn && std::abs(file - dest_file) == 1 &&
             m_board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
-        if (isMoveSafe(file, rank, dest_file, dest_rank, is_en_passant, is_king_move))
-        {
+        if (isMoveSafe(file, rank, dest_file, dest_rank, is_en_passant, is_king_move)) {
             result.push_back(move);
         }
     }
 }
 
-std::vector<Move> Chessboard::getAllLegalMoves()
-{
+std::vector<Move> Chessboard::getAllLegalMoves() {
     std::vector<Move> result;
-    for (int i = 0; i < 8; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
+    result.reserve(100); // pré-allocation de 100 coups possibles
+
+    std::vector<Move> pseudo_buffer;
+    // Une Dame au centre d'un plateau vide a 27 coups pseudo-légaux. 
+    pseudo_buffer.reserve(27);
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
             if (m_board[j * 8 + i].getPiece().getColor() != m_turn)
                 continue;
-            std::vector<Move> moves = getLegalMovesForSquare(i, j);
-            result.insert(result.end(), moves.begin(), moves.end());
+
+            // On fait descendre les deux vecteurs pré-alloués
+            getLegalMovesForSquare(i, j, result, pseudo_buffer);
         }
     }
     return result;
 }
 
-bool Chessboard::hasAnyLegalMove()
-{
-    for (int i = 0; i < 8; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
+
+bool Chessboard::hasAnyLegalMove() {
+    // Buffer de travail unique pour toute la fonction
+    std::vector<Move> pseudo_buffer;
+    pseudo_buffer.reserve(27);
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
             if (m_board[j * 8 + i].getPiece().getColor() != m_turn)
                 continue;
 
-            std::vector<Move> pseudo_moves = this->getNaiveLegalMoves(i, j);
+            pseudo_buffer.clear();
+            this->getNaiveLegalMoves(i, j, pseudo_buffer);
+
             PieceType p_type = m_board[j * 8 + i].getPiece().getType();
             bool is_king_move = (p_type == KING);
             bool is_pawn = (p_type == PAWN);
 
-            for (const Move& move : pseudo_moves)
-            {
+            for (const Move& move : pseudo_buffer) {
                 int dest_file = move.getDestSquare().getFile();
                 int dest_rank = move.getDestSquare().getRank();
 
-                if (is_king_move && std::abs(i - dest_file) == 2)
-                {
+                if (is_king_move && std::abs(i - dest_file) == 2) {
                     if (!this->isCastlePossible(i, j, dest_file, dest_rank))
                         continue;
                 }
@@ -385,8 +386,7 @@ bool Chessboard::hasAnyLegalMove()
                 bool is_en_passant = (is_pawn && std::abs(i - dest_file) == 1 &&
                     m_board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
-                if (this->isMoveSafe(i, j, dest_file, dest_rank, is_en_passant, is_king_move))
-                {
+                if (this->isMoveSafe(i, j, dest_file, dest_rank, is_en_passant, is_king_move)) {
                     return true;  // early exit : un seul coup légal suffit
                 }
             }
@@ -800,7 +800,7 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r,
     }
 
     // 2. Vérification
-    bool in_check = this->isInCheck();
+    bool in_check = isInCheck();
 
     // 3. Restauration (Undo)
     if (orig_f != dest_f || orig_r != dest_r) {
@@ -878,13 +878,16 @@ bool Chessboard::movePiece(int orig_file, int orig_rank,
     Square& first_square = m_board[orig_rank * 8 + orig_file];
     Square& second_square = m_board[rank * 8 + file];
 
-    if (first_square.getPiece().getColor() != this->m_turn)
+    if (first_square.getPiece().getColor() != m_turn)
     {
         return false;
     }
 
     std::vector<Move> valid_moves;
-    this->getLegalMovesForSquare(orig_file, orig_rank, valid_moves, file, rank);
+    std::vector<Move> pseudo_buffer;
+    pseudo_buffer.reserve(27); // 27 coups légaux max pour 1 pièce
+    valid_moves.reserve(100);  // sauf cas extremement rare : 100 coups légaux largement assez
+    getLegalMovesForSquare(orig_file, orig_rank, valid_moves, pseudo_buffer, file, rank);
 
     Move attempted_move(first_square, second_square, promotion);
     if (std::find(valid_moves.begin(), valid_moves.end(), attempted_move) == valid_moves.end())
@@ -1111,6 +1114,12 @@ bool Chessboard::movePieceSAN(std::string san)
     int final_orig_rank = -1;
     int match_count = 0;
 
+    // Déclaration des buffers extérieurs aux boucles
+    std::vector<Move> pseudo_buffer;
+    pseudo_buffer.reserve(27);
+    std::vector<Move> moves;
+    moves.reserve(100);
+
     for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
@@ -1121,8 +1130,12 @@ bool Chessboard::movePieceSAN(std::string san)
             if (orig_file_hint != -1 && i != orig_file_hint) continue;
             if (orig_rank_hint != -1 && j != orig_rank_hint) continue;
 
-            std::vector<Move> moves;
-            this->getLegalMovesForSquare(i, j, moves, dest_file, dest_rank);
+            // On vide les vecteurs pour les réutiliser proprement
+            moves.clear();
+
+            // On fait descendre les deux vecteurs par référence
+            this->getLegalMovesForSquare(i, j, moves, pseudo_buffer, dest_file, dest_rank);
+
             for (const Move& m : moves)
             {
                 if (m.getDestSquare().getFile() != dest_file || m.getDestSquare().getRank() != dest_rank)
@@ -1290,7 +1303,7 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
 }
 
 
-std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
+void Chessboard::getNaiveLegalMoves(int file, int rank, std::vector<Move>& pseudo_buffer) const
 {
     // pour une case, retourne la liste des cases de déplacement dispos.
     // C'est un check naïf : il ne repère pas les clouages.
@@ -1305,18 +1318,16 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
 
     // Fonction lambda pour gérer automatiquement les sous-promotions
     auto addMove = [&](const Square& target_square) {
-        if (type == PAWN && (target_square.getRank() == 0 || target_square.getRank() == 7))
-        {
-            legalMoves.push_back(Move(orig_square, target_square, QUEEN));
-            legalMoves.push_back(Move(orig_square, target_square, ROOK));
-            legalMoves.push_back(Move(orig_square, target_square, BISHOP));
-            legalMoves.push_back(Move(orig_square, target_square, KNIGHT));
+        if (type == PAWN && (target_square.getRank() == 0 || target_square.getRank() == 7)) {
+            pseudo_buffer.emplace_back(orig_square, target_square, QUEEN);
+            pseudo_buffer.emplace_back(orig_square, target_square, ROOK);
+            pseudo_buffer.emplace_back(orig_square, target_square, BISHOP);
+            pseudo_buffer.emplace_back(orig_square, target_square, KNIGHT);
         }
-        else
-        {
-            legalMoves.push_back(Move(orig_square, target_square, NONE));
+        else {
+            pseudo_buffer.emplace_back(orig_square, target_square, NONE);
         }
-        };
+    };
 
     switch (type)
     {
@@ -1630,7 +1641,6 @@ std::vector<Move> Chessboard::getNaiveLegalMoves(int file, int rank) const
         break;
     }
     }
-    return legalMoves;
 }
 
 void Chessboard::computeInitialZobrist() {
