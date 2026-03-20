@@ -13,8 +13,8 @@ from datetime import datetime
 from tqdm import tqdm
 
 import chess_engine
-from lib import (decode_move_index, move_to_san, load_model, save_buffer, load_buffer,
-                 export_model_to_onnx, chose_move_idx)
+from lib import (decode_move_index, move_to_san, save_buffer, load_buffer,
+                 export_model_to_onnx, chose_move_idx, calculate_performance_rating)
 from stockfish_player import evaluate_against_anchor
 
 from model import ChessNet
@@ -340,8 +340,16 @@ def pipeline(
                 sf_nodes=stockfish_nodes
             )
 
+            estim_elo = calculate_performance_rating(
+                stockfish_elo,
+                eval_wins,
+                eval_draws,
+                eval_losses
+            )
+
             wandb.log({
                 "eval/winrate": eval_winrate,
+                "eval/elo_estim": estim_elo,
                 "eval/wins": eval_wins,
                 "eval/draws": eval_draws,
                 "eval/losses": eval_losses,

@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 import warnings
 import hashlib
@@ -511,3 +512,24 @@ def coords_to_uci(orig_f, orig_r, dest_f, dest_r, promotion):
         move_uci += mapping.get(promotion, '')
 
     return move_uci
+
+
+def calculate_performance_rating(sf_elo, wins, draws, losses):
+    total_games = wins + draws + losses
+    if total_games == 0:
+        return sf_elo
+
+    # Calcul du score réel (1 pour win, 0.5 pour draw)
+    score = wins + 0.5 * draws
+    percentage = score / total_games
+
+    # Correction pour éviter log(0) ou division par zéro sur de petits échantillons
+    # On cape le pourcentage entre un demi-point de défaite et un demi-point de victoire
+    percentage = max(0.5 / total_games, min((total_games - 0.5) / total_games, percentage))
+
+    # Formule Elo inverse
+    elo_diff = 400 * math.log10(percentage / (1 - percentage))
+
+    return int(sf_elo + elo_diff)
+
+
