@@ -374,7 +374,7 @@ if __name__ == "__main__":
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_03_17_15h08_iter34_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_03_18_18h27_iter74_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

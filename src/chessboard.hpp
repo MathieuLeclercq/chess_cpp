@@ -82,7 +82,7 @@ class Chessboard
         const Square& getSquare(int file, int rank) const;
 
         std::vector<int> getLegalMoveIndices();
-        std::vector<float> getAlphaZeroTensor() const;
+        void getAlphaZeroTensor(std::vector<float>& tensor) const;
         std::vector<Move> getAllLegalMoves();
         void getLegalMovesForSquare(int file, int rank, std::vector<Move>& result,
             std::vector<Move>& pseudo_buffer,

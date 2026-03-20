@@ -82,28 +82,29 @@ PYBIND11_MODULE(chess_engine, m) {
         .def_property_readonly("turn", &Chessboard::getTurn)
         .def_property_readonly("game_state", &Chessboard::getGameState)
         .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock)
-        .def("get_alphazero_tensor", [](const Chessboard& cb) {
-        std::vector<float> tensor = cb.getAlphaZeroTensor();
+        .def("get_alphazero_tensor", [](const Chessboard& cb) 
+            {
+                std::vector<float> tensor;
+                cb.getAlphaZeroTensor(tensor);
+                py::array_t<float> result({ 119, 8, 8 });
+                std::memcpy(result.mutable_data(), tensor.data(), tensor.size() * sizeof(float));
 
-        // On crée l'objet NumPy et on copie explicitement les données
-        py::array_t<float> result({ 119, 8, 8 });
-        std::memcpy(result.mutable_data(), tensor.data(), tensor.size() * sizeof(float));
-
-        return result;
+                return result;
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
         .def("get_board_history", static_cast<const std::vector<std::array<Square, 64>>&(Chessboard::*)() const>(&Chessboard::getBoardHistory))
-        .def("get_last_move_data", [](const Chessboard& cb) {
-        if (cb.getMoveHistory().empty()) return py::make_tuple(-1, -1, -1, -1, NONE);
-        const Move& last_move = cb.getMoveHistory().back();
-        return py::make_tuple(
-            last_move.getOrigSquare().getFile(),
-            last_move.getOrigSquare().getRank(),
-            last_move.getDestSquare().getFile(),
-            last_move.getDestSquare().getRank(),
-            last_move.getPromotion()
-        );
+        .def("get_last_move_data", [](const Chessboard& cb) 
+            {
+                if (cb.getMoveHistory().empty()) return py::make_tuple(-1, -1, -1, -1, NONE);
+                const Move& last_move = cb.getMoveHistory().back();
+                return py::make_tuple(
+                    last_move.getOrigSquare().getFile(),
+                    last_move.getOrigSquare().getRank(),
+                    last_move.getDestSquare().getFile(),
+                    last_move.getDestSquare().getRank(),
+                    last_move.getPromotion()
+                );
             });
 
     py::class_<MCTS>(m, "MCTS")

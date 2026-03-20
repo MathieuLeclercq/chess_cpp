@@ -1193,10 +1193,10 @@ void Chessboard::undoMove()
     this->m_turn = (this->m_turn == WHITE) ? BLACK : WHITE;
 }
 
-std::vector<float> Chessboard::getAlphaZeroTensor() const
+void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
 {
-    // Allocation d'un vecteur plat de 7616 valeurs (119 plans * 8 rangées * 8 colonnes), initialisé à 0
-    std::vector<float> tensor(119 * 64, 0.0f);
+    // Écrase les anciennes données avec des zéros sans faire de nouvelle allocation
+    tensor.assign(119 * 64, 0.0f);
 
     Color p1_color = this->m_turn;
     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
@@ -1296,8 +1296,6 @@ std::vector<float> Chessboard::getAlphaZeroTensor() const
         tensor[constant_offset + 5 * 64 + i] = p2_castle_q;
         tensor[constant_offset + 6 * 64 + i] = no_progress_val;
     }
-
-    return tensor;
 }
 
 

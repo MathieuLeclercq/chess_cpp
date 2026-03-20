@@ -1,6 +1,6 @@
 #include "mcts.hpp"
 #include <algorithm>
-#include <numeric>
+#include <cmath>
 #include <stdexcept>
 
 MCTS::MCTS(const std::string& model_path)
@@ -13,6 +13,10 @@ MCTS::MCTS(const std::string& model_path)
     // Support string conversion for Windows wide strings
     std::wstring w_model_path(model_path.begin(), model_path.end());
     session = std::make_unique<Ort::Session>(env, w_model_path.c_str(), session_options);
+
+    // Pré-allocation des buffers de travail
+    m_eval_tensor.reserve(119 * 64);
+    m_eval_policy.reserve(4672);
 }
 
 void MCTS::backup(MCTSNode* node, float value) {
@@ -34,11 +38,15 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         int best_idx = -1;
 
         float parent_q = node->q_value();
+
+        // OPTIM : sqrt est calculée 1 seule fois pour les N enfants
+        float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
+
         for (const auto& pair : node->children) {
             int idx = pair.first;
             MCTSNode* child = pair.second.get();
 
-            float score = child->ucb_score(node->visit_count, parent_q, c_puct);
+            float score = child->ucb_score(exploration_factor, parent_q);
             if (score > max_ucb) {
                 max_ucb = score;
                 best_idx = idx;
@@ -60,42 +68,47 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 }
 
 void MCTS::evaluate_onnx(const std::vector<float>& input_tensor, std::vector<float>& policy, float& value) {
-    std::array<int64_t, 4> input_shape = { 1, 119, 8, 8 };
-    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    // Initialisations statiques (Zéro overhead après le 1er appel)
+    static const std::array<int64_t, 4> input_shape = { 1, 119, 8, 8 };
+    static const char* input_names[] = { "input" };
+    static const char* output_names[] = { "policy", "value" };
+    static auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
     Ort::Value input_ort = Ort::Value::CreateTensor<float>(
         memory_info, const_cast<float*>(input_tensor.data()), input_tensor.size(),
         input_shape.data(), input_shape.size()
     );
 
-    const char* input_names[] = { "input" };
-    const char* output_names[] = { "policy", "value" };
-
     auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, input_names, &input_ort, 1, output_names, 2);
 
-    float* policy_data = output_tensors[0].GetTensorMutableData<float>();
-    float* value_data = output_tensors[1].GetTensorMutableData<float>();
-
-    policy.assign(policy_data, policy_data + 4672);
-
-    // Application du Softmax manuel sur les logits de la Policy
-    float max_logit = *std::max_element(policy.begin(), policy.end());
-    float sum_exp = 0.0f;
-    for (float& l : policy) {
-        l = std::exp(l - max_logit);
-        sum_exp += l;
-    }
-    for (float& l : policy) {
-        l /= sum_exp;
-    }
+    // GetTensorData retourne un const float*, on évite de le rendre mutable
+    const float* policy_data = output_tensors[0].GetTensorData<float>();
+    const float* value_data = output_tensors[1].GetTensorData<float>();
 
     value = value_data[0];
+    policy.resize(4672);
+
+    // Fusion de la copie et du Softmax
+    float max_logit = *std::max_element(policy_data, policy_data + 4672);
+    float sum_exp = 0.0f;
+
+    for (int i = 0; i < 4672; ++i) {
+        float e = std::exp(policy_data[i] - max_logit);
+        policy[i] = e; // On écrit directement à la bonne place
+        sum_exp += e;
+    }
+
+    // Optimisation mathématique : Multiplication au lieu de Division
+    float inv_sum = 1.0f / sum_exp;
+    for (int i = 0; i < 4672; ++i) {
+        policy[i] *= inv_sum;
+    }
 }
 
 float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
-
-    // --- DÉTECTION  DES NULLES  ---
+    // 1. DÉTECTION DES NULLES (Dépendantes de l'historique)
+    // À faire absolument AVANT la table de transposition.
     if (board.checkThreefoldRepetition() ||
         board.getHalfMoveClock() >= 100 ||
         board.checkInsufficientMaterial()) {
@@ -104,50 +117,70 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
         return 0.0f; // Score d'égalité stricte
     }
 
-    // --- DÉTECTION MAT / PAT
+    uint64_t hash = board.getZobristHash();
+
+    // 2. TABLE DE TRANSPOSITION (Lookup immédiat)
+    auto it = transposition_table.find(hash);
+    if (it != transposition_table.end()) {
+
+        // --- CACHE HIT ---
+        // On récupère par RÉFÉRENCE constante pour éviter une grosse copie de vecteur
+        const std::vector<std::pair<int, float>>& legal_policy = it->second.legal_policy;
+        float value = it->second.value;
+
+        // Création des enfants directement depuis les données en cache
+        // On contourne totalement getLegalMoveIndices() et evaluate_onnx() !
+        float sum_legal = 0.0f;
+        for (const auto& pair : legal_policy) {
+            sum_legal += pair.second;
+        }
+
+        if (sum_legal > 0.0f) {
+            for (const auto& pair : legal_policy) {
+                node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
+            }
+        }
+        else {
+            // Fallback obligatoire si sum_legal == 0.0f
+            float uniform_prob = 1.0f / legal_policy.size();
+            for (const auto& pair : legal_policy) {
+                node->children[pair.first] = std::make_unique<MCTSNode>(uniform_prob, pair.first, node);
+            }
+        }
+        return value;
+    }
+
+    // 3. CACHE MISS : On doit faire le travail C++ lourd
+
+    // Détection Mat / Pat (Purement lié à la position)
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
         node->is_terminal = true;
         return board.isInCheck() ? -1.0f : 0.0f;
     }
 
-    // --- GÉNÉRATION DU TENSEUR ET APPEL ONNX ---
-    std::vector<float> tensor = board.getAlphaZeroTensor();
-    uint64_t hash = board.getZobristHash();
+    // Génération du tenseur et inférence ONNX
+    board.getAlphaZeroTensor(m_eval_tensor);
 
     float value;
+    evaluate_onnx(m_eval_tensor, m_eval_policy, value);
+
+    // 4. EXTRACTION ET STOCKAGE
     std::vector<std::pair<int, float>> legal_policy;
+    legal_policy.reserve(legal_indices.size());
 
-    // --- TABLE DE TRANSPOSITION ---
-    auto it = transposition_table.find(hash);
-    if (it != transposition_table.end()) {
-        legal_policy = it->second.legal_policy;
-        value = it->second.value;
-    }
-    else {
-        std::vector<float> full_policy;
-        evaluate_onnx(tensor, full_policy, value);
-
-        // Extraction stricte des coups légaux pour le stockage
-        legal_policy.reserve(legal_indices.size());
-        for (int idx : legal_indices) {
-            legal_policy.push_back({ idx, full_policy[idx] });
-        }
-
-        if (transposition_table.size() > 1000000) {
-            transposition_table.clear();
-        }
-
-        transposition_table[hash] = { legal_policy, value };
-    }
-
-    // Calcul de la somme pour la normalisation à partir du vecteur compact
     float sum_legal = 0.0f;
-    for (const auto& pair : legal_policy) {
-        sum_legal += pair.second;
+    for (int idx : legal_indices) {
+        legal_policy.push_back({ idx, m_eval_policy[idx] });
+        sum_legal += m_eval_policy[idx];
     }
 
-    // Instanciation des enfants
+    if (transposition_table.size() > 1000000) {
+        transposition_table.clear();
+    }
+    transposition_table[hash] = { legal_policy, value };
+
+    // 5. INSTANCIATION DES ENFANTS
     if (sum_legal > 0.0f) {
         for (const auto& pair : legal_policy) {
             int idx = pair.first;

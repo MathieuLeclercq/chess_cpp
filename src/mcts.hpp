@@ -32,12 +32,11 @@ struct MCTSNode {
         return total_value / visit_count;
     }
 
-
-    float ucb_score(int parent_visits, float parent_q, float c_puct = 1.4f) const {
+    float ucb_score(float exploration_factor, float parent_q) const {
         // Implémentation du FPU de LeelaChess0
-        // Si noed pas visité, on ne met pas sa Q value à 0,
+        // Si noeud pas visité, on ne met pas sa Q value à 0,
         // mais on utilise cette du parent.
-        float u = c_puct * prior * std::sqrt(static_cast<float>(parent_visits)) / (1.0f + visit_count);
+        float u = exploration_factor * prior / (1.0f + visit_count);
         float exploitation = (visit_count == 0) ? parent_q : -q_value();
 
         return exploitation + u;
@@ -58,6 +57,8 @@ private:
     Ort::AllocatorWithDefaultOptions allocator;
     std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
 
+    std::vector<float> m_eval_tensor;
+    std::vector<float> m_eval_policy;
 
 public:
     MCTS(const std::string& model_path);
