@@ -21,7 +21,7 @@ from lib import (move_to_san, print_pgn, decode_move_index, chose_move_idx)
 # ============================================================
 
 HUMAN_COLOR = chess_engine.Color.WHITE
-CHECKPOINT_PATH = "checkpoints/2026_03_17_15h08_iter34_unsupervised.onnx"
+CHECKPOINT_PATH = "checkpoints/2026_03_20_13h54_iter97_unsupervised.onnx"
 
 MCTS_PARAMS = {
     "num_sim": 1200,

@@ -20,7 +20,7 @@ SIMULATIONS_EVAL = 1000
 GAMES_PER_PAIR = 2
 WHR_STATE_FILE = "tournament_data/tournament_state.whr"
 STATS_FILE = "tournament_data/tournament_stats.json"
-MODE = "default"  # Options : "default", "all", ou "x-y"
+MODE = "2-6"  # Options : "default", "all", ou "x-y"
 
 
 def play_game(model_white, model_black, sims):
@@ -192,7 +192,7 @@ def run_tournament():
     all_hashes = list(hash_to_filename.keys())
 
     # 3. Identification des nouveaux venus par rapport au WHR
-    known_hashes = [p.name for p in whr.players.values()]
+    known_hashes = [p.name for p in whr.players.values() if len(p.days) > 0]
     sf_player = whr.players.get(SF_HASH)
     sf_needs_games = sf_player is None or len(sf_player.days) == 0
     new_hashes = [h for h in all_hashes if h not in known_hashes]
