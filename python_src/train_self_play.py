@@ -5,6 +5,7 @@ warnings.filterwarnings("ignore", module="requests")
 import wandb
 import torch
 import numpy as np
+from collections import deque
 import torch.nn.functional as F
 import torch.multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader, RandomSampler
@@ -167,17 +168,18 @@ def generate_games(onnx_path, num_games, num_simulations, fast_sims, num_workers
 # ============================================================
 #                     TRAINING
 # ============================================================
-def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
+def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_rate,
                     epochs=10, batch_size=256, global_step=0, samples_per_epoch=15000):
     model.train()
-    dataset = SelfPlayDataset(replay_buffer)
+    dataset = SelfPlayDataset(list(replay_buffer))
 
     # Sécurité : on prend 15000, ou la taille du buffer s'il est plus petit au début
     num_samples = min(len(dataset), samples_per_epoch)
     sampler = RandomSampler(dataset, replacement=True, num_samples=num_samples)
 
     # On passe le sampler au DataLoader (shuffle doit être retiré quand on utilise un sampler)
-    loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
+    loader = DataLoader(dataset, batch_size=batch_size,
+                        sampler=sampler, num_workers=0, pin_memory=True)
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -217,6 +219,7 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer,
                 "train/epoch_value_loss": epoch_value_loss / num_batches,
                 "train/epoch": epoch + 1,
                 "train/global_step": global_step,
+                "train/learning_rate": learning_rate,
             }, step=global_step)
             print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
 
@@ -253,7 +256,7 @@ def pipeline(
     assert os.path.isfile(stockfish_path)
 
     model = ChessNet(num_res_blocks=num_res_blocks, num_filters=num_filters).to(gpu_device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scaler = GradScaler("cuda", enabled=True)
 
     global_step = 0
@@ -263,6 +266,8 @@ def pipeline(
         checkpoint = torch.load(checkpoint_path, map_location=gpu_device, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
         scaler.load_state_dict(checkpoint["scaler_state_dict"])
         start_iteration = checkpoint.get("iteration", 0)
         global_step = checkpoint.get("global_step", 0)
@@ -271,7 +276,7 @@ def pipeline(
     wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
     buffer_filepath = "checkpoints/replay_buffer.npz"
-    replay_buffer = load_buffer(buffer_filepath)
+    replay_buffer = deque(load_buffer(buffer_filepath), maxlen=max_buffer_size)
 
     init_onnx_filename = f"{timestamp}_iter0_unsupervised"
     print("  Exportation et quantification du modèle vers ONNX...")
@@ -289,16 +294,6 @@ def pipeline(
         )
 
         replay_buffer.extend(new_data)
-        if len(replay_buffer) > max_buffer_size:
-            replay_buffer = replay_buffer[-max_buffer_size:]
-
-        wandb.log({
-            "selfplay/buffer_size": len(replay_buffer),
-            "selfplay/new_positions": len(new_data),
-            "selfplay/avg_game_length": avg_length,
-            "selfplay/iteration": iteration + 1,
-        }, step=global_step)
-
         print(f"  Buffer: {len(replay_buffer)} positions")
 
         # ── 2. Phase Training (GPU) ──
@@ -306,12 +301,19 @@ def pipeline(
 
         if current_batch_size > 0:
             global_step = train_on_buffer(
-                model, optimizer, scaler, gpu_device, replay_buffer,
+                model, optimizer, scaler, gpu_device, replay_buffer, learning_rate,
                 epochs=train_epochs, batch_size=current_batch_size, global_step=global_step,
                 samples_per_epoch=samples_per_epoch
             )
         else:
             print("  Pas assez de données pour entraîner.")
+
+        wandb.log({
+            "selfplay/buffer_size": len(replay_buffer),
+            "selfplay/new_positions": len(new_data),
+            "selfplay/avg_game_length": avg_length,
+            "selfplay/iteration": iteration + 1,
+        }, step=global_step)
 
         # ── 3. Sauvegarde ──
         ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
@@ -327,7 +329,7 @@ def pipeline(
         print("  Exportation et quantification du modèle vers ONNX...")
         onnx_path = f"checkpoints/{ckpt_filename}.onnx"
         export_model_to_onnx(model, onnx_path, gpu_device)
-        save_buffer(replay_buffer, buffer_filepath)
+        save_buffer(list(replay_buffer), buffer_filepath)
 
         # ── 4. Évaluation Rapide ──
         if (iteration + 1) % eval_stockfish_every == 0:
@@ -354,8 +356,7 @@ def pipeline(
                 "eval/draws": eval_draws,
                 "eval/losses": eval_losses,
                 "eval/iteration": iteration + 1,
-                "eval/global_step": global_step,
-            })
+            }, step=global_step)
         else:
             print(f"  Évaluation ignorée.")
 
@@ -378,7 +379,7 @@ if __name__ == "__main__":
             fast_sims=100,
             train_epochs=1,
             batch_size=1024,
-            learning_rate=3e-5,
+            learning_rate=2e-5,
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
