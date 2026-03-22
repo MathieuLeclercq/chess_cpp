@@ -17,10 +17,10 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 1000
-GAMES_PER_PAIR = 2
+GAMES_PER_PAIR = 6
 WHR_STATE_FILE = "tournament_data/tournament_state.whr"
 STATS_FILE = "tournament_data/tournament_stats.json"
-MODE = "2-6"  # Options : "default", "all", ou "x-y"
+MODE = "endless"  # Options : "default", "all", "x-y", ou "endless"
 
 
 def play_game(model_white, model_black, sims):
@@ -206,22 +206,31 @@ def run_tournament():
 
     # --- LOGIQUE DE SELECTION DES MATCHS ---
     pairs_to_play = []
+    is_endless = False
+
+    if MODE == "endless":
+        if len(all_hashes) < 2:
+            print("\nErreur : Pas assez de bots pour lancer un tournoi endless.")
+            return
+        print(f"\nMode 'endless' activé : Tournoi infini entre les {len(all_hashes)} bots (y compris l'ancre Stockfish).")
+        # itertools.cycle répète la séquence de combinaisons indéfiniment
+        pairs_to_play = itertools.cycle(itertools.combinations(all_hashes, 2))
+        is_endless = True
 
     # PRIORITÉ 1 : Si l'ancre doit jouer pour calibrer le tournoi
-    if sf_needs_games and ranked_existing_hashes:
+    elif sf_needs_games and ranked_existing_hashes:
         print(f" Calibration requise : Match contre l'ancre {SF_HASH}")
         champion_hash = ranked_existing_hashes[0][0]
         pairs_to_play.append((SF_HASH, champion_hash))
 
     elif MODE == "all":
         print(f"\nMode 'all' activé : Tournoi complet entre les {len(all_hashes)} bots.")
-        # Génère toutes les paires uniques possibles
         pairs_to_play = list(itertools.combinations(all_hashes, 2))
 
     elif "-" in str(MODE):
         try:
             rank1, rank2 = map(int, str(MODE).split('-'))
-            idx1, idx2 = rank1 - 1, rank2 - 1  # Conversion en index 0-based
+            idx1, idx2 = rank1 - 1, rank2 - 1
 
             if max(idx1, idx2) >= len(ranked_existing_hashes):
                 print(
@@ -263,23 +272,28 @@ def run_tournament():
             pairs_to_play.append((p1_h, p2_h))
 
     # --- EXECUTION DES MATCHS ---
-    total_matches = len(pairs_to_play)
+    total_matches = 0 if is_endless else len(pairs_to_play)
 
     try:
         for i, (h1, h2) in enumerate(pairs_to_play):
             play_match(h1, h2, hash_to_filename, whr, stats)
 
-            # Calcul du reste
-            matches_left = total_matches - (i + 1)
-            games_left = matches_left * GAMES_PER_PAIR
-
-            if matches_left > 0:
+            if is_endless:
                 print(f"\n" + "-" * 50)
-                print(f"[PROGRESSION] Match {i + 1}/{total_matches} terminé.")
-                print(
-                    f"[PROGRESSION] Il reste {matches_left} match(s) "
-                    f"soit environ {games_left} partie(s).")
+                print(f"[PROGRESSION] Match {i + 1} terminé (Mode Endless).")
                 print("-" * 50 + "\n")
+            else:
+                # Calcul du reste (uniquement hors mode endless)
+                matches_left = total_matches - (i + 1)
+                games_left = matches_left * GAMES_PER_PAIR
+
+                if matches_left > 0:
+                    print(f"\n" + "-" * 50)
+                    print(f"[PROGRESSION] Match {i + 1}/{total_matches} terminé.")
+                    print(
+                        f"[PROGRESSION] Il reste {matches_left} match(s) "
+                        f"soit environ {games_left} partie(s).")
+                    print("-" * 50 + "\n")
     except KeyboardInterrupt:
         print("\n[Tournoi] Arrêt demandé par l'utilisateur. Sauvegarde effectuée.")
 
