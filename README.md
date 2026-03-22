@@ -2,11 +2,25 @@
 
 A complete Chess ecosystem built from scratch, featuring a high-performance C++ move-generation engine and a Reinforcement Learning pipeline based on the AlphaZero architecture.
 
+![Interface graphique AlphaChess-Zero](docs/screenshots/gui.png)
+
 ## 🚀 Overview
 
 The goal of this project was to implement a deep learning-based chess entity on a single laptop. To overcome hardware limitations, the project follows a two-stage learning process:
 1. **Supervised Learning (SL):** Initializing the policy and value networks using a dataset of Grandmaster games.
 2. **Reinforcement Learning (RL):** Improving the model through self-play using Monte Carlo Tree Search (MCTS).
+
+![Évolution du classement Elo des bots](docs/screenshots/bot_elo.png)
+
+## 🆚 Differences from the Original AlphaZero
+
+While the core architecture heavily relies on DeepMind's 2017 paper, several adaptations were made to allow efficient training on a consumer-grade laptop (RTX 3070):
+
+- **Supervised Initialization:** Instead of starting from purely random weights (Zero-knowledge), the Policy and Value networks were pre-trained on a dataset of Grandmaster and high-level Lichess games. This massively accelerates the initial grasp of chess fundamentals.
+- **Optimizer:** The original implementation used SGD with Momentum and manual step decay. This project uses **AdamW**, which provides decoupled weight decay and faster, more stable convergence for this scale.
+- **Compute-Aware Self-Play (Fast/Slow Moves):** To maximize hardware efficiency, self-play games mix "fast" moves (100 MCTS simulations) and "slow" moves (700 simulations). This generates more terminal game states to train the Value head faster, while maintaining enough deep MCTS searches to provide high-quality targets for the Policy head.
+- **First Play Urgency (FPU):** In DeepMind's paper, unvisited MCTS nodes are initialized with a Q-value of 0. In this engine, inheriting LeelaChessZero's approach, unvisited nodes inherit their parent's value. This reduces catastrophic blunders during early exploration.
+- **Network Size & Pipeline:** The ResNet is scaled down (10 blocks, 128 filters vs 20 blocks, 256 filters) to fit local VRAM constraints. The training loop is synchronous (Self-Play -> Train -> Evaluate) rather than fully asynchronous across thousands of TPUs.
 
 ## 🛠 Core Features
 
@@ -36,14 +50,14 @@ Unlike many Python-based RL projects, this engine is built in **C++17** for maxi
 - `pgn_parser.cpp/hpp`: High-speed PGN/SAN string processing.
 - `bindings.cpp`: Pybind11 bridge definitions.
 - `piece.cpp`, `square.cpp`, `move.cpp`: Atomic chess entities.
+- `mcts.cpp`: Logic for the tree search.
 
 ### Python Source (`/python_src`)
-- `mcts.py`: Logic for the tree search.
 - `model.py`: PyTorch implementation of the ResNet.
 - `train_supervised.py`: Script for the initial imitation learning phase.
 - `train_self_play.py`: The RL loop (multi-processed on CPU for game generation, GPU for training).
 - `evaluate_elo.py`: Tournament manager using the WHR algorithm.
-- `play_alphazero_bot.py`: Visual GUI for human-vs-bot matches.
+- `play_against_bot.py`: Visual GUI for human-vs-bot matches.
 - `lib.py`: Common utilities for move decoding and model loading.
 
 ## 📈 Performance & Technical Notes
@@ -77,3 +91,10 @@ This will generate the chess_engine shared library in the python_src folder.
 - Run Tournament: python python_src/evaluate_elo.py
 
 - Play against Bot: python python_src/play_alphazero_bot.py
+
+## 🔮 Future Work & Roadmap
+
+- **Build System Portability:** Refactoring the `CMakeLists.txt` to decouple it from local, hardcoded Conda environments. The goal is to use standard CMake `FindPython` modules to ensure seamless C++ compilation and Python 3.11/Pybind11 integration across any machine or operating system.
+- **Asynchronous Batched MCTS:** Transitioning from synchronous single-state MCTS evaluations to asynchronous batched searches. This will allow the C++ engine to group multiple leaf node evaluations and send a single, large tensor to the GPU, massively increasing the self-play generation throughput.
+- **Transformer Architecture:** Exploring Attention mechanisms to replace or augment the current ResNet topology, following recent architectural shifts in modern engines like Leela Chess Zero.
+- **Lichess Bot Integration:** Connecting the engine to the Lichess.org API to play against human opponents in real-time and gather diverse, out-of-distribution evaluation metrics.
