@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(Chess)
-
+cmake_policy(SET CMP0135 NEW)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -9,8 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ==========================================
 set(ONNXRUNTIME_VERSION "1.24.3")
 set(ONNXRUNTIME_URL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-win-x64-${ONNXRUNTIME_VERSION}.zip")
-
 include(FetchContent)
+
 FetchContent_Declare(
   onnxruntime
   URL ${ONNXRUNTIME_URL}
@@ -37,6 +37,7 @@ add_library(chess_core STATIC
 
 # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
+
 # On lie la librairie ONNX Runtime
 target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB})
 
@@ -49,8 +50,10 @@ target_link_libraries(chess_tests PRIVATE chess_core)
 # ==========================================
 # 3. Configuration Python & Pybind11
 # ==========================================
-set(PYTHON_EXECUTABLE "C:/Users/M47h1/.conda/envs/xrayto3d_311/python.exe" CACHE FILEPATH "Chemin vers Python Conda" FORCE)
-set(PYBIND11_PYTHON_VERSION "3.11" CACHE STRING "Version Python pour pybind11" FORCE)
+find_package(Python3 3.11 COMPONENTS Interpreter Development REQUIRED)
+
+# Transmet dynamiquement la version trouvée à Pybind11
+set(PYBIND11_PYTHON_VERSION ${Python3_VERSION} CACHE STRING "Version Python pour pybind11" FORCE)
 
 FetchContent_Declare(
   pybind11
@@ -65,16 +68,16 @@ FetchContent_MakeAvailable(pybind11)
 pybind11_add_module(chess_engine src/bindings.cpp)
 target_link_libraries(chess_engine PRIVATE chess_core)
 
-# Post-build : Génération des stubs ET copie de la DLL ONNX
+# Génération des stubs ET copie de la DLL ONNX
 add_custom_command(TARGET chess_engine POST_BUILD
     # Copie de la DLL nécessaire à l'exécution
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_DLL}
         ${CMAKE_SOURCE_DIR}/python_src/onnxruntime.dll
         
-    # Génération des stubs (.pyi)
+    # Génération des stubs (.pyi) en utilisant l'exécutable Python trouvé dynamiquement
     COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${CMAKE_SOURCE_DIR}/python_src" 
-            ${PYTHON_EXECUTABLE} -m pybind11_stubgen chess_engine 
+            ${Python3_EXECUTABLE} -m pybind11_stubgen chess_engine 
             --enum-class-locations "PieceType:chess_engine"
             --output-dir "${CMAKE_SOURCE_DIR}/python_src"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/python_src"

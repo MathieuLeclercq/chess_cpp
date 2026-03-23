@@ -67,34 +67,60 @@ Unlike many Python-based RL projects, this engine is built in **C++17** for maxi
 
 ## 🛠 Installation & Build
 
-### Prerequisites
-- CMake (>= 3.14)
-- C++17 Compiler
-- Python 3.11+
-- PyTorch & CUDA
+### 1. Prerequisites
+- **Windows** (Tested on W11)
+- **CMake** (>= 3.14)
+- **C++17 Compiler** (I personally used MSVC)
+- **Python 3.11**
+- **CUDA Toolkit** (I used CUDA 12.1)
 
-### Build the C++ Engine
+### 2. Python Dependencies
+Install the required packages:
+```bash
+pip install -r python_src/requirements.txt
+```
+
+### 3. Build the C++ Engine
+
+The build system automatically downloads ONNX Runtime and Pybind11.
 ```bash
 mkdir build
 cd build
 cmake ..
 cmake --build . --config Release
 ```
-
 This will generate the chess_engine shared library in the python_src folder.
 
+#### Local Configuration (IDE): 
+If you have multiple Python environments,
+create a ```CMakeUserPresets.json``` at the root to point to your specific interpreter:
+``` 
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "local-env",
+      "displayName": "Local Environment Override",
+      "cacheVariables": {
+        "Python3_EXECUTABLE": "C:/path/to/your/python.exe"
+      }
+    }
+  ]
+}
+```
+
+
 ### 🎮 Usage
-- Train Supervised: python python_src/train_supervised.py
+- Train Supervised: ```python python_src/train_supervised.py```
 
-- Start Self-Play: python python_src/train_self_play.py
+- Self-Play (RL): ```python python_src/train_self_play.py```
 
-- Run Tournament: python python_src/tournament_elo.py
+- Run Tournament: ```python python_src/tournament_elo.py```
 
-- Play against Bot: python python_src/play_against_bot.py
+- Play against Bot: ```python python_src/play_against_bot.py```
 
 ## 🔮 Future Work & Roadmap
 
-- **Build System Portability:** Refactoring the `CMakeLists.txt` to decouple it from local, hardcoded Conda environments. The goal is to use standard CMake `FindPython` modules to ensure seamless C++ compilation and Python 3.11/Pybind11 integration across any machine or operating system.
 - **Asynchronous Batched MCTS:** Transitioning from synchronous single-state MCTS evaluations to asynchronous batched searches. This will allow the C++ engine to group multiple leaf node evaluations and send a single, large tensor to the GPU, massively increasing the self-play generation throughput.
 - **Transformer Architecture:** Exploring Attention mechanisms to replace or augment the current ResNet topology, following recent architectural shifts in modern engines like Leela Chess Zero.
 - **Lichess Bot Integration:** Connecting the engine to the Lichess.org API to play against human opponents in real-time and gather diverse, out-of-distribution evaluation metrics.
