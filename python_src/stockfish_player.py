@@ -21,7 +21,7 @@ class StockfishPlayer:
             internal_board.push_uci(move_uci)
 
         # On demande à Stockfish de jouer (limite en temps ou en noeuds)
-        result = self.engine.play(internal_board, chess.engine.Limit(time=0.5))
+        result = self.engine.play(internal_board, chess.engine.Limit(nodes=325_000))
         return result.move.uci()
 
     def __del__(self):
