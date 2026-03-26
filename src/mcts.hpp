@@ -5,43 +5,22 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
-#include <cmath>
-#include <random>
+#include <utility>
 #include <cstdint>
-#include <cstring>
 
 struct MCTSNode {
     int visit_count;
     int move_idx;
     bool is_terminal;
-
     float prior;
     float total_value;
 
     MCTSNode* parent;
     std::unordered_map<int, std::unique_ptr<MCTSNode>> children;
 
-
-    MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr)
-        : prior(prior), move_idx(move_idx), parent(parent),
-        visit_count(0), total_value(0.0f), is_terminal(false) {
-    }
-
-    float q_value() const {
-        if (visit_count == 0) return 0.0f;
-        return total_value / visit_count;
-    }
-
-    float ucb_score(float exploration_factor, float parent_q) const {
-        // Implémentation du FPU de LeelaChess0
-        // Si noeud pas visité, on ne met pas sa Q value à 0,
-        // mais on utilise celle du parent.
-        float u = exploration_factor * prior / (1.0f + visit_count);
-        // FPU_reduction = 0.1f
-        float exploitation = (visit_count == 0) ? (parent_q - 0.25f) : -q_value();
-
-        return exploitation + u;
-    }
+    MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr);
+    float q_value() const;
+    float ucb_score(float exploration_factor, float parent_q) const;
 };
 
 

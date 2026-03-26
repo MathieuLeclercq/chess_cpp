@@ -3,6 +3,37 @@
 #include <cmath>
 #include <stdexcept>
 
+
+// ============================================================
+//                     MCTSNode
+// ============================================================
+
+MCTSNode::MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr)
+    : prior(prior), move_idx(move_idx), parent(parent),
+    visit_count(0), total_value(0.0f), is_terminal(false) {
+}
+
+float MCTSNode::ucb_score(float exploration_factor, float parent_q) const {
+    // Implémentation du FPU de LeelaChess0
+    // Si noeud pas visité, on ne met pas sa Q value à 0,
+    // mais on utilise celle du parent.
+    float u = exploration_factor * prior / (1.0f + visit_count);
+    // FPU_reduction = 0.1f
+    float exploitation = (visit_count == 0) ? (parent_q - 0.25f) : -q_value();
+
+    return exploitation + u;
+}
+
+float MCTSNode::q_value() const {
+    if (visit_count == 0) return 0.0f;
+    return total_value / visit_count;
+}
+
+
+// ============================================================
+//                     MCTS
+// ============================================================
+
 MCTS::MCTS(const std::string& model_path)
     : env(ORT_LOGGING_LEVEL_WARNING, "AlphaZeroMCTS")
 {
