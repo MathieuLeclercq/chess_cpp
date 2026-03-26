@@ -246,7 +246,7 @@ def pipeline(
         checkpoint_path=None,
         stockfish_path=None,
         stockfish_elo=2500,
-        stockfish_nodes=35_000
+        stockfish_nodes=200_000
 ):
     hyperparams = locals().copy()
 
@@ -336,10 +336,11 @@ def pipeline(
             eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
                 onnx_path=onnx_path,
                 stockfish_path=stockfish_path,
-                num_games=8,
+                num_games=16,
                 mcts_sims=400,
                 sf_elo=stockfish_elo,
-                sf_nodes=stockfish_nodes
+                sf_nodes=stockfish_nodes,
+                num_workers=8
             )
 
             estim_elo = calculate_performance_rating(
@@ -383,7 +384,7 @@ if __name__ == "__main__":
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_03_20_13h54_iter104_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_03_25_01h36_iter174_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

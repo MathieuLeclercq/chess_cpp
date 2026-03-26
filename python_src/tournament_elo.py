@@ -20,11 +20,11 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 1000
-GAMES_PER_PAIR = 6
+GAMES_PER_PAIR = 8
 MAX_WORKERS = 8  # Nombre de parties en parallèle
 WHR_STATE_FILE = "tournament_data/tournament_state.whr"
 STATS_FILE = "tournament_data/tournament_stats.json"
-MODE = "endless"  # Options : "default", "all", "x-y", ou "endless"
+MODE = "default"  # Options : "default", "all", "x-y", ou "endless"
 STOCKFISH_ANCHOR_ELO = 2100
 
 
@@ -283,6 +283,8 @@ def run_tournament():
 
     tasks = generate_game_tasks(pairs_to_play, hash_to_filename)
     games_completed = 0
+    match_scores = {}
+    match_games_count = {}
 
     print(f"\nLancement de {MAX_WORKERS} processus workers en parallèle...")
 
@@ -295,21 +297,42 @@ def run_tournament():
                 # Formatage et affichage du PGN
                 print(format_pgn(white_p, black_p, winner, moves))
 
+                # On utilise un tuple trié pour avoir une clé unique peu importe qui a les Blancs
+                pair_key = tuple(sorted([white_h, black_h]))
+                if pair_key not in match_scores:
+                    match_scores[pair_key] = {white_h: 0.0, black_h: 0.0}
+                    match_games_count[pair_key] = 0
+
                 # Mise à jour stricte des statistiques
                 stats[white_h] = stats.get(white_h, 0) + 1
                 stats[black_h] = stats.get(black_h, 0) + 1
 
                 if winner == "draw":
+                    match_scores[pair_key][white_h] += 0.5
+                    match_scores[pair_key][black_h] += 0.5
                     whr.create_game(black_h, white_h, "B", 0, 0)
                     whr.create_game(black_h, white_h, "W", 0, 0)
                 else:
+                    winner_h = white_h if winner == "white" else black_h
+                    match_scores[pair_key][winner_h] += 1.0
                     outcome = "W" if winner == "white" else "B"
                     whr.create_game(black_h, white_h, outcome, 0, 0)
 
+                match_games_count[pair_key] += 1
                 games_completed += 1
-                # print(
-                #     f"[PROGRESSION] Partie {games_completed} terminée : "
-                #     f"{white_p} (Blancs) vs {black_p} (Noirs) -> {winner}\n")
+
+                # --- 3. AFFICHAGE SI LE MATCH EST TERMINÉ ---
+                if match_games_count[pair_key] == GAMES_PER_PAIR:
+
+                    if MODE not in ["endless", "all"]:
+                        score_w = match_scores[pair_key][white_h]
+                        score_b = match_scores[pair_key][black_h]
+                        print(
+                            f"\n>>>> FIN DU MATCH : {white_p} ({score_w}) - {black_p} ({score_b})\n")
+
+                    # Nettoyage de la RAM (indispensable pour le mode endless)
+                    del match_scores[pair_key]
+                    del match_games_count[pair_key]
 
                 # Sauvegarde périodique pour ne pas perdre les données en cas de crash
                 if games_completed % GAMES_PER_PAIR == 0:
