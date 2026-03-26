@@ -35,9 +35,10 @@ struct MCTSNode {
     float ucb_score(float exploration_factor, float parent_q) const {
         // Implémentation du FPU de LeelaChess0
         // Si noeud pas visité, on ne met pas sa Q value à 0,
-        // mais on utilise cette du parent.
+        // mais on utilise celle du parent.
         float u = exploration_factor * prior / (1.0f + visit_count);
-        float exploitation = (visit_count == 0) ? parent_q : -q_value();
+        // FPU_reduction = 0.1f
+        float exploitation = (visit_count == 0) ? (parent_q - 0.25f) : -q_value();
 
         return exploitation + u;
     }
