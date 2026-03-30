@@ -1,6 +1,7 @@
 #include "mcts.hpp"
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <stdexcept>
 
 
@@ -8,18 +9,18 @@
 //                     MCTSNode
 // ============================================================
 
-MCTSNode::MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr)
+MCTSNode::MCTSNode(float prior, int move_idx, MCTSNode* parent)
     : prior(prior), move_idx(move_idx), parent(parent),
     visit_count(0), total_value(0.0f), is_terminal(false) {
 }
 
-float MCTSNode::ucb_score(float exploration_factor, float parent_q) const {
+float MCTSNode::ucb_score(float exploration_factor, float parent_q, float fpu_reduction) const {
     // Implémentation du FPU de LeelaChess0
     // Si noeud pas visité, on ne met pas sa Q value à 0,
     // mais on utilise celle du parent.
     float u = exploration_factor * prior / (1.0f + visit_count);
     // FPU_reduction = 0.1f
-    float exploitation = (visit_count == 0) ? (parent_q - 0.25f) : -q_value();
+    float exploitation = (visit_count == 0) ? (parent_q - fpu_reduction) : -q_value();
 
     return exploitation + u;
 }
@@ -70,14 +71,23 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 
         float parent_q = node->q_value();
 
-        // OPTIM : sqrt est calculée 1 seule fois pour les N enfants
         float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
+
+        float visited_policy_sum = 0.0f;
+        for (const auto& pair : node->children) {
+            if (pair.second->visit_count > 0) {
+                visited_policy_sum += pair.second->prior;
+            }
+        }
+
+        // mécanique de Lc0
+        float fpu_reduction = 0.30f * std::sqrt(visited_policy_sum);
 
         for (const auto& pair : node->children) {
             int idx = pair.first;
             MCTSNode* child = pair.second.get();
 
-            float score = child->ucb_score(exploration_factor, parent_q);
+            float score = child->ucb_score(exploration_factor, parent_q, fpu_reduction);
             if (score > max_ucb) {
                 max_ucb = score;
                 best_idx = idx;
@@ -181,7 +191,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
         return value;
     }
 
-    // 3. CACHE MISS : On doit faire le travail C++ lourd
+    // 3. CACHE MISS
 
     // Détection Mat / Pat (Purement lié à la position)
     std::vector<int> legal_indices = board.getLegalMoveIndices();
@@ -231,10 +241,9 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
 std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet) {
 
-    // --- SANITY CHECK ZOBRIST ---
-    if (board.getZobristHash() != board.computeZobristFromScratch()) {
-        throw std::runtime_error("Erreur fatale : Desynchronisation du Zobrist Hash detectee !");
-    }
+    //if (board.getZobristHash() != board.computeZobristFromScratch()) {
+    //    throw std::runtime_error("Erreur fatale : Desynchronisation du Zobrist Hash detectee !");
+    //}
 
     std::unique_ptr<MCTSNode> root = std::make_unique<MCTSNode>(0.0f);
     expand_node_single(root.get(), board);

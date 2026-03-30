@@ -20,7 +20,7 @@ struct MCTSNode {
 
     MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr);
     float q_value() const;
-    float ucb_score(float exploration_factor, float parent_q) const;
+    float ucb_score(float exploration_factor, float parent_q, float fpu_reduction) const;
 };
 
 
