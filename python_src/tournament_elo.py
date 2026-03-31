@@ -20,7 +20,7 @@ STOCKFISH_PATH = r"D:\logiciels\stockfish\stockfish.exe"
 # ============================================================
 CHECKPOINT_DIR = "checkpoints"
 SIMULATIONS_EVAL = 1000
-GAMES_PER_PAIR = 8
+GAMES_PER_PAIR = 16
 MAX_WORKERS = 8  # Nombre de parties en parallèle
 WHR_STATE_FILE = "tournament_data/tournament_state.whr"
 STATS_FILE = "tournament_data/tournament_stats.json"

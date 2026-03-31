@@ -6,7 +6,7 @@ import wandb
 import torch
 import numpy as np
 from collections import deque
-import torch.nn.functional as F
+import torch.nn.functional as f
 import torch.multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torch.amp import GradScaler
@@ -19,6 +19,8 @@ from lib import (decode_move_index, move_to_san, save_buffer, load_buffer,
 from stockfish_player import evaluate_against_anchor
 
 from model import ChessNet
+
+global_mcts_engine: chess_engine.MCTS | None = None
 
 
 # ============================================================
@@ -103,13 +105,27 @@ def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0
     return dataset, move_num, board.game_state
 
 
+def init_worker(onnx_path):
+    """
+    S'exécute une seule fois par processus lors de sa création.
+    Charge le modèle ONNX et alloue la mémoire de manière persistante.
+    """
+    global global_mcts_engine
+    global_mcts_engine = chess_engine.MCTS(onnx_path)
+
+
 def worker_self_play(args):
-    onnx_path, num_simulations, fast_sims, max_moves = args
+    """
+    Utilise le moteur persistant en mémoire globale au lieu de le recréer.
+    """
+    num_simulations, fast_sims, max_moves = args
 
-    mcts_engine = chess_engine.MCTS(onnx_path)
-    game_data, move_count, state = self_play_game(mcts_engine, num_simulations, fast_sims=fast_sims,
-                                                  max_moves=max_moves)
-
+    game_data, move_count, state = self_play_game(
+        global_mcts_engine,
+        num_simulations=num_simulations,
+        fast_sims=fast_sims,
+        max_moves=max_moves
+    )
     return game_data, move_count, state
 
 
@@ -122,12 +138,11 @@ def generate_games(onnx_path, num_games, num_simulations, fast_sims, num_workers
         "DRAW_50_MOVES": 0, "DRAW_INSUFF_MATERIAL": 0, "ONGOING": 0
     }
 
-    # Injection de fast_sims dans les arguments
-    args_list = [(onnx_path, num_simulations, fast_sims, 200) for _ in range(num_games)]
+    args_list = [(num_simulations, fast_sims, 200) for _ in range(num_games)]
 
     print(f"Lancement de {num_games} parties sur {num_workers} processus (MCTS C++ / ONNX)...")
 
-    with mp.Pool(processes=num_workers) as pool:
+    with mp.Pool(processes=num_workers, initializer=init_worker, initargs=(onnx_path,)) as pool:
         for game_data, move_count, state in tqdm(pool.imap_unordered(worker_self_play, args_list),
                                                  total=num_games,
                                                  desc="Génération du Self-Play"):
@@ -173,11 +188,8 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_ra
     model.train()
     dataset = SelfPlayDataset(list(replay_buffer))
 
-    # Sécurité : on prend 15000, ou la taille du buffer s'il est plus petit au début
     num_samples = min(len(dataset), samples_per_epoch)
     sampler = RandomSampler(dataset, replacement=True, num_samples=num_samples)
-
-    # On passe le sampler au DataLoader (shuffle doit être retiré quand on utilise un sampler)
     loader = DataLoader(dataset, batch_size=batch_size,
                         sampler=sampler, num_workers=0, pin_memory=True)
 
@@ -196,9 +208,9 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_ra
 
             with torch.autocast(device_type="cuda", enabled=(device.type == "cuda")):
                 p_logits, v_pred = model(x)
-                log_probs = F.log_softmax(p_logits, dim=1)
+                log_probs = f.log_softmax(p_logits, dim=1)
                 policy_loss = -torch.sum(target_pi * log_probs, dim=1).mean()
-                value_loss = F.mse_loss(v_pred.view(-1), y_value)
+                value_loss = f.mse_loss(v_pred.view(-1), y_value)
                 loss = policy_loss + value_loss
 
             scaler.scale(loss).backward()
@@ -246,7 +258,8 @@ def pipeline(
         checkpoint_path=None,
         stockfish_path=None,
         stockfish_elo=2500,
-        stockfish_nodes=200_000
+        stockfish_nodes=200_000,
+        num_sim_eval_sf=700
 ):
     hyperparams = locals().copy()
 
@@ -306,7 +319,7 @@ def pipeline(
                 samples_per_epoch=samples_per_epoch
             )
         else:
-            print("  Pas assez de données pour entraîner.")
+            print("Pas assez de données pour entraîner.")
 
         wandb.log({
             "selfplay/buffer_size": len(replay_buffer),
@@ -337,7 +350,7 @@ def pipeline(
                 onnx_path=onnx_path,
                 stockfish_path=stockfish_path,
                 num_games=16,
-                mcts_sims=400,
+                mcts_sims=num_sim_eval_sf,
                 sf_elo=stockfish_elo,
                 sf_nodes=stockfish_nodes,
                 num_workers=8
@@ -380,11 +393,11 @@ if __name__ == "__main__":
             fast_sims=100,
             train_epochs=1,
             batch_size=1024,
-            learning_rate=2e-5,
+            learning_rate=1e-5,
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_03_26_02h56_iter202_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_03_30_23h30_iter272_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000
