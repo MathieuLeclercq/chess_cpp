@@ -3,6 +3,8 @@ import os
 import chess.engine
 import numpy as np
 import multiprocessing as mp
+from datetime import datetime
+
 import chess_engine
 from lib import chose_move_idx, decode_move_index, parse_uci_to_coords, coords_to_uci, move_to_san
 
@@ -87,38 +89,64 @@ def eval_worker(args):
     if board.game_state == chess_engine.GameState.CHECKMATE:
         winner_is_white = (board.turn == chess_engine.Color.BLACK)
         if winner_is_white == is_mcts_white:
-            return "win"
+            result_str = "win"
+            pgn_result = "1-0" if is_mcts_white else "0-1"
         else:
-            return "loss"
+            result_str = "loss"
+            pgn_result = "0-1" if is_mcts_white else "1-0"
     else:
-        return "draw"
+        result_str = "draw"
+        pgn_result = "1/2-1/2"
+
+    # Construction du PGN
+    white_name = "AlphaZero" if is_mcts_white else f"Stockfish {sf_elo}"
+    black_name = f"Stockfish {sf_elo}" if is_mcts_white else "AlphaZero"
+
+    pgn = f'[Event "Evaluation AlphaZero"]\n'
+    pgn += f'[White "{white_name}"]\n'
+    pgn += f'[Black "{black_name}"]\n'
+    pgn += f'[Result "{pgn_result}"]\n\n'
+
+    for i, san in enumerate(san_moves):
+        if i % 2 == 0:
+            pgn += f"{i // 2 + 1}. "
+        pgn += f"{san} "
+
+    pgn += f" {pgn_result}\n"
+
+    return result_str, pgn
 
 
 def evaluate_against_anchor(onnx_path, stockfish_path, num_games=16, mcts_sims=100, sf_elo=2500,
                             sf_nodes=200_000, num_workers=8):
-    """
-    Lance un pool de workers pour évaluer le modèle en parallèle.
-    """
     print(f"  Évaluation contre Stockfish {sf_elo} Elo ({num_games} parties, {mcts_sims} sims)...")
     wins, draws, losses = 0, 0, 0
 
-    # Préparation des arguments pour chaque worker
     tasks = []
     for g in range(num_games):
-        is_mcts_white = (g % 2 == 0)  # Alternance stricte des couleurs
+        is_mcts_white = (g % 2 == 0)
         tasks.append((onnx_path, stockfish_path, mcts_sims, sf_elo, sf_nodes, is_mcts_white))
 
-    # Lancement du pool
+    # Création du dossier et du fichier PGN
+    os.makedirs("eval_pgns", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
+    pgn_filename = f"eval_pgns/eval_{timestamp}.pgn"
+
     with mp.Pool(processes=min(num_workers, num_games)) as pool:
-        for result in pool.imap_unordered(eval_worker, tasks):
-            if result == "win":
-                wins += 1
-            elif result == "loss":
-                losses += 1
-            else:
-                draws += 1
+        with open(pgn_filename, "w", encoding="utf-8") as f:
+            for result_str, pgn in pool.imap_unordered(eval_worker, tasks):
+
+                f.write(pgn + "\n\n")  # Écriture de la partie dans le fichier
+
+                if result_str == "win":
+                    wins += 1
+                elif result_str == "loss":
+                    losses += 1
+                else:
+                    draws += 1
 
     winrate = (wins + 0.5 * draws) / num_games
     print(f"  Résultat Éval : {wins} V | {draws} N | {losses} D (Score: {winrate * 100:.1f}%)")
+    print(f"  Parties sauvegardées dans : {pgn_filename}")
 
     return winrate, wins, draws, losses
