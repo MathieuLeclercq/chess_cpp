@@ -4,6 +4,7 @@
 #include <memory>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 #include <cstdint>
 #include <utility>
 #include <cmath>
@@ -201,7 +202,6 @@ GameState Chessboard::getGameState() const
     return m_current_state;
 }
 
-
 bool Chessboard::isInCheck() const
 {
     // On part du roi et on regarde si des pièces le menacent
@@ -369,7 +369,7 @@ bool Chessboard::hasAnyLegalMove() {
                 continue;
 
             pseudo_buffer.clear();
-            this->getNaiveLegalMoves(i, j, pseudo_buffer);
+            getNaiveLegalMoves(i, j, pseudo_buffer);
 
             PieceType p_type = m_board[j * 8 + i].getPiece().getType();
             bool is_king_move = (p_type == KING);
@@ -380,14 +380,14 @@ bool Chessboard::hasAnyLegalMove() {
                 int dest_rank = move.getDestSquare().getRank();
 
                 if (is_king_move && std::abs(i - dest_file) == 2) {
-                    if (!this->isCastlePossible(i, j, dest_file, dest_rank))
+                    if (!isCastlePossible(i, j, dest_file, dest_rank))
                         continue;
                 }
 
                 bool is_en_passant = (is_pawn && std::abs(i - dest_file) == 1 &&
                     m_board[dest_rank * 8 + dest_file].getPiece().getType() == NONE);
 
-                if (this->isMoveSafe(i, j, dest_file, dest_rank, is_en_passant, is_king_move)) {
+                if (isMoveSafe(i, j, dest_file, dest_rank, is_en_passant, is_king_move)) {
                     return true;  // early exit : un seul coup légal suffit
                 }
             }
@@ -403,7 +403,7 @@ int Chessboard::encodeMove(const Move& move) const
     int dest_f = move.getDestSquare().getFile();
     int dest_r = move.getDestSquare().getRank();
     PieceType promotion = move.getPromotion();
-    bool is_black = (this->m_turn == BLACK);
+    bool is_black = (m_turn == BLACK);
 
     if (is_black)
     {
@@ -464,14 +464,14 @@ int Chessboard::encodeMove(const Move& move) const
 }
 
 std::vector<int> Chessboard::getLegalMoveIndices() {
-    std::vector<Move> all_legal_moves = this->getAllLegalMoves();
+    std::vector<Move> all_legal_moves = getAllLegalMoves();
 
     std::vector<int> indices;
     indices.reserve(all_legal_moves.size());
 
     for (const Move& move : all_legal_moves)
     {
-        int idx = this->encodeMove(move);
+        int idx = encodeMove(move);
         if (idx != -1)
         {
             indices.push_back(idx);
@@ -482,54 +482,74 @@ std::vector<int> Chessboard::getLegalMoveIndices() {
 
 void Chessboard::checkEnPassant()
 {
-    Move lastMove = this->m_moveHistory.back();
+    Move lastMove = m_moveHistory.back();
     if (lastMove.getPiece().getType() == PAWN && 
         abs(lastMove.getDestSquare().getRank() - lastMove.getOrigSquare().getRank()) == 2)
     {
-        this->m_en_passant = true;
-        this->m_en_passant_file = lastMove.getDestSquare().getFile();
+        m_en_passant = true;
+        m_en_passant_file = lastMove.getDestSquare().getFile();
     }
     else
-        this->m_en_passant = false;
+        m_en_passant = false;
 }
 
 void Chessboard::printPly() const
 {
-    std::cout << "ply " << this->m_boardHistory.size() << "." << std::endl;
-    this->print();
-    std::string color_str = (this->m_turn == WHITE) ? "White" : "Black";
+    std::cout << "ply " << m_boardHistory.size() << "." << std::endl;
+    print();
+    std::string color_str = (m_turn == WHITE) ? "White" : "Black";
     std::cout << color_str << " to move" << "\n\n" << std::endl;
-    bool check = this->isInCheck();
+    bool check = isInCheck();
     //if (check)
     //    std::cout << "Check!" << std::endl;
 }
 
 //...............Setters...............
 
-void Chessboard::clear()
-{
+void Chessboard::clear() {
+    // 1. Réinitialisation du tableau de cases
     m_board = std::array<Square, 64>();
-    for (int i = 0; i < 8; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
             m_board[j * 8 + i].setPosition(i, j);
         }
     }
-    this->m_current_state = ONGOING;
-    this->m_half_move_clock = 0;
 
-    this->m_moveHistory.clear();
-    this->m_boardHistory.clear();
-    this->m_snapshotHistory.clear();
+    // 2. Réinitialisation des états de la partie
+    m_current_state = ONGOING;
+    m_turn = WHITE;
+    m_half_move_clock = 0;
+
+    // 3. Réinitialisation des positions des rois
+    m_white_king_file = -1;
+    m_white_king_rank = -1;
+    m_black_king_file = -1;
+    m_black_king_rank = -1;
+
+    // 4. Réinitialisation des drapeaux spéciaux
+    m_en_passant = false;
+    m_en_passant_file = -1;
+
+    m_short_castle_white = false;
+    m_long_castle_white = false;
+    m_short_castle_black = false;
+    m_long_castle_black = false;
+
+    // 5. Vidage des historiques
+    m_moveHistory.clear();
+    m_boardHistory.clear();
+    m_snapshotHistory.clear();
+
+    // 6. Réinitialisation du Hash
+    m_current_zobrist_hash = 0;
 }
 
 void Chessboard::setStartupPieces()
 {
-    this->m_white_king_file = 4;
-    this->m_white_king_rank = 0;
-    this->m_black_king_file = 4;
-    this->m_black_king_rank = 7;
+    m_white_king_file = 4;
+    m_white_king_rank = 0;
+    m_black_king_file = 4;
+    m_black_king_rank = 7;
 
     for (int i = 0; i < 8; i++) // i = file index
     {
@@ -599,7 +619,80 @@ void Chessboard::setStartupPieces()
             }
         }
     }
-    this->m_boardHistory.push_back(m_board);
+    m_boardHistory.push_back(m_board);
+    computeInitialZobrist();
+}
+void Chessboard::loadFEN(const std::string& fen) {
+    clear();
+
+    std::istringstream iss(fen);
+    std::string board_str, turn_str, castling_str, en_passant_str, half_move_str, full_move_str;
+    iss >> board_str >> turn_str >> castling_str >> en_passant_str >> half_move_str >> full_move_str;
+
+    // --- CHAMP 1 : Placement des pièces ---
+    int file = 0;
+    int rank = 7;
+
+    for (char c : board_str) {
+        if (c == '/') {
+            rank--;
+            file = 0;
+        }
+        else if (std::isdigit(c)) {
+            file += (c - '0');
+        }
+        else {
+            Color color = std::isupper(c) ? WHITE : BLACK;
+            PieceType type = NONE;
+            switch (std::tolower(c)) {
+            case 'p': type = PAWN; break;
+            case 'n': type = KNIGHT; break;
+            case 'b': type = BISHOP; break;
+            case 'r': type = ROOK; break;
+            case 'q': type = QUEEN; break;
+            case 'k': type = KING; break;
+            }
+            m_board[rank * 8 + file].setPiece(Piece(color, type));
+
+            if (type == KING) {
+                if (color == WHITE) {
+                    m_white_king_file = file;
+                    m_white_king_rank = rank;
+                }
+                else {
+                    m_black_king_file = file;
+                    m_black_king_rank = rank;
+                }
+            }
+            file++;
+        }
+    }
+
+    // --- CHAMP 2 : Le trait ---
+    m_turn = (turn_str == "w") ? WHITE : BLACK;
+
+    // --- CHAMP 3 : Droits de roque ---
+    if (castling_str != "-") {
+        for (char c : castling_str) {
+            if (c == 'K') m_short_castle_white = true;
+            if (c == 'Q') m_long_castle_white = true;
+            if (c == 'k') m_short_castle_black = true;
+            if (c == 'q') m_long_castle_black = true;
+        }
+    }
+
+    // --- CHAMP 4 : En passant ---
+    if (en_passant_str != "-") {
+        m_en_passant = true;
+        m_en_passant_file = en_passant_str[0] - 'a';
+    }
+
+    // --- CHAMP 5 : Règle des 50 coups ---
+    if (!half_move_str.empty()) {
+        m_half_move_clock = std::stoi(half_move_str);
+    }
+
+    m_boardHistory.push_back(m_board);
     computeInitialZobrist();
 }
 
@@ -652,22 +745,22 @@ void Chessboard::setKiwipete() {
     m_board[2 * 8 + 7].setPiece(Piece(BLACK, PAWN));   // h3
 
     // 4. Initialiser les métadonnées pour autoriser tous les roques
-    this->m_turn = WHITE;
-    this->m_short_castle_white = true;
-    this->m_long_castle_white = true;
-    this->m_short_castle_black = true;
-    this->m_long_castle_black = true;
-    this->m_en_passant = false;
-    this->m_half_move_clock = 0;
-    this->m_white_king_file = 4;
-    this->m_white_king_rank = 0;
-    this->m_black_king_file = 4;
-    this->m_black_king_rank = 7;
+    m_turn = WHITE;
+    m_short_castle_white = true;
+    m_long_castle_white = true;
+    m_short_castle_black = true;
+    m_long_castle_black = true;
+    m_en_passant = false;
+    m_half_move_clock = 0;
+    m_white_king_file = 4;
+    m_white_king_rank = 0;
+    m_black_king_file = 4;
+    m_black_king_rank = 7;
 
-    this->m_boardHistory.clear();
-    this->m_boardHistory.push_back(m_board);
-    this->m_moveHistory.clear();
-    this->m_snapshotHistory.clear();
+    m_boardHistory.clear();
+    m_boardHistory.push_back(m_board);
+    m_moveHistory.clear();
+    m_snapshotHistory.clear();
 
     // 5. Générer le hash initial
     computeInitialZobrist();
@@ -681,8 +774,8 @@ void Chessboard::setBoard(std::array<Square, 64> some_board)
 
 void Chessboard::updateHistory(const Move& move)
 {
-    this->m_moveHistory.push_back(move);
-    this->m_boardHistory.push_back(m_board);
+    m_moveHistory.push_back(move);
+    m_boardHistory.push_back(m_board);
 }
 
 void Chessboard::updateCastleFlags()
@@ -692,20 +785,20 @@ void Chessboard::updateCastleFlags()
     // tour a bougé
     // tour capturée (sans forcément avoir bougé avant)
 
-    Move lastMove = this->m_moveHistory.back();
+    Move lastMove = m_moveHistory.back();
 
     // 1. Perte des deux droits si le roi bouge
     if (lastMove.getPiece().getType() == KING)
     {
         if (lastMove.getPiece().getColor() == WHITE)
         {
-            this->m_short_castle_white = false;
-            this->m_long_castle_white = false;
+            m_short_castle_white = false;
+            m_long_castle_white = false;
         }
         else if (lastMove.getPiece().getColor() == BLACK)
         {
-            this->m_short_castle_black = false;
-            this->m_long_castle_black = false;
+            m_short_castle_black = false;
+            m_long_castle_black = false;
         }
     }
 
@@ -717,19 +810,19 @@ void Chessboard::updateCastleFlags()
 
     // Tour blanche a1 (Grand roque blanc)
     if ((orig_f == 0 && orig_r == 0) || (dest_f == 0 && dest_r == 0))
-        this->m_long_castle_white = false;
+        m_long_castle_white = false;
 
     // Tour blanche h1 (Petit roque blanc)
     if ((orig_f == 7 && orig_r == 0) || (dest_f == 7 && dest_r == 0))
-        this->m_short_castle_white = false;
+        m_short_castle_white = false;
 
     // Tour noire a8 (Grand roque noir)
     if ((orig_f == 0 && orig_r == 7) || (dest_f == 0 && dest_r == 7))
-        this->m_long_castle_black = false;
+        m_long_castle_black = false;
 
     // Tour noire h8 (Petit roque noir)
     if ((orig_f == 7 && orig_r == 7) || (dest_f == 7 && dest_r == 7))
-        this->m_short_castle_black = false;
+        m_short_castle_black = false;
 }
 
 
@@ -755,7 +848,7 @@ bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int ra
     for (int i = 0; i <= 2; i++)
     {
         int current_file = orig_file + (i * dir);
-        if (!this->isMoveSafe(orig_file, orig_rank, current_file, rank, false, true))
+        if (!isMoveSafe(orig_file, orig_rank, current_file, rank, false, true))
         {
             return false;
         }
@@ -789,13 +882,13 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r,
 
     int old_king_f = -1, old_king_r = -1;
     if (is_king_move) {
-        if (this->m_turn == WHITE) {
-            old_king_f = this->m_white_king_file; old_king_r = this->m_white_king_rank;
-            this->m_white_king_file = dest_f; this->m_white_king_rank = dest_r;
+        if (m_turn == WHITE) {
+            old_king_f = m_white_king_file; old_king_r = m_white_king_rank;
+            m_white_king_file = dest_f; m_white_king_rank = dest_r;
         }
         else {
-            old_king_f = this->m_black_king_file; old_king_r = this->m_black_king_rank;
-            this->m_black_king_file = dest_f; this->m_black_king_rank = dest_r;
+            old_king_f = m_black_king_file; old_king_r = m_black_king_rank;
+            m_black_king_file = dest_f; m_black_king_rank = dest_r;
         }
     }
 
@@ -811,11 +904,11 @@ bool Chessboard::isMoveSafe(int orig_f, int orig_r,
     }
 
     if (is_king_move) {
-        if (this->m_turn == WHITE) {
-            this->m_white_king_file = old_king_f; this->m_white_king_rank = old_king_r;
+        if (m_turn == WHITE) {
+            m_white_king_file = old_king_f; m_white_king_rank = old_king_r;
         }
         else {
-            this->m_black_king_file = old_king_f; this->m_black_king_rank = old_king_r;
+            m_black_king_file = old_king_f; m_black_king_rank = old_king_r;
         }
     }
 
@@ -853,20 +946,20 @@ void Chessboard::evaluateGameState()
 void Chessboard::updateStateSnapshot()
 {
     StateSnapshot current_snapshot;
-    current_snapshot.short_castle_white = this->m_short_castle_white;
-    current_snapshot.long_castle_white = this->m_long_castle_white;
-    current_snapshot.short_castle_black = this->m_short_castle_black;
-    current_snapshot.long_castle_black = this->m_long_castle_black;
-    current_snapshot.en_passant = this->m_en_passant;
-    current_snapshot.en_passant_file = this->m_en_passant_file;
-    current_snapshot.half_move_clock = this->m_half_move_clock;
-    current_snapshot.current_state = this->m_current_state;
-    current_snapshot.white_king_file = this->m_white_king_file;
-    current_snapshot.white_king_rank = this->m_white_king_rank;
-    current_snapshot.black_king_file = this->m_black_king_file;
-    current_snapshot.black_king_rank = this->m_black_king_rank;
+    current_snapshot.short_castle_white = m_short_castle_white;
+    current_snapshot.long_castle_white = m_long_castle_white;
+    current_snapshot.short_castle_black = m_short_castle_black;
+    current_snapshot.long_castle_black = m_long_castle_black;
+    current_snapshot.en_passant = m_en_passant;
+    current_snapshot.en_passant_file = m_en_passant_file;
+    current_snapshot.half_move_clock = m_half_move_clock;
+    current_snapshot.current_state = m_current_state;
+    current_snapshot.white_king_file = m_white_king_file;
+    current_snapshot.white_king_rank = m_white_king_rank;
+    current_snapshot.black_king_file = m_black_king_file;
+    current_snapshot.black_king_rank = m_black_king_rank;
     current_snapshot.zobrist_hash = m_current_zobrist_hash;
-    this->m_snapshotHistory.push_back(current_snapshot);
+    m_snapshotHistory.push_back(current_snapshot);
 }
 
 bool Chessboard::movePiece(int orig_file, int orig_rank, 
@@ -896,7 +989,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank,
     // A PARTIR D'ICI LE COUP EST VALIDE
     // 1. CAPTURE DE L'ÉTAT AVANT TOUTE MODIFICATION
     
-    this->updateStateSnapshot();
+    updateStateSnapshot();
 
     Piece moving_piece = first_square.getPiece();
     bool is_king_move = (moving_piece.getType() == KING);
@@ -917,8 +1010,8 @@ bool Chessboard::movePiece(int orig_file, int orig_rank,
                            (m_short_castle_black ? 4 : 0) | 
                            (m_long_castle_black ? 8 : 0);
     m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[old_castling_idx];
-    if (this->m_en_passant && this->m_en_passant_file >= 0) {
-        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
+    if (m_en_passant && m_en_passant_file >= 0) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[m_en_passant_file];
     }
 
     // Retrait de la pièce de sa case de départ
@@ -939,7 +1032,7 @@ bool Chessboard::movePiece(int orig_file, int orig_rank,
     // Retrait de la pièce capturée
     if (is_capture) {
         if (is_en_passant_capture) {
-            Piece captured_pawn(this->m_turn == WHITE ? BLACK : WHITE, PAWN);
+            Piece captured_pawn(m_turn == WHITE ? BLACK : WHITE, PAWN);
             m_current_zobrist_hash ^= Zobrist::PIECE_KEYS[orig_rank * 8 + file][captured_pawn.getZobristIndex()];
         }
         else {
@@ -985,45 +1078,45 @@ bool Chessboard::movePiece(int orig_file, int orig_rank,
     if (is_king_move)
     {
         if (moving_color == WHITE) {
-            this->m_white_king_file = file; this->m_white_king_rank = rank;
+            m_white_king_file = file; m_white_king_rank = rank;
         }
         else {
-            this->m_black_king_file = file; this->m_black_king_rank = rank;
+            m_black_king_file = file; m_black_king_rank = rank;
         }
     }
     
 
     // Préparation de l'état suivant
-    this->applyPromotion(second_square, promotion);
-    this->updateHistory(attempted_move);
+    applyPromotion(second_square, promotion);
+    updateHistory(attempted_move);
 
-    this->updateCastleFlags();
-    this->checkEnPassant();
+    updateCastleFlags();
+    checkEnPassant();
 
 
     // --- ZOBRIST (Partie 2) : Ajout des nouveaux droits ---
-    int new_castling_idx = (this->m_short_castle_white ? 1 : 0) | 
-        (this->m_long_castle_white ? 2 : 0) | 
-        (this->m_short_castle_black ? 4 : 0) | 
-        (this->m_long_castle_black ? 8 : 0);
+    int new_castling_idx = (m_short_castle_white ? 1 : 0) | 
+        (m_long_castle_white ? 2 : 0) | 
+        (m_short_castle_black ? 4 : 0) | 
+        (m_long_castle_black ? 8 : 0);
     m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[new_castling_idx];
-    if (this->m_en_passant && this->m_en_passant_file >= 0) {
-        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
+    if (m_en_passant && m_en_passant_file >= 0) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[m_en_passant_file];
     }
 
-    this->m_turn = (this->m_turn == WHITE) ? BLACK : WHITE;
+    m_turn = (m_turn == WHITE) ? BLACK : WHITE;
 
     // maj du compteur de la règle des 50 coups
     if (is_capture || is_pawn_move) {
-        this->m_half_move_clock = 0;
+        m_half_move_clock = 0;
     }
     else {
-        this->m_half_move_clock++;
+        m_half_move_clock++;
     }
 
     if (check_game_end)
     {
-        this->evaluateGameState();
+        evaluateGameState();
     }
 
     return true;
@@ -1037,7 +1130,7 @@ bool Chessboard::movePiece(std::string orig_square, std::string square)
     int file = square[0] - 'a';
     int rank = square[1] - '1';
 
-    return this->movePiece(orig_file, orig_rank, file, rank);
+    return movePiece(orig_file, orig_rank, file, rank);
 }
 
 bool Chessboard::movePieceSAN(std::string san)
@@ -1051,10 +1144,10 @@ bool Chessboard::movePieceSAN(std::string san)
     // 2. Traitement des roques
     if (san == "O-O" || san == "O-O-O")
     {
-        int rank = (this->m_turn == WHITE) ? 0 : 7;
+        int rank = (m_turn == WHITE) ? 0 : 7;
         int orig_file = 4;
         int dest_file = (san == "O-O") ? 6 : 2;
-        return this->movePiece(orig_file, rank, dest_file, rank);
+        return movePiece(orig_file, rank, dest_file, rank);
     }
 
     // 3. Traitement des promotions
@@ -1123,7 +1216,7 @@ bool Chessboard::movePieceSAN(std::string san)
         for (int j = 0; j < 8; j++)
         {
             const Square& sq = m_board[j * 8 + i];
-            if (!sq.checkOccupied() || sq.getPiece().getColor() != this->m_turn || sq.getPiece().getType() != p_type)
+            if (!sq.checkOccupied() || sq.getPiece().getColor() != m_turn || sq.getPiece().getType() != p_type)
                 continue;
             if (orig_file_hint != -1 && i != orig_file_hint) continue;
             if (orig_rank_hint != -1 && j != orig_rank_hint) continue;
@@ -1132,7 +1225,7 @@ bool Chessboard::movePieceSAN(std::string san)
             moves.clear();
 
             // On fait descendre les deux vecteurs par référence
-            this->getLegalMovesForSquare(i, j, moves, pseudo_buffer, dest_file, dest_rank);
+            getLegalMovesForSquare(i, j, moves, pseudo_buffer, dest_file, dest_rank);
 
             for (const Move& m : moves)
             {
@@ -1150,7 +1243,7 @@ bool Chessboard::movePieceSAN(std::string san)
 
     if (match_count == 1)
     {
-        return this->movePiece(final_orig_file, final_orig_rank, dest_file, dest_rank, promotion_type);
+        return movePiece(final_orig_file, final_orig_rank, dest_file, dest_rank, promotion_type);
     }
     else
     {
@@ -1161,36 +1254,36 @@ bool Chessboard::movePieceSAN(std::string san)
 
 void Chessboard::undoMove()
 {
-    if (this->m_moveHistory.empty()) return;
+    if (m_moveHistory.empty()) return;
 
     // 1. Retrait du dernier coup
-    this->m_moveHistory.pop_back();
-    this->m_boardHistory.pop_back();
+    m_moveHistory.pop_back();
+    m_boardHistory.pop_back();
 
     // La position précédente est maintenant le dernier élément de boardHistory
     // (car l'état initial est indexé en 0 par setStartupPieces)
-    m_board = this->m_boardHistory.back();
+    m_board = m_boardHistory.back();
 
     // 2. Restauration des métadonnées via le snapshot
-    StateSnapshot snapshot = this->m_snapshotHistory.back();
-    this->m_snapshotHistory.pop_back();
+    StateSnapshot snapshot = m_snapshotHistory.back();
+    m_snapshotHistory.pop_back();
 
-    this->m_short_castle_white = snapshot.short_castle_white;
-    this->m_long_castle_white = snapshot.long_castle_white;
-    this->m_short_castle_black = snapshot.short_castle_black;
-    this->m_long_castle_black = snapshot.long_castle_black;
-    this->m_en_passant = snapshot.en_passant;
-    this->m_en_passant_file = snapshot.en_passant_file;
-    this->m_half_move_clock = snapshot.half_move_clock;
-    this->m_current_state = snapshot.current_state;
-    this->m_white_king_file = snapshot.white_king_file;
-    this->m_white_king_rank = snapshot.white_king_rank;
-    this->m_black_king_file = snapshot.black_king_file;
-    this->m_black_king_rank = snapshot.black_king_rank;
+    m_short_castle_white = snapshot.short_castle_white;
+    m_long_castle_white = snapshot.long_castle_white;
+    m_short_castle_black = snapshot.short_castle_black;
+    m_long_castle_black = snapshot.long_castle_black;
+    m_en_passant = snapshot.en_passant;
+    m_en_passant_file = snapshot.en_passant_file;
+    m_half_move_clock = snapshot.half_move_clock;
+    m_current_state = snapshot.current_state;
+    m_white_king_file = snapshot.white_king_file;
+    m_white_king_rank = snapshot.white_king_rank;
+    m_black_king_file = snapshot.black_king_file;
+    m_black_king_rank = snapshot.black_king_rank;
     m_current_zobrist_hash = snapshot.zobrist_hash;
 
     // 3. Restitution du trait
-    this->m_turn = (this->m_turn == WHITE) ? BLACK : WHITE;
+    m_turn = (m_turn == WHITE) ? BLACK : WHITE;
 }
 
 void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
@@ -1198,14 +1291,14 @@ void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
     // Écrase les anciennes données avec des zéros sans faire de nouvelle allocation
     tensor.assign(119 * 64, 0.0f);
 
-    Color p1_color = this->m_turn;
+    Color p1_color = m_turn;
     Color p2_color = (p1_color == WHITE) ? BLACK : WHITE;
     bool flip = (p1_color == BLACK);
 
     // Construction d'un historique plat des Zobrist Hashs pour une vérification rapide
     std::vector<uint64_t> all_hashes;
-    all_hashes.reserve(this->m_snapshotHistory.size() + 1);
-    for (const auto& snap : this->m_snapshotHistory) {
+    all_hashes.reserve(m_snapshotHistory.size() + 1);
+    for (const auto& snap : m_snapshotHistory) {
         all_hashes.push_back(snap.zobrist_hash);
     }
     all_hashes.push_back(m_current_zobrist_hash);
@@ -1213,10 +1306,10 @@ void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
     // Remplissage de l'historique (112 premiers plans)
     for (int t = 0; t < 8; t++)
     {
-        int history_idx = this->m_boardHistory.size() - 1 - t;
+        int history_idx = m_boardHistory.size() - 1 - t;
         if (history_idx < 0) break;
 
-        const std::array<Square, 64>& hist_board = this->m_boardHistory[history_idx];
+        const std::array<Square, 64>& hist_board = m_boardHistory[history_idx];
         int plane_offset = t * 14 * 64;
 
         // --- CALCUL DES RÉPÉTITIONS VIA ZOBRIST ---
@@ -1284,7 +1377,7 @@ void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
         (m_short_castle_white ? 1.0f : 0.0f) : (m_short_castle_black ? 1.0f : 0.0f);
     float p2_castle_q = (p2_color == WHITE) ? 
         (m_long_castle_white ? 1.0f : 0.0f) : (m_long_castle_black ? 1.0f : 0.0f);
-    float no_progress_val = (float)this->m_half_move_clock / 100.0f;
+    float no_progress_val = (float)m_half_move_clock / 100.0f;
 
     for (int i = 0; i < 64; i++)
     {
@@ -1356,9 +1449,9 @@ void Chessboard::getNaiveLegalMoves(int file, int rank, std::vector<Move>& pseud
             {
                 addMove(m_board[(rank + 1) * 8 + (file - 1)]);
             }
-            if (this->m_en_passant && rank == 4 && abs(file - this->m_en_passant_file) == 1)
+            if (m_en_passant && rank == 4 && abs(file - m_en_passant_file) == 1)
             {
-                addMove(m_board[(rank + 1) * 8 + this->m_en_passant_file]);
+                addMove(m_board[(rank + 1) * 8 + m_en_passant_file]);
             }
         }
         else if (color == BLACK && rank > 0)
@@ -1371,9 +1464,9 @@ void Chessboard::getNaiveLegalMoves(int file, int rank, std::vector<Move>& pseud
             {
                 addMove(m_board[(rank - 1) * 8 + (file - 1)]);
             }
-            if (this->m_en_passant && rank == 3 && abs(file - this->m_en_passant_file) == 1)
+            if (m_en_passant && rank == 3 && abs(file - m_en_passant_file) == 1)
             {
-                addMove(m_board[(rank - 1) * 8 + this->m_en_passant_file]);
+                addMove(m_board[(rank - 1) * 8 + m_en_passant_file]);
             }
         }
         break;
@@ -1652,22 +1745,22 @@ void Chessboard::computeInitialZobrist() {
     }
 
     // 2. Trait
-    if (this->m_turn == BLACK) {
+    if (m_turn == BLACK) {
         m_current_zobrist_hash ^= Zobrist::BLACK_TO_MOVE;
     }
 
     // 3. Droits de roque (Encodage sur 4 bits de 0 à 15)
     int castling_idx = 0;
-    if (this->m_short_castle_white) castling_idx |= 1; // Bit 0
-    if (this->m_long_castle_white)  castling_idx |= 2; // Bit 1
-    if (this->m_short_castle_black) castling_idx |= 4; // Bit 2
-    if (this->m_long_castle_black)  castling_idx |= 8; // Bit 3
+    if (m_short_castle_white) castling_idx |= 1; // Bit 0
+    if (m_long_castle_white)  castling_idx |= 2; // Bit 1
+    if (m_short_castle_black) castling_idx |= 4; // Bit 2
+    if (m_long_castle_black)  castling_idx |= 8; // Bit 3
 
     m_current_zobrist_hash ^= Zobrist::CASTLING_KEYS[castling_idx];
 
     // 4. Case en passant
-    if (this->m_en_passant && this->m_en_passant_file >= 0 && this->m_en_passant_file < 8) {
-        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
+    if (m_en_passant && m_en_passant_file >= 0 && m_en_passant_file < 8) {
+        m_current_zobrist_hash ^= Zobrist::EN_PASSANT_KEYS[m_en_passant_file];
     }
 }
 
@@ -1684,21 +1777,21 @@ uint64_t Chessboard::computeZobristFromScratch() const {
     }
 
     // 2. Trait
-    if (this->m_turn == BLACK) {
+    if (m_turn == BLACK) {
         hash ^= Zobrist::BLACK_TO_MOVE;
     }
 
     // 3. Droits de roque
     int castling_idx = 0;
-    if (this->m_short_castle_white) castling_idx |= 1;
-    if (this->m_long_castle_white)  castling_idx |= 2;
-    if (this->m_short_castle_black) castling_idx |= 4;
-    if (this->m_long_castle_black)  castling_idx |= 8;
+    if (m_short_castle_white) castling_idx |= 1;
+    if (m_long_castle_white)  castling_idx |= 2;
+    if (m_short_castle_black) castling_idx |= 4;
+    if (m_long_castle_black)  castling_idx |= 8;
     hash ^= Zobrist::CASTLING_KEYS[castling_idx];
 
     // 4. Case en passant
-    if (this->m_en_passant && this->m_en_passant_file >= 0 && this->m_en_passant_file < 8) {
-        hash ^= Zobrist::EN_PASSANT_KEYS[this->m_en_passant_file];
+    if (m_en_passant && m_en_passant_file >= 0 && m_en_passant_file < 8) {
+        hash ^= Zobrist::EN_PASSANT_KEYS[m_en_passant_file];
     }
 
     return hash;

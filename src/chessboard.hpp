@@ -98,6 +98,7 @@ class Chessboard
         void print() const;
         void print(std::array<Square, 64> some_board) const;
         void printPly() const;
+        void loadFEN(const std::string& fen);
         bool checkThreefoldRepetition() const;
         bool isInCheck() const;
         bool hasAnyLegalMove();
