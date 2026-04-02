@@ -136,8 +136,13 @@ class UCIEngine:
             if not stats:
                 break
 
-            # On itère sur TOUS les coups explorés (pour que Nibbler trace toutes les flèches)
-            for multipv_idx, move_stat in enumerate(stats):
+            # 1. On trie du meilleur au pire (stats[0] sera le meilleur)
+            stats = sorted(stats, key=lambda stat: stat.visits, reverse=True)
+
+            # 2. On itère à l'envers : du pire coup jusqu'au meilleur
+            for multipv_idx in range(len(stats) - 1, -1, -1):
+                move_stat = stats[multipv_idx]
+
                 is_black = (self.board.turn == chess_engine.Color.BLACK)
                 o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, move_stat.move_idx,
                                                               is_black)
@@ -145,17 +150,20 @@ class UCIEngine:
 
                 cp_score = self.q_to_cp(move_stat.q_value)
 
-                # Formatage des probabilités pour Nibbler
                 n = move_stat.visits
                 p = move_stat.prior * 100.0
                 q = move_stat.q_value
 
-                # L'ajout de "string N: ... P: ... Q: ..." est la clé pour Nibbler
-                # Formatage strict pour valider l'expression régulière de Nibbler
+                # 3. L'affichage UCI standard
                 print(
                     f"info depth {total_sims} multipv {multipv_idx + 1} "
-                    f"score cp {cp_score} nodes {total_sims} pv {uci_str} "
-                    f"string N: {n} P: {p:.2f}% Q: {q:.5f} U: 0.00000 V: {q:.5f}"
+                    f"score cp {cp_score} nodes {total_sims} pv {uci_str}"
+                )
+
+                # 4. L'affichage spécifique Lc0 pour Nibbler
+                print(
+                    f"info string {uci_str} (0 ) N: {n} (+ 0) "
+                    f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})"
                 )
 
             sys.stdout.flush()
