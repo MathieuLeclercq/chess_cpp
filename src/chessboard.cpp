@@ -551,6 +551,11 @@ void Chessboard::setStartupPieces()
     m_black_king_file = 4;
     m_black_king_rank = 7;
 
+    m_short_castle_white = true;
+    m_long_castle_white = true;
+    m_short_castle_black = true;
+    m_long_castle_black = true;
+
     for (int i = 0; i < 8; i++) // i = file index
     {
         for (int j = 0; j < 8; j++) // j = rank index
