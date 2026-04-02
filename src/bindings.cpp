@@ -61,6 +61,7 @@ PYBIND11_MODULE(chess_engine, m) {
 
     py::class_<Chessboard>(m, "Chessboard")
         .def(py::init<>())
+        .def("clear", &Chessboard::clear)
         .def("set_startup_pieces", &Chessboard::setStartupPieces)
         .def("set_kiwipete", &Chessboard::setKiwipete)
         .def("get_square", static_cast<const Square & (Chessboard::*)(int, int) const>(&Chessboard::getSquare))
