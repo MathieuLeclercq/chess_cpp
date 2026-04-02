@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy
 import pybind11_stubgen.typing_ext
 import typing
-__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
+__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'MoveStats', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
 class Chessboard:
     def __init__(self) -> None:
         ...
@@ -136,7 +136,15 @@ class GameState:
 class MCTS:
     def __init__(self, model_path: str) -> None:
         ...
+    def get_analysis_results(self) -> list[MoveStats]:
+        ...
+    def get_root_q(self) -> float:
+        ...
     def mcts_search(self, board: Chessboard, num_simulations: int, c_puct: float = 1.399999976158142, add_dirichlet: bool = False) -> list[float]:
+        ...
+    def reset_analysis(self) -> None:
+        ...
+    def step_analysis(self, board: Chessboard, num_simulations: int, c_puct: float = 1.399999976158142) -> None:
         ...
 class Move:
     def get_dest_square(self) -> Square:
@@ -144,6 +152,19 @@ class Move:
     def get_orig_square(self) -> Square:
         ...
     def get_promotion(self) -> PieceType:
+        ...
+class MoveStats:
+    @property
+    def move_idx(self) -> int:
+        ...
+    @property
+    def prior(self) -> float:
+        ...
+    @property
+    def q_value(self) -> float:
+        ...
+    @property
+    def visits(self) -> int:
         ...
 class Piece:
     @typing.overload

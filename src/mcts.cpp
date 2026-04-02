@@ -367,3 +367,77 @@ bool MCTS::apply_move_by_index(Chessboard& board, int index) {
 
     return board.movePiece(orig_f, orig_r, dest_f, dest_r, promotion, false);
 }
+
+
+// ============================================================
+//                     ANALYSE CONTINUE
+// ============================================================
+
+void MCTS::reset_analysis() {
+    m_analysis_root.reset();
+}
+
+float MCTS::get_root_q() const {
+    if (!m_analysis_root) return 0.0f;
+    return m_analysis_root->q_value();
+}
+
+void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
+    // 1. Initialisation paresseuse (si c'est le premier appel pour cette position)
+    if (!m_analysis_root) {
+        m_analysis_root = std::make_unique<MCTSNode>(0.0f);
+        expand_node_single(m_analysis_root.get(), board);
+    }
+
+    // 2. Boucle de simulation classique sur l'arbre persistant
+    for (int sim = 0; sim < num_simulations; sim++) {
+        bool aborted;
+        auto [node, moves_played] = select_leaf(m_analysis_root.get(), board, c_puct, aborted);
+
+        if (aborted) {
+            for (int i = 0; i < moves_played; i++) board.undoMove();
+            continue;
+        }
+
+        if (node->is_terminal) {
+            float value = board.isInCheck() ? -1.0f : 0.0f;
+            backup(node, value);
+            for (int i = 0; i < moves_played; i++) board.undoMove();
+            continue;
+        }
+
+        if (node->children.empty()) {
+            float value = expand_node_single(node, board);
+            backup(node, value);
+        }
+
+        for (int i = 0; i < moves_played; i++) {
+            board.undoMove();
+        }
+    }
+}
+
+std::vector<MoveStats> MCTS::get_analysis_results() const {
+    std::vector<MoveStats> results;
+    if (!m_analysis_root) return results;
+
+    for (const auto& pair : m_analysis_root->children) {
+        int idx = pair.first;
+        MCTSNode* child = pair.second.get();
+
+        if (child->visit_count > 0) {
+            results.push_back({
+                idx,
+                child->visit_count,
+                -child->q_value(),
+                child->prior
+                });
+        }
+    }
+
+    std::sort(results.begin(), results.end(), [](const MoveStats& a, const MoveStats& b) {
+        return a.visits > b.visits;
+        });
+
+    return results;
+}

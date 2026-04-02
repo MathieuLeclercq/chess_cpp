@@ -64,7 +64,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("set_startup_pieces", &Chessboard::setStartupPieces)
         .def("set_kiwipete", &Chessboard::setKiwipete)
         .def("get_square", static_cast<const Square & (Chessboard::*)(int, int) const>(&Chessboard::getSquare))
-        .def("get_legal_moves", [](Chessboard& cb, int file, int rank) 
+        .def("get_legal_moves", [](Chessboard& cb, int file, int rank)
             {
                 std::vector<Move> result;
                 result.reserve(100);
@@ -75,14 +75,19 @@ PYBIND11_MODULE(chess_engine, m) {
                 return result;
             }, py::arg("file"), py::arg("rank"))
         .def("move_piece", static_cast<bool (Chessboard::*)(int, int, int, int, PieceType, bool)>(&Chessboard::movePiece),
-            py::arg("orig_file"), py::arg("orig_rank"), py::arg("file"), py::arg("rank"), py::arg("promotion") = NONE, py::arg("check_game_end") = true)
+            py::arg("orig_file"), 
+            py::arg("orig_rank"), 
+            py::arg("file"), 
+            py::arg("rank"), 
+            py::arg("promotion") = NONE, 
+            py::arg("check_game_end") = true)
         .def("has_any_legal_move", &Chessboard::hasAnyLegalMove)
         .def("is_in_check", &Chessboard::isInCheck)
         .def("undo_move", &Chessboard::undoMove)
         .def_property_readonly("turn", &Chessboard::getTurn)
         .def_property_readonly("game_state", &Chessboard::getGameState)
         .def_property_readonly("half_move_clock", &Chessboard::getHalfMoveClock)
-        .def("get_alphazero_tensor", [](const Chessboard& cb) 
+        .def("get_alphazero_tensor", [](const Chessboard& cb)
             {
                 std::vector<float> tensor;
                 cb.getAlphaZeroTensor(tensor);
@@ -94,7 +99,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("move_piece_san", &Chessboard::movePieceSAN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
         .def("get_board_history", static_cast<const std::vector<std::array<Square, 64>>&(Chessboard::*)() const>(&Chessboard::getBoardHistory))
-        .def("get_last_move_data", [](const Chessboard& cb) 
+        .def("get_last_move_data", [](const Chessboard& cb)
             {
                 if (cb.getMoveHistory().empty()) return py::make_tuple(-1, -1, -1, -1, NONE);
                 const Move& last_move = cb.getMoveHistory().back();
@@ -107,9 +112,24 @@ PYBIND11_MODULE(chess_engine, m) {
                 );
             });
 
+    // --- Structure MoveStats ---
+    py::class_<MoveStats>(m, "MoveStats")
+        .def_readonly("move_idx", &MoveStats::move_idx)
+        .def_readonly("visits", &MoveStats::visits)
+        .def_readonly("q_value", &MoveStats::q_value)
+        .def_readonly("prior", &MoveStats::prior);
+
     py::class_<MCTS>(m, "MCTS")
         .def(py::init<const std::string&>(), py::arg("model_path"))
         .def("mcts_search", &MCTS::mcts_search,
             py::call_guard<py::gil_scoped_release>(),
-            py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f, py::arg("add_dirichlet") = false);
+            py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f, py::arg("add_dirichlet") = false)
+
+        // --- BINDINGS D'ANALYSE ---
+        .def("step_analysis", &MCTS::step_analysis,
+            py::call_guard<py::gil_scoped_release>(),
+            py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f)
+        .def("reset_analysis", &MCTS::reset_analysis)
+        .def("get_root_q", &MCTS::get_root_q)
+        .def("get_analysis_results", &MCTS::get_analysis_results);
 }

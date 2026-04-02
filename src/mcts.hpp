@@ -29,6 +29,13 @@ struct TranspositionEntry {
     float value;
 };
 
+struct MoveStats {
+    int move_idx;
+    int visits;
+    float q_value;
+    float prior;
+};
+
 class MCTS {
 private:
     Ort::Env env;
@@ -43,6 +50,10 @@ private:
 public:
     MCTS(const std::string& model_path);
 
+    void step_analysis(Chessboard& board, int num_simulations, float c_puct);
+    void reset_analysis();
+    float get_root_q() const;
+    std::vector<MoveStats> get_analysis_results() const;
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
 
 private:
@@ -51,6 +62,6 @@ private:
     bool apply_move_by_index(Chessboard& board, int idx);
     float expand_node_single(MCTSNode* node, Chessboard& board);
     std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
-
+    std::unique_ptr<MCTSNode> m_analysis_root;
 
 };
