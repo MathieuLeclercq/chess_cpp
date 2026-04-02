@@ -26,7 +26,8 @@ class UCIEngine:
         self.search_thread = None
         self.stop_event = threading.Event()
 
-    def q_to_cp(self, q_value):
+    @staticmethod
+    def q_to_cp(q_value):
         """
         Convertit une probabilité de victoire AlphaZero (-1.0 à 1.0)
         en centipions classiques (ex: +150) pour les interfaces.
@@ -51,7 +52,7 @@ class UCIEngine:
             command = tokens[0]
 
             if command == "uci":
-                print("id name AlphaZero_Custom")
+                print("id name Lc0 Custom")
                 print("id author Mathieu Leclercq")
                 print("uciok")
                 sys.stdout.flush()
@@ -80,13 +81,19 @@ class UCIEngine:
         """Reconstruit le plateau à partir de la commande position de CuteChess."""
         self.board = chess_engine.Chessboard()
 
+        moves_idx = -1
+
         if len(tokens) > 0 and tokens[0] == "startpos":
             self.board.set_startup_pieces()
             moves_idx = 2 if len(tokens) > 1 and tokens[1] == "moves" else -1
-        else:
-            self.board.set_startup_pieces()
-            moves_idx = -1
 
+        elif len(tokens) > 0 and tokens[0] == "fen":
+            # Reconstruction de la chaîne FEN (les 6 blocs suivants)
+            fen_string = " ".join(tokens[1:7])
+            self.board.load_fen(fen_string)
+            moves_idx = 8 if len(tokens) > 7 and tokens[7] == "moves" else -1
+
+        # Application des coups joués par-dessus la position initiale ou le FEN
         if moves_idx != -1:
             for uci_move in tokens[moves_idx:]:
                 orig_f, orig_r, dest_f, dest_r, promo = parse_uci_to_coords(uci_move)
@@ -98,12 +105,16 @@ class UCIEngine:
         self.mcts.reset_analysis()
 
     def start_search(self, tokens):
-        """Lance la recherche MCTS dans un thread séparé pour ne pas bloquer l'écoute UCI."""
-        self.stop_search()  # Coupe l'ancienne recherche s'il y en avait une
+        """Lance la recherche MCTS. Supporte 'go infinite' ou utilise la limite par défaut."""
+        self.stop_search()
         self.stop_event.clear()
 
-        # On lance le thread d'analyse
-        self.search_thread = threading.Thread(target=self.search_worker)
+        # Détection de la demande d'analyse continue
+        is_infinite = "infinite" in tokens
+        target_sims = 100_000_000 if is_infinite else DEFAULT_SIMULATIONS
+
+        # On passe la cible au thread
+        self.search_thread = threading.Thread(target=self.search_worker, args=(target_sims,))
         self.search_thread.start()
 
     def stop_search(self):
@@ -112,56 +123,51 @@ class UCIEngine:
             self.stop_event.set()
             self.search_thread.join()
 
-    def search_worker(self):
-        """La boucle d'analyse qui tourne en arrière-plan."""
+    def search_worker(self, target_sims):
+        """La boucle d'analyse qui tourne en arrière-plan jusqu'à la limite ou au signal d'arrêt."""
         total_sims = 0
-        target_sims = DEFAULT_SIMULATIONS
 
-        # On fait l'analyse par "paquets" (batch)
-        # pour pouvoir interrompre la recherche et afficher l'évolution
         while total_sims < target_sims and not self.stop_event.is_set():
             sims_to_do = min(BATCH_SIZE, target_sims - total_sims)
             self.mcts.step_analysis(self.board, sims_to_do, 1.4)
             total_sims += sims_to_do
 
-            # Récupération des résultats
             stats = self.mcts.get_analysis_results()
             if not stats:
                 break
 
-            # Affichage en temps réel des 3 meilleurs coups (MultiPV)
-            num_lines = min(3, len(stats))
-            for multipv_idx in range(num_lines):
-                move_stat = stats[multipv_idx]
-
-                # Conversion de l'index 0-4671 vers UCI (ex: e2e4)
+            # On itère sur TOUS les coups explorés (pour que Nibbler trace toutes les flèches)
+            for multipv_idx, move_stat in enumerate(stats):
                 is_black = (self.board.turn == chess_engine.Color.BLACK)
-                o_f, o_r, d_f, d_r, promo = decode_move_index(self.board,
-                                                              move_stat.move_idx,
+                o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, move_stat.move_idx,
                                                               is_black)
                 uci_str = coords_to_uci(o_f, o_r, d_f, d_r, promo)
 
-                # Conversion Q-Value en Centipions
                 cp_score = self.q_to_cp(move_stat.q_value)
 
-                # Formatage standard UCI
+                # Formatage des probabilités pour Nibbler
+                n = move_stat.visits
+                p = move_stat.prior * 100.0
+                q = move_stat.q_value
+
+                # L'ajout de "string N: ... P: ... Q: ..." est la clé pour Nibbler
+                # Formatage strict pour valider l'expression régulière de Nibbler
                 print(
-                    f"info depth {total_sims} multipv {multipv_idx + 1} score cp "
-                    f"{cp_score} nodes {total_sims} pv {uci_str}")
+                    f"info depth {total_sims} multipv {multipv_idx + 1} "
+                    f"score cp {cp_score} nodes {total_sims} pv {uci_str} "
+                    f"string N: {n} P: {p:.2f}% Q: {q:.5f} U: 0.00000 V: {q:.5f}"
+                )
 
             sys.stdout.flush()
 
-        # Fin de la recherche : on annonce le meilleur coup
         best_stats = self.mcts.get_analysis_results()
         if best_stats:
             best = best_stats[0]
             is_black = (self.board.turn == chess_engine.Color.BLACK)
-            o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, best.move_idx,
-                                                                       is_black)
+            o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, best.move_idx, is_black)
             best_uci = coords_to_uci(o_f, o_r, d_f, d_r, promo)
             print(f"bestmove {best_uci}")
         else:
-            # Sécurité si aucun coup légal (mat/pat)
             print("bestmove 0000")
 
         sys.stdout.flush()
