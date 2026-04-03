@@ -8,6 +8,8 @@ python_src/eval_pgns
 python_src/__pycache__
 docs/PGN/all
 training_data/
+lichess_bot/
 
+lichess_token.txt
 *.exe
 CMakeUserPresets.json

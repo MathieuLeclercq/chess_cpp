@@ -207,14 +207,36 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     evaluate_onnx(m_eval_tensor, m_eval_policy, value);
 
     // 4. EXTRACTION ET STOCKAGE
+
     std::vector<std::pair<int, float>> legal_policy;
     legal_policy.reserve(legal_indices.size());
 
     float sum_legal = 0.0f;
+
     for (int idx : legal_indices) {
         legal_policy.push_back({ idx, m_eval_policy[idx] });
         sum_legal += m_eval_policy[idx];
     }
+
+    //const float CHECK_BONUS = 0.3f; // Ajustable : Force l'exploration des échecs
+
+    //for (int idx : legal_indices) {
+    //    float raw_prob = m_eval_policy[idx];
+
+    //    // --- INJECTION DU BONUS POUR LES ÉCHECS ---
+    //    bool success = apply_move_by_index(board, idx);
+    //    if (success) {
+    //        if (board.isInCheck()) {
+    //            raw_prob += CHECK_BONUS;
+    //        }
+    //        board.undoMove();
+    //    }
+    //    // ------------------------------------------
+
+    //    legal_policy.push_back({ idx, raw_prob });
+    //    sum_legal += raw_prob;
+    //}
+
 
     if (transposition_table.size() > 1000000) {
         transposition_table.clear();
