@@ -386,7 +386,7 @@ if __name__ == "__main__":
 
     try:
         pipeline(
-            num_iterations=40,
+            num_iterations=150,
             games_per_iter=128,
             num_workers=8,
             num_simulations=700,
@@ -397,7 +397,7 @@ if __name__ == "__main__":
             max_buffer_size=100_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_02_15h33_iter321_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_03_02h07_iter338_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

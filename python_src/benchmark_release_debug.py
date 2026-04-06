@@ -2,7 +2,6 @@ import time
 import chess_engine
 
 # --- PARAMÈTRES ---
-# Remplace par le chemin valide vers ton modèle ONNX actuel
 ONNX_PATH = "checkpoints/2026_03_12_02h16_iter18_unsupervised.onnx"
 SIMULATIONS = 1000
 
