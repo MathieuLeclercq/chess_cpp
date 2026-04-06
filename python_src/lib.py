@@ -7,7 +7,6 @@ import numpy as np
 
 import chess_engine
 from model import ChessNet
-from train_supervised import AlphaZeroLightning
 
 
 def encode_move(orig_f, orig_r, dest_f, dest_r, promotion_type, is_black_turn):
@@ -204,6 +203,7 @@ def gestion_promo_dame(board, orig_f, orig_r, dest_r, promo):
 
 
 def load_supervised_model(checkpoint_path, num_res_blocks, num_filters, device):
+    from train_supervised import AlphaZeroLightning
     """Charge le modèle depuis un checkpoint Lightning."""
     os.environ["TORCH_SKIP_WEIGHTS_ONLY_WARNING"] = "1"
     device = torch.device(device)

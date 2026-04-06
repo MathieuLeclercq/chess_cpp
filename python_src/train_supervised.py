@@ -7,7 +7,8 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from model import ChessNet
-from sharded_dataset import ShardedChessDataset
+# from sharded_dataset import ShardedChessDataset
+from dataset import ChessSupervisedDataset
 
 torch.set_float32_matmul_precision('medium')
 
@@ -59,17 +60,19 @@ class AlphaZeroLightning(L.LightningModule):
 
 if __name__ == "__main__":
     # --- Configuration ---
-    SHARD_DIR = r"D:\dataset_cpp_chess\dataset_shards"
-    BATCH_SIZE = 4096
+    # SHARD_DIR = r"D:\dataset_cpp_chess\dataset_shards"
+    PGN_DIR = r"C:\Users\M47h1\Documents\chess_cpp\training_data\clean_pgns"
+    BATCH_SIZE = 2048
 
     # --- Initialisation de WandB ---
     wandb_logger = WandbLogger(
-        project="alphazero-chess", name="supervised_phase_2_lichess",
+        project="alphazero-chess", name="supervised_phase_3_gm",
         log_model=False
     )
 
     # --- Préparation des Données ---
-    dataset = ShardedChessDataset(SHARD_DIR, shuffle=True)
+    # Instanciation de la nouvelle classe
+    dataset = ChessSupervisedDataset(PGN_DIR)
 
     dataloader = DataLoader(
         dataset,
@@ -105,8 +108,10 @@ if __name__ == "__main__":
         log_every_n_steps=50
     )
 
+    # On retire l'argument ckpt_path car le modèle est déjà chargé
     trainer.fit(
         model,
         train_dataloaders=dataloader,
-        ckpt_path="checkpoints/alphazero-supervised-step=6000.ckpt"
+        ckpt_path=r"C:\Users\M47h1\Documents\chess_cpp\python_src\checkpoints"
+                  r"\2026_04_06_22h25_SUPERVISED_LICHESS_NEW_MODEL.ckpt"
     )
