@@ -46,6 +46,8 @@ MCTS::MCTS(const std::string& model_path)
     std::wstring w_model_path(model_path.begin(), model_path.end());
     session = std::make_unique<Ort::Session>(env, w_model_path.c_str(), session_options);
 
+    transposition_table.resize(TT_SIZE);
+
     // Pré-allocation des buffers de travail
     m_eval_tensor.reserve(119 * 64);
     m_eval_policy.reserve(4672);
@@ -156,43 +158,34 @@ void MCTS::evaluate_onnx(const std::vector<float>& input_tensor, std::vector<flo
 
 float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
-    // 1. DÉTECTION DES NULLES (Dépendantes de l'historique)
-    // À faire absolument AVANT la table de transposition.
-    if (board.checkThreefoldRepetition() ||
-        board.getHalfMoveClock() >= 100 ||
-        board.checkInsufficientMaterial()) {
-
+    if (board.checkThreefoldRepetition() || board.getHalfMoveClock() >= 100 || board.checkInsufficientMaterial()) {
         node->is_terminal = true;
-        return 0.0f; // Score d'égalité stricte
+        return 0.0f;
     }
 
     uint64_t hash = board.getZobristHash();
+    size_t tt_idx = hash % TT_SIZE; // <-- L'index constant en O(1)
 
     // 2. TABLE DE TRANSPOSITION (Lookup immédiat)
-    auto it = transposition_table.find(hash);
-    if (it != transposition_table.end()) {
+    if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
 
         // --- CACHE HIT ---
-        // On récupère par RÉFÉRENCE constante pour éviter une grosse copie de vecteur
-        const std::vector<std::pair<int, float>>& legal_policy = it->second.legal_policy;
-        float value = it->second.value;
+        const std::vector<std::pair<int, float>>& cached_policy = transposition_table[tt_idx].legal_policy;
+        float value = transposition_table[tt_idx].value;
 
-        // Création des enfants directement depuis les données en cache
-        // On contourne totalement getLegalMoveIndices() et evaluate_onnx() !
         float sum_legal = 0.0f;
-        for (const auto& pair : legal_policy) {
+        for (const auto& pair : cached_policy) {
             sum_legal += pair.second;
         }
 
         if (sum_legal > 0.0f) {
-            for (const auto& pair : legal_policy) {
+            for (const auto& pair : cached_policy) {
                 node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
             }
         }
         else {
-            // Fallback obligatoire si sum_legal == 0.0f
-            float uniform_prob = 1.0f / legal_policy.size();
-            for (const auto& pair : legal_policy) {
+            float uniform_prob = 1.0f / cached_policy.size();
+            for (const auto& pair : cached_policy) {
                 node->children[pair.first] = std::make_unique<MCTSNode>(uniform_prob, pair.first, node);
             }
         }
@@ -200,63 +193,32 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     }
 
     // 3. CACHE MISS
-
-    // Détection Mat / Pat (Purement lié à la position)
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
         node->is_terminal = true;
         return board.isInCheck() ? -1.0f : 0.0f;
     }
 
-    // Génération du tenseur et inférence ONNX
     board.getAlphaZeroTensor(m_eval_tensor);
-
     float value;
     evaluate_onnx(m_eval_tensor, m_eval_policy, value);
 
-    // 4. EXTRACTION ET STOCKAGE
-
-    std::vector<std::pair<int, float>> legal_policy;
-    legal_policy.reserve(legal_indices.size());
+    // 4. STOCKAGE SANS ALLOCATION (Réutilisation de la capacité)
+    transposition_table[tt_idx].hash = hash;
+    transposition_table[tt_idx].value = value;
+    transposition_table[tt_idx].legal_policy.clear(); // O(1), garde la mémoire allouée intacte
 
     float sum_legal = 0.0f;
-
     for (int idx : legal_indices) {
-        legal_policy.push_back({ idx, m_eval_policy[idx] });
-        sum_legal += m_eval_policy[idx];
+        float prob = m_eval_policy[idx];
+        transposition_table[tt_idx].legal_policy.push_back({ idx, prob }); // Pas d'allocation !
+        sum_legal += prob;
     }
-
-    //const float CHECK_BONUS = 0.3f; // Ajustable : Force l'exploration des échecs
-
-    //for (int idx : legal_indices) {
-    //    float raw_prob = m_eval_policy[idx];
-
-    //    // --- INJECTION DU BONUS POUR LES ÉCHECS ---
-    //    bool success = apply_move_by_index(board, idx);
-    //    if (success) {
-    //        if (board.isInCheck()) {
-    //            raw_prob += CHECK_BONUS;
-    //        }
-    //        board.undoMove();
-    //    }
-    //    // ------------------------------------------
-
-    //    legal_policy.push_back({ idx, raw_prob });
-    //    sum_legal += raw_prob;
-    //}
-
-
-    if (transposition_table.size() > 1000000) {
-        transposition_table.clear();
-    }
-    transposition_table[hash] = { legal_policy, value };
 
     // 5. INSTANCIATION DES ENFANTS
     if (sum_legal > 0.0f) {
-        for (const auto& pair : legal_policy) {
-            int idx = pair.first;
-            float prob = pair.second / sum_legal;
-            node->children[idx] = std::make_unique<MCTSNode>(prob, idx, node);
+        for (const auto& pair : transposition_table[tt_idx].legal_policy) {
+            node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
         }
     }
     else {
@@ -437,16 +399,21 @@ float MCTS::get_root_q() const {
 }
 
 void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
-    // 1. Initialisation paresseuse (si c'est le premier appel pour cette position)
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    if (!m_analysis_root) {
-        m_analysis_root = std::make_unique<MCTSNode>(0.0f);
-        expand_node_single(m_analysis_root.get(), board);
+    // 1. Initialisation paresseuse protégée par un scope très court
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_analysis_root) {
+            m_analysis_root = std::make_unique<MCTSNode>(0.0f);
+            expand_node_single(m_analysis_root.get(), board);
+        }
     }
 
-    // 2. Boucle de simulation classique sur l'arbre persistant
+    // 2. Boucle de simulation
     for (int sim = 0; sim < num_simulations; sim++) {
+
+        // Le mutex se verrouille ici pour UNE seule simulation...
+        std::lock_guard<std::mutex> lock(m_mutex);
+
         bool aborted;
         auto [node, moves_played] = select_leaf(m_analysis_root.get(), board, c_puct, aborted);
 
@@ -457,13 +424,11 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
 
         if (node->is_terminal) {
             float value = 0.0f;
-            // On teste d'abord les conditions de nulle (très rapide)
-            if (board.checkThreefoldRepetition() || 
-                board.getHalfMoveClock() >= 100 || 
+            if (board.checkThreefoldRepetition() ||
+                board.getHalfMoveClock() >= 100 ||
                 board.checkInsufficientMaterial()) {
                 value = 0.0f;
             }
-            // Si pas nulle, c'est mat ou pat. On teste l'échec.
             else {
                 value = board.isInCheck() ? -1.0f : 0.0f;
             }

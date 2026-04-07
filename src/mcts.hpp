@@ -24,10 +24,10 @@ struct MCTSNode {
     float ucb_score(float exploration_factor, float parent_q, float fpu_reduction) const;
 };
 
-
-struct TranspositionEntry {
-    std::vector<std::pair<int, float>> legal_policy; // Ne stocke que {index_du_coup, probabilité}
-    float value;
+struct TTEntry {
+    uint64_t hash = 0;
+    float value = 0.0f;
+    std::vector<std::pair<int, float>> legal_policy;
 };
 
 struct MoveStats {
@@ -43,7 +43,8 @@ private:
     Ort::SessionOptions session_options;
     std::unique_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
-    std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
+    std::vector<TTEntry> transposition_table;
+    static constexpr size_t TT_SIZE = 2097143;
 
     std::vector<float> m_eval_tensor;
     std::vector<float> m_eval_policy;
