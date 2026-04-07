@@ -103,6 +103,14 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 
         node = next_node;
         moves_played++;
+
+        // Vérification dynamique pendant la descente.
+        if (board.checkThreefoldRepetition() || 
+            board.getHalfMoveClock() >= 100 || 
+            board.checkInsufficientMaterial()) {
+            node->is_terminal = true;
+            break;
+        }
     }
 
     return { node, moves_played };
@@ -301,7 +309,18 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
         }
 
         if (node->is_terminal) {
-            float value = board.isInCheck() ? -1.0f : 0.0f;
+            float value = 0.0f;
+            // On teste d'abord les conditions de nulle (très rapide)
+            if (board.checkThreefoldRepetition() || 
+                board.getHalfMoveClock() >= 100 || 
+                board.checkInsufficientMaterial()) {
+                value = 0.0f;
+            }
+            // Si pas nulle, c'est mat ou pat. On teste l'échec.
+            else {
+                value = board.isInCheck() ? -1.0f : 0.0f;
+            }
+
             backup(node, value);
             for (int i = 0; i < moves_played; i++) board.undoMove();
             continue;
@@ -419,7 +438,6 @@ float MCTS::get_root_q() const {
 
 void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
     // 1. Initialisation paresseuse (si c'est le premier appel pour cette position)
-    
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_analysis_root) {
@@ -438,7 +456,18 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
         }
 
         if (node->is_terminal) {
-            float value = board.isInCheck() ? -1.0f : 0.0f;
+            float value = 0.0f;
+            // On teste d'abord les conditions de nulle (très rapide)
+            if (board.checkThreefoldRepetition() || 
+                board.getHalfMoveClock() >= 100 || 
+                board.checkInsufficientMaterial()) {
+                value = 0.0f;
+            }
+            // Si pas nulle, c'est mat ou pat. On teste l'échec.
+            else {
+                value = board.isInCheck() ? -1.0f : 0.0f;
+            }
+
             backup(node, value);
             for (int i = 0; i < moves_played; i++) board.undoMove();
             continue;
