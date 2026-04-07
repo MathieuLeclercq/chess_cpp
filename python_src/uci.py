@@ -174,57 +174,71 @@ class UCIEngine:
 
     def search_worker(self):
         total_sims = 0
-        max_sims = 10_000_000
+
+        # --- MODIFICATION : Limite de nœuds dans l'ouverture ---
+        # 10 demi-coups correspondent aux 5 premiers coups complets
+        if len(self.last_move_list) < 10:
+            max_sims = DEFAULT_SIMULATIONS  # 1200 nœuds
+        else:
+            max_sims = 10_000_000
+        # -------------------------------------------------------
 
         # --- 1. BOUCLE DE RECHERCHE ---
-        while total_sims < max_sims and not self.stop_event.is_set():
+        while not self.stop_event.is_set():
 
-            # Si on est en "Ponder", on ignore le chrono. L'arbitre c'est la GUI.
+            # 1a. Vérification du chrono (uniquement si c'est notre tour)
             if not self.is_pondering:
                 elapsed = time.time() - self.search_start_time
                 if elapsed >= self.target_time:
+                    break  # Temps écoulé, on sort de la boucle
+
+            # 1b. Exécution des simulations si on n'a pas atteint la limite
+            if total_sims < max_sims:
+                # On s'assure de ne pas dépasser max_sims avec le batch
+                sims_to_do = min(BATCH_SIZE, max_sims - total_sims)
+                self.mcts.step_analysis(self.board, sims_to_do, 1.4)
+                total_sims += sims_to_do
+
+                stats = self.mcts.get_analysis_results()
+                if not stats:
                     break
 
-            sims_to_do = BATCH_SIZE
-            self.mcts.step_analysis(self.board, sims_to_do, 1.4)
-            total_sims += sims_to_do
+                stats_sorted = sorted(stats, key=lambda stat: stat.visits, reverse=True)
 
-            stats = self.mcts.get_analysis_results()
-            if not stats:
-                break
+                real_total_nodes = sum(stat.visits for stat in stats_sorted)
+                if real_total_nodes == 0:
+                    real_total_nodes = 1
 
-            stats_sorted = sorted(stats, key=lambda stat: stat.visits, reverse=True)
+                for multipv_idx in range(len(stats_sorted) - 1, -1, -1):
+                    move_stat = stats_sorted[multipv_idx]
+                    is_black = (self.board.turn == chess_engine.Color.BLACK)
+                    o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, move_stat.move_idx,
+                                                                  is_black)
+                    uci_str = coords_to_uci(o_f, o_r, d_f, d_r, promo)
+                    cp_score = self.q_to_cp(move_stat.q_value)
 
-            # 1. On calcule le vrai total des visites de la racine actuelle
-            real_total_nodes = sum(stat.visits for stat in stats_sorted)
+                    print(
+                        f"info depth {total_sims} multipv {multipv_idx + 1} score cp "
+                        f"{cp_score} nodes {real_total_nodes} pv {uci_str}")
 
-            # (Optionnel) Éviter la division par zéro tout au début
-            if real_total_nodes == 0:
-                real_total_nodes = 1
+                    n = move_stat.visits
+                    p = move_stat.prior * 100.0
+                    q = move_stat.q_value
+                    print(
+                        f"info string {uci_str} (0 ) N: {n} (+ 0) "
+                        f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})")
 
-            for multipv_idx in range(len(stats_sorted) - 1, -1, -1):
-                move_stat = stats_sorted[multipv_idx]
-                is_black = (self.board.turn == chess_engine.Color.BLACK)
-                o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, move_stat.move_idx,
-                                                              is_black)
-                uci_str = coords_to_uci(o_f, o_r, d_f, d_r, promo)
-                cp_score = self.q_to_cp(move_stat.q_value)
+                sys.stdout.flush()
 
-                # 2. On envoie le vrai total à la GUI
-                print(
-                    f"info depth {total_sims} multipv {multipv_idx + 1} score cp "
-                    f"{cp_score} nodes {real_total_nodes} pv {uci_str}"
-                )
-
-                n = move_stat.visits
-                p = move_stat.prior * 100.0
-                q = move_stat.q_value
-
-                print(
-                    f"info string {uci_str} (0 ) N: {n} (+ 0) "
-                    f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})"
-                )
-            sys.stdout.flush()
+            # 1c. Si on a atteint max_sims
+            else:
+                if self.is_pondering:
+                    # En ponder, on doit attendre la décision de la GUI (ponderhit ou stop).
+                    # On endort le thread 10ms pour ne pas consommer 100% du CPU pour rien.
+                    time.sleep(0.01)
+                else:
+                    # C'est notre tour et on a fini nos 1200 nœuds, on joue !
+                    break
 
         # --- 2. FIN DE RECHERCHE ET NORME UCI ---
         best_stats = self.mcts.get_analysis_results()
@@ -238,20 +252,15 @@ class UCIEngine:
         o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, my_best.move_idx, is_black)
         my_best_uci = coords_to_uci(o_f, o_r, d_f, d_r, promo)
 
-        # --- CORRECTION 2 : GARANTIE DU BESTMOVE ---
-        # Si la GUI a forcé l'arrêt (ex: changement de coup dans Nibbler)
-        # OU si on est en analyse libre (target_time infini), on rend le bestmove et on coupe net.
-        # On s'interdit formellement de muter l'état interne.
+        # Si la GUI a forcé l'arrêt OU si on est en analyse libre, on coupe net.
         if self.stop_event.is_set() or self.target_time == 1e9:
             print(f"bestmove {my_best_uci}")
             sys.stdout.flush()
             return
 
         # --- 3. MODE PARTIE (Lichess) : PRÉPARATION DU PONDERING ---
-        # Si on arrive ici, c'est que notre tour de jeu normal est terminé naturellement (chrono écoulé).
         ponder_uci = ""
 
-        # On pré-calcule secrètement notre coup pour voir les réponses de l'adversaire
         if self.board.move_piece(o_f, o_r, d_f, d_r, promo):
             self.mcts.update_root(my_best.move_idx)
             self.last_move_list.append(my_best_uci)
