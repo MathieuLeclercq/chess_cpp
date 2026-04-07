@@ -150,6 +150,10 @@ class MCTS:
         ...
     def step_analysis(self, board: Chessboard, num_simulations: int, c_puct: float = 1.399999976158142) -> None:
         ...
+    def update_root(self, arg0: int) -> None:
+        """
+        Déplace la racine de l'arbre vers un coup spécifique
+        """
 class Move:
     def get_dest_square(self) -> Square:
         ...

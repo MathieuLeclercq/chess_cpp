@@ -396,7 +396,20 @@ bool MCTS::apply_move_by_index(Chessboard& board, int index) {
 // ============================================================
 
 void MCTS::reset_analysis() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_analysis_root.reset();
+}
+
+void MCTS::update_root(int move_idx) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    if (m_analysis_root && m_analysis_root->children.count(move_idx)) {
+        m_analysis_root = std::move(m_analysis_root->children[move_idx]);
+        m_analysis_root->parent = nullptr;
+    }
+    else {
+        m_analysis_root.reset();
+    }
 }
 
 float MCTS::get_root_q() const {
@@ -406,6 +419,9 @@ float MCTS::get_root_q() const {
 
 void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
     // 1. Initialisation paresseuse (si c'est le premier appel pour cette position)
+    
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     if (!m_analysis_root) {
         m_analysis_root = std::make_unique<MCTSNode>(0.0f);
         expand_node_single(m_analysis_root.get(), board);
@@ -440,6 +456,8 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
 }
 
 std::vector<MoveStats> MCTS::get_analysis_results() const {
+    std::lock_guard<std::mutex> lock(const_cast<MCTS&>(*this).m_mutex);
+
     std::vector<MoveStats> results;
     if (!m_analysis_root) return results;
 

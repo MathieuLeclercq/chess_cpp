@@ -387,13 +387,13 @@ if __name__ == "__main__":
     try:
         pipeline(
             num_iterations=150,
-            games_per_iter=128,
+            games_per_iter=512,
             num_workers=8,
             num_simulations=700,
             fast_sims=100,
             train_epochs=1,
             batch_size=1024,
-            learning_rate=1e-4,
+            learning_rate=5e-6,
             max_buffer_size=100_000,
             samples_per_epoch=2000,
             eval_stockfish_every=4,

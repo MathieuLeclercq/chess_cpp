@@ -132,6 +132,7 @@ PYBIND11_MODULE(chess_engine, m) {
             py::call_guard<py::gil_scoped_release>(),
             py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f)
         .def("reset_analysis", &MCTS::reset_analysis)
+        .def("update_root", &MCTS::update_root, "Déplace la racine de l'arbre vers un coup spécifique")
         .def("get_root_q", &MCTS::get_root_q)
         .def("get_analysis_results", &MCTS::get_analysis_results);
 }

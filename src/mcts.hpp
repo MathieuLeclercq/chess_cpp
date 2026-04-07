@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 #include <cstdint>
+#include <mutex>
 
 struct MCTSNode {
     int visit_count;
@@ -47,11 +48,15 @@ private:
     std::vector<float> m_eval_tensor;
     std::vector<float> m_eval_policy;
 
+    std::unique_ptr<MCTSNode> m_analysis_root;
+    std::mutex m_mutex;
+
 public:
     MCTS(const std::string& model_path);
 
     void step_analysis(Chessboard& board, int num_simulations, float c_puct);
     void reset_analysis();
+    void update_root(int move_idx);
     float get_root_q() const;
     std::vector<MoveStats> get_analysis_results() const;
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
@@ -62,6 +67,5 @@ private:
     bool apply_move_by_index(Chessboard& board, int idx);
     float expand_node_single(MCTSNode* node, Chessboard& board);
     std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
-    std::unique_ptr<MCTSNode> m_analysis_root;
 
 };
