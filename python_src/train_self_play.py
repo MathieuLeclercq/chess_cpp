@@ -387,17 +387,17 @@ if __name__ == "__main__":
     try:
         pipeline(
             num_iterations=150,
-            games_per_iter=512,
+            games_per_iter=256,
             num_workers=8,
             num_simulations=700,
             fast_sims=100,
             train_epochs=1,
-            batch_size=1024,
-            learning_rate=5e-6,
+            batch_size=2048,
+            learning_rate=2e-5,
             max_buffer_size=100_000,
-            samples_per_epoch=2000,
+            samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_07_00h10_UNSUPERVISED_NEW_MODEL.pt",
+            checkpoint_path="checkpoints/2026_04_08_12h43_iter26_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.15)
 project(Chess)
 cmake_policy(SET CMP0135 NEW)
 set(CMAKE_CXX_STANDARD 17)
@@ -50,7 +50,7 @@ target_link_libraries(chess_tests PRIVATE chess_core)
 # ==========================================
 # 3. Configuration Python & Pybind11
 # ==========================================
-find_package(Python3 3.11 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 3.13 COMPONENTS Interpreter Development REQUIRED)
 
 # Transmet dynamiquement la version trouvée à Pybind11
 set(PYBIND11_PYTHON_VERSION ${Python3_VERSION} CACHE STRING "Version Python pour pybind11" FORCE)
@@ -58,7 +58,7 @@ set(PYBIND11_PYTHON_VERSION ${Python3_VERSION} CACHE STRING "Version Python pour
 FetchContent_Declare(
   pybind11
   GIT_REPOSITORY https://github.com/pybind/pybind11.git
-  GIT_TAG        v2.11.1
+  GIT_TAG        v3.0.3
 )
 FetchContent_MakeAvailable(pybind11)
 
