@@ -93,10 +93,10 @@ class GameResult:
     def final_outcome(self) -> float:
         ...
     @property
-    def policies(self) -> list[list[float]]:
+    def policies(self) -> numpy.typing.NDArray[numpy.float32]:
         ...
     @property
-    def state_tensors(self) -> list[list[float]]:
+    def state_tensors(self) -> numpy.typing.NDArray[numpy.float32]:
         ...
 class GameState:
     """

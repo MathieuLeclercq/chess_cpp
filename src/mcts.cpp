@@ -55,48 +55,69 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
     int moves_played = 0;
     aborted = false;
 
-    while (!node->children.empty() && !node->is_terminal) {
-        float max_ucb = -1e9f;
-        int best_idx = -1;
+    // On continue tant qu'on n'est pas sur un état terminal
+    while (!node->is_terminal) {
 
-        float parent_q = node->q_value();
+        // --- 1. EXPANSION PARESSEUSE (Lazy Expansion) ---
+        // Si le noeud n'a pas d'enfants, on regarde s'il est dans la Table de Transposition
+        if (node->children.empty()) {
+            uint64_t hash = board.getZobristHash();
+            size_t tt_idx = hash % TT_SIZE;
 
-        float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
+            if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
+                const auto& cached_policy = transposition_table[tt_idx].legal_policy;
+                float sum_legal = 0.0f;
+                for (const auto& pair : cached_policy) sum_legal += pair.second;
 
+                for (const auto& pair : cached_policy) {
+                    float prob = (sum_legal > 0.0f) ? (pair.second / sum_legal) : (1.0f / (float)cached_policy.size());
+                    // Création du noeud "à la demande"
+                    node->children[pair.first] = std::make_unique<MCTSNode>(prob, pair.first, node);
+                }
+            }
+            else {
+                // Pas en cache : c'est une vraie feuille qui nécessite le GPU
+                break;
+            }
+        }
+
+        // --- 2. CALCUL DU FPU (COHÉRENT AVEC TON ANCIEN CODE) ---
         float visited_policy_sum = 0.0f;
         for (const auto& pair : node->children) {
             if (pair.second->visit_count > 0) {
                 visited_policy_sum += pair.second->prior;
             }
         }
-
-        // mécanique de Lc0
         float fpu_reduction = 0.30f * std::sqrt(visited_policy_sum);
 
-        for (const auto& pair : node->children) {
-            int idx = pair.first;
-            MCTSNode* child = pair.second.get();
+        // --- 3. SÉLECTION DU MEILLEUR COUP (UCB) ---
+        float max_ucb = -1e9f;
+        int best_move_idx = -1;
+        float parent_q = node->q_value();
+        float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
 
-            float score = child->ucb_score(exploration_factor, parent_q, fpu_reduction);
+        for (const auto& pair : node->children) {
+            float score = pair.second->ucb_score(exploration_factor, parent_q, fpu_reduction);
             if (score > max_ucb) {
                 max_ucb = score;
-                best_idx = idx;
+                best_move_idx = pair.first;
             }
         }
 
-        MCTSNode* next_node = node->children[best_idx].get();
+        if (best_move_idx == -1) break;
 
-        bool success = apply_move_by_index(board, best_idx);
-        if (!success) {
-            throw std::runtime_error("problème lors de la génération du coup");
+        // --- 4. DESCENTE ET MISE À JOUR ---
+        MCTSNode* next_node = node->children[best_move_idx].get();
+        if (!apply_move_by_index(board, best_move_idx)) {
+            throw std::runtime_error("Problème lors de l'application du coup dans select_leaf");
         }
 
         node = next_node;
         moves_played++;
 
-        // Vérification dynamique pendant la descente.
-        if (board.checkThreefoldRepetition() || 
-            board.getHalfMoveClock() >= 100 || 
+        // Vérification dynamique pendant la descente
+        if (board.checkThreefoldRepetition() ||
+            board.getHalfMoveClock() >= 100 ||
             board.checkInsufficientMaterial()) {
             node->is_terminal = true;
             break;
@@ -118,28 +139,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
     // 2. TABLE DE TRANSPOSITION (Lookup immédiat)
     if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
-
-        // --- CACHE HIT ---
-        const std::vector<std::pair<int, float>>& cached_policy = transposition_table[tt_idx].legal_policy;
-        float value = transposition_table[tt_idx].value;
-
-        float sum_legal = 0.0f;
-        for (const auto& pair : cached_policy) {
-            sum_legal += pair.second;
-        }
-
-        if (sum_legal > 0.0f) {
-            for (const auto& pair : cached_policy) {
-                node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
-            }
-        }
-        else {
-            float uniform_prob = 1.0f / cached_policy.size();
-            for (const auto& pair : cached_policy) {
-                node->children[pair.first] = std::make_unique<MCTSNode>(uniform_prob, pair.first, node);
-            }
-        }
-        return value;
+        return transposition_table[tt_idx].value; // On retourne juste la valeur, pas de création de noeuds !
     }
 
     // 3. CACHE MISS
@@ -461,28 +461,9 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
     size_t tt_idx = hash % TT_SIZE;
 
     if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
-        // CACHE HIT : On utilise les données existantes
-        const auto& cached_policy = transposition_table[tt_idx].legal_policy;
-        float value = transposition_table[tt_idx].value;
-
-        float sum_legal = 0.0f;
-        for (const auto& pair : cached_policy) sum_legal += pair.second;
-
-        if (sum_legal > 0.0f) {
-            for (const auto& pair : cached_policy) {
-                node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
-            }
-        }
-        else {
-            float uniform_prob = 1.0f / cached_policy.size();
-            for (const auto& pair : cached_policy) {
-                node->children[pair.first] = std::make_unique<MCTSNode>(uniform_prob, pair.first, node);
-            }
-        }
-
-        backup(node, value);
+        backup(node, transposition_table[tt_idx].value);
         for (int i = 0; i < moves_played; i++) board.undoMove();
-        return nullptr; // Pas besoin du GPU
+        return nullptr; // Pas de création de noeuds ici 
     }
 
     // Cas 4 : Vraie feuille non explorée

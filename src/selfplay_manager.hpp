@@ -5,11 +5,12 @@
 #include "mcts.hpp"
 #include "onnx_evaluator.hpp"
 
-// Structure pour stocker le résultat final d'une partie (pour Python)
+
 struct GameResult {
-    std::vector<std::vector<float>> state_tensors; // Les positions [119, 8, 8] aplaties
-    std::vector<std::vector<float>> policies;      // Les probabilités MCTS [4672]
-    float final_outcome;                           // 1 (Blanc gagne), -1 (Noir gagne), 0 (Nulle)
+    std::vector<float> flat_states; // Taille : [NbCoups * 119 * 64]
+    std::vector<float> flat_policies; // Taille : [NbCoups * 4672]
+    float final_outcome;
+    int move_count; // Pour savoir comment découper le vecteur plat
 };
 
 class SelfPlayManager {
@@ -20,8 +21,8 @@ private:
 
     // L'état complet des parties en cours
     std::vector<Chessboard> m_boards;
-    std::vector<std::unique_ptr<MCTS>> m_mcts_instances;
     std::vector<std::unique_ptr<MCTSNode>> m_roots;
+    std::unique_ptr<MCTS> m_shared_mcts;
 
     // Suivi de l'avancement de chaque arbre (combien de simulations terminées pour ce coup)
     std::vector<int> m_sims_completed;
@@ -40,6 +41,8 @@ private:
     std::vector<MCTSNode*> m_waiting_leaves;
     std::vector<int> m_waiting_game_indices;
     std::vector<int> m_waiting_moves_played;
+
+    std::vector<float> m_tensor_buffer;
 
 public:
     SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int simulations_per_move);

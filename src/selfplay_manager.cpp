@@ -17,8 +17,10 @@ SelfPlayManager::SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_ga
     // Pré-allocation du tenseur de batch
     m_batch_input.resize(num_concurrent_games * 119 * 64);
 
+    m_tensor_buffer.resize(119 * 8 * 8);
+
+    m_shared_mcts = std::make_unique<MCTS>(m_evaluator);
     for (int i = 0; i < num_concurrent_games; ++i) {
-        m_mcts_instances.push_back(std::make_unique<MCTS>(m_evaluator));
         reset_game(i);
     }
 }
@@ -33,8 +35,8 @@ void SelfPlayManager::reset_game(int game_idx) {
 
     // Premier appel bloquant pour initialiser la racine de la nouvelle partie
     float dummy_val;
-    m_mcts_instances[game_idx]->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
-    m_mcts_instances[game_idx]->add_dirichlet_noise(m_roots[game_idx].get());
+    m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
+    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
 }
 
 void SelfPlayManager::execute_gpu_batch() {
@@ -53,7 +55,7 @@ void SelfPlayManager::execute_gpu_batch() {
         float value = m_batch_values[i];
 
         // Rétropropagation
-        m_mcts_instances[game_idx]->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
+        m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
 
         // RESTAURATION DE L'ECHIQUIER
         for (int k = 0; k < moves_played; ++k) {
@@ -116,7 +118,7 @@ void SelfPlayManager::play_best_move(int game_idx) {
     m_game_policies[game_idx].push_back(pi);
 
     // 4. On joue le coup sur le vrai échiquier
-    m_mcts_instances[game_idx]->apply_move_by_index(m_boards[game_idx], best_move);
+    m_shared_mcts->apply_move_by_index(m_boards[game_idx], best_move);
 
     // 5. On descend la racine de l'arbre
     if (m_roots[game_idx]->children.count(best_move)) {
@@ -125,10 +127,10 @@ void SelfPlayManager::play_best_move(int game_idx) {
     }
     else {
         m_roots[game_idx] = std::make_unique<MCTSNode>(0.0f);
-        m_mcts_instances[game_idx]->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
+        m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
     }
 
-    m_mcts_instances[game_idx]->add_dirichlet_noise(m_roots[game_idx].get());
+    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
     m_sims_completed[game_idx] = 0;
 }
 
@@ -152,17 +154,19 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             // Phase de simulation MCTS
             if (m_sims_completed[i] < m_simulations_per_move) {
                 int moves_played = 0;
-                MCTSNode* leaf = m_mcts_instances[i]->advance_to_leaf(m_roots[i].get(), m_boards[i], 1.4f, moves_played);
+                MCTSNode* leaf = m_shared_mcts->advance_to_leaf(m_roots[i].get(), m_boards[i], 1.4f, moves_played);
 
                 if (leaf != nullptr) {
                     m_waiting_leaves.push_back(leaf);
                     m_waiting_game_indices.push_back(i);
                     m_waiting_moves_played.push_back(moves_played);
 
-                    std::vector<float> tensor;
-                    m_boards[i].getAlphaZeroTensor(tensor);
+                    m_boards[i].getAlphaZeroTensor(m_tensor_buffer); // Remplit m_tensor_buffer
                     int offset = (m_waiting_leaves.size() - 1) * 119 * 64;
-                    std::copy(tensor.begin(), tensor.end(), m_batch_input.begin() + offset);
+                    std::copy(
+                        m_tensor_buffer.begin(), 
+                        m_tensor_buffer.end(), 
+                        m_batch_input.begin() + offset);
 
                     // Exécution si le batch est plein
                     if (m_waiting_leaves.size() == m_num_concurrent_games) {
@@ -181,8 +185,19 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                 // Vérification de fin de partie
                 if (m_boards[i].getGameState() != ONGOING || m_boards[i].getHalfMoveClock() >= 100) {
                     GameResult res;
-                    res.state_tensors = m_game_states[i];
-                    res.policies = m_game_policies[i];
+                    res.move_count = m_game_states[i].size();
+
+                    // 1. On réserve la mémoire d'un seul coup (très rapide)
+                    res.flat_states.reserve(res.move_count * 119 * 64);
+                    res.flat_policies.reserve(res.move_count * 4672);
+
+                    // 2. On "aplatit" les données
+                    for (const auto& tensor : m_game_states[i]) {
+                        res.flat_states.insert(res.flat_states.end(), tensor.begin(), tensor.end());
+                    }
+                    for (const auto& pi : m_game_policies[i]) {
+                        res.flat_policies.insert(res.flat_policies.end(), pi.begin(), pi.end());
+                    }
 
                     if (m_boards[i].checkThreefoldRepetition() || 
                         m_boards[i].getHalfMoveClock() >= 100 || 
@@ -219,6 +234,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (all_blocked) execute_gpu_batch();
         }
     }
-
+    
+    std::cout << "Calcul termine, conversion vers Python en cours..." << std::endl;
     return m_finished_games;
 }

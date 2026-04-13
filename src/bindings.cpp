@@ -142,16 +142,38 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("get_analysis_results", &MCTS::get_analysis_results);
 
     py::class_<GameResult>(m, "GameResult")
-        .def_readonly("state_tensors", &GameResult::state_tensors)
-        .def_readonly("policies", &GameResult::policies)
+        .def_property_readonly("state_tensors", [](py::object& self) {
+        // "self" représente l'instance de GameResult côté Python.
+        // On l'utilise comme "base" pour que NumPy ne libère pas la mémoire
+        // tant que l'objet GameResult existe.
+        auto& res = self.cast<GameResult&>();
+        return py::array_t<float>(
+            { res.move_count, 119, 8, 8 }, // Shape
+            res.flat_states.data(),         // Pointer
+            self                           // Base (lifetime tracker)
+        );
+            })
+        .def_property_readonly("policies", [](py::object& self) {
+        auto& res = self.cast<GameResult&>();
+        return py::array_t<float>(
+            { res.move_count, 4672 },
+            res.flat_policies.data(),
+            self
+        );
+            })
         .def_readonly("final_outcome", &GameResult::final_outcome);
 
-    m.def("generate_self_play_games", [](ONNXEvaluator* evaluator, int concurrent_games, int sims_per_move, int total_games) {
-        SelfPlayManager manager(evaluator, concurrent_games, sims_per_move);
-        return manager.generate_games(total_games);
-
+    // --- Fonction de génération globale ---
+    m.def("generate_self_play_games", [](
+        ONNXEvaluator* evaluator, 
+        int concurrent_games, 
+        int sims_per_move, int total_games) {
+            // Le Manager est créé ici, génère les parties, puis est détruit.
+            // Cela garantit que la RAM est libérée entre deux appels Python.
+            SelfPlayManager manager(evaluator, concurrent_games, sims_per_move);
+            return manager.generate_games(total_games);
         },
-        py::call_guard<py::gil_scoped_release>(), // Libère le GIL Python pour que le C++ tourne à 100%
+        py::call_guard<py::gil_scoped_release>(), // Libère le GIL pour le multi-threading C++
         py::arg("evaluator"),
         py::arg("concurrent_games"),
         py::arg("sims_per_move"),
