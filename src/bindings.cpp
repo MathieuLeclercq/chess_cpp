@@ -5,6 +5,7 @@
 #include "move.hpp"
 #include "square.hpp"
 #include "mcts.hpp"
+#include "onnx_evaluator.hpp"
 #include <pybind11/numpy.h>
 
 namespace py = pybind11;
@@ -121,8 +122,11 @@ PYBIND11_MODULE(chess_engine, m) {
         .def_readonly("q_value", &MoveStats::q_value)
         .def_readonly("prior", &MoveStats::prior);
 
+    py::class_<ONNXEvaluator>(m, "ONNXEvaluator")
+        .def(py::init<const std::string&>(), py::arg("model_path"));
+
     py::class_<MCTS>(m, "MCTS")
-        .def(py::init<const std::string&>(), py::arg("model_path"))
+        .def(py::init<ONNXEvaluator*>(), py::arg("evaluator"))
         .def("mcts_search", &MCTS::mcts_search,
             py::call_guard<py::gil_scoped_release>(),
             py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f, py::arg("add_dirichlet") = false)

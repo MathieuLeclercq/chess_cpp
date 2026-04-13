@@ -33,7 +33,8 @@ add_library(chess_core STATIC
     src/move.cpp 
     src/pgn_parser.cpp
     src/mcts.cpp 
-    src/zobrist.cpp)
+    src/zobrist.cpp
+    src/onnx_evaluator.cpp)
 
 # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})

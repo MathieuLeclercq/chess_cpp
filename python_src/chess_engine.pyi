@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'MoveStats', 'NONE', 'NO_COLOR', 'ONGOING', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
+__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'MoveStats', 'NONE', 'NO_COLOR', 'ONGOING', 'ONNXEvaluator', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
 class Chessboard:
     def __init__(self) -> None:
         ...
@@ -138,7 +138,7 @@ class GameState:
     def value(self) -> int:
         ...
 class MCTS:
-    def __init__(self, model_path: str) -> None:
+    def __init__(self, evaluator: ONNXEvaluator) -> None:
         ...
     def get_analysis_results(self) -> list[MoveStats]:
         ...
@@ -173,6 +173,9 @@ class MoveStats:
         ...
     @property
     def visits(self) -> int:
+        ...
+class ONNXEvaluator:
+    def __init__(self, model_path: str) -> None:
         ...
 class Piece:
     @typing.overload

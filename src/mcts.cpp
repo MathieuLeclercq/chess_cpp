@@ -35,20 +35,8 @@ float MCTSNode::q_value() const {
 //                     MCTS
 // ============================================================
 
-MCTS::MCTS(const std::string& model_path)
-    : env(ORT_LOGGING_LEVEL_WARNING, "AlphaZeroMCTS")
-{
-    // Optimisations CPU pour ONNX Runtime
-    session_options.SetIntraOpNumThreads(1);
-    session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-
-    // Support string conversion for Windows wide strings
-    std::wstring w_model_path(model_path.begin(), model_path.end());
-    session = std::make_unique<Ort::Session>(env, w_model_path.c_str(), session_options);
-
+MCTS::MCTS(ONNXEvaluator* evaluator) : m_evaluator(evaluator) {
     transposition_table.resize(TT_SIZE);
-
-    // Pré-allocation des buffers de travail
     m_eval_tensor.reserve(119 * 64);
     m_eval_policy.reserve(4672);
 }
@@ -118,44 +106,6 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
     return { node, moves_played };
 }
 
-void MCTS::evaluate_onnx(const std::vector<float>& input_tensor, std::vector<float>& policy, float& value) {
-    // Initialisations statiques (Zéro overhead après le 1er appel)
-    static const std::array<int64_t, 4> input_shape = { 1, 119, 8, 8 };
-    static const char* input_names[] = { "input" };
-    static const char* output_names[] = { "policy", "value" };
-    static auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-
-    Ort::Value input_ort = Ort::Value::CreateTensor<float>(
-        memory_info, const_cast<float*>(input_tensor.data()), input_tensor.size(),
-        input_shape.data(), input_shape.size()
-    );
-
-    auto output_tensors = session->Run(Ort::RunOptions{ nullptr }, input_names, &input_ort, 1, output_names, 2);
-
-    // GetTensorData retourne un const float*, on évite de le rendre mutable
-    const float* policy_data = output_tensors[0].GetTensorData<float>();
-    const float* value_data = output_tensors[1].GetTensorData<float>();
-
-    value = value_data[0];
-    policy.resize(4672);
-
-    // Fusion de la copie et du Softmax
-    float max_logit = *std::max_element(policy_data, policy_data + 4672);
-    float sum_exp = 0.0f;
-
-    for (int i = 0; i < 4672; ++i) {
-        float e = std::exp(policy_data[i] - max_logit);
-        policy[i] = e; // On écrit directement à la bonne place
-        sum_exp += e;
-    }
-
-    // Optimisation mathématique : Multiplication au lieu de Division
-    float inv_sum = 1.0f / sum_exp;
-    for (int i = 0; i < 4672; ++i) {
-        policy[i] *= inv_sum;
-    }
-}
-
 float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
     if (board.checkThreefoldRepetition() || board.getHalfMoveClock() >= 100 || board.checkInsufficientMaterial()) {
@@ -201,7 +151,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
     board.getAlphaZeroTensor(m_eval_tensor);
     float value;
-    evaluate_onnx(m_eval_tensor, m_eval_policy, value);
+    m_evaluator->evaluate(m_eval_tensor, m_eval_policy, value);
 
     // 4. STOCKAGE SANS ALLOCATION (Réutilisation de la capacité)
     transposition_table[tt_idx].hash = hash;

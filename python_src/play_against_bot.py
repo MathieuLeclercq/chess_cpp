@@ -334,7 +334,9 @@ class ChessGame:
 
 def main():
     print(f"Chargement du moteur MCTS avec {CHECKPOINT_PATH}...")
-    mcts_engine = chess_engine.MCTS(CHECKPOINT_PATH)
+
+    evaluator = chess_engine.ONNXEvaluator(CHECKPOINT_PATH)
+    mcts_engine = chess_engine.MCTS(evaluator)
 
     board = chess_engine.Chessboard()
     board.set_startup_pieces()

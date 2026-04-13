@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <mutex>
 
+#include "onnx_evaluator.hpp"
+
 struct MCTSNode {
     int visit_count;
     int move_idx;
@@ -39,21 +41,17 @@ struct MoveStats {
 
 class MCTS {
 private:
-    Ort::Env env;
-    Ort::SessionOptions session_options;
-    std::unique_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
     std::vector<TTEntry> transposition_table;
     static constexpr size_t TT_SIZE = 2097143;
-
     std::vector<float> m_eval_tensor;
     std::vector<float> m_eval_policy;
-
     std::unique_ptr<MCTSNode> m_analysis_root;
     std::mutex m_mutex;
+    ONNXEvaluator* m_evaluator;
 
 public:
-    MCTS(const std::string& model_path);
+    MCTS(ONNXEvaluator* evaluator);
 
     void step_analysis(Chessboard& board, int num_simulations, float c_puct);
     void reset_analysis();
@@ -64,7 +62,6 @@ public:
 
 private:
     void backup(MCTSNode* node, float value);
-    void evaluate_onnx(const std::vector<float>& input_tensor, std::vector<float>& policy, float& value);
     bool apply_move_by_index(Chessboard& board, int idx);
     float expand_node_single(MCTSNode* node, Chessboard& board);
     std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);

@@ -10,7 +10,7 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 #                     CONFIGURATION EN DUR
 # ============================================================
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints/2026_04_09_16h43_iter30_unsupervised.onnx")
+              r"\checkpoints/2026_04_12_19h17_iter34_unsupervised.onnx")
 DEFAULT_SIMULATIONS = 1000
 BATCH_SIZE = 100
 
@@ -21,13 +21,15 @@ BATCH_SIZE = 100
 class UCIEngine:
     def __init__(self):
         self.board = chess_engine.Chessboard()
-        self.mcts = chess_engine.MCTS(MODEL_PATH)
+        self.evaluator = chess_engine.ONNXEvaluator(MODEL_PATH)
+        self.mcts = chess_engine.MCTS(self.evaluator)
         self.search_thread = None
 
         self.stop_event = threading.Event()
 
         # Variables de contrôle de l'horloge
         self.is_pondering = False
+        self.is_infinite = False
         self.target_time = 10.0
         self.search_start_time = 0.0
 
@@ -138,7 +140,7 @@ class UCIEngine:
 
         # Détection de l'ordre de Pondering par la GUI
         self.is_pondering = "ponder" in tokens
-        is_infinite = "infinite" in tokens
+        self.is_infinite = "infinite" in tokens
         is_black = (self.board.turn == chess_engine.Color.BLACK)
 
         for i in range(len(tokens) - 1):
@@ -154,7 +156,7 @@ class UCIEngine:
                 movetime_ms = int(tokens[i + 1])
 
         # Calcul du budget temps
-        if is_infinite:
+        if self.is_infinite:
             self.target_time = 1e9
         elif movetime_ms is not None:
             self.target_time = (movetime_ms / 1000.0) * 0.95
@@ -177,7 +179,9 @@ class UCIEngine:
 
         # --- MODIFICATION : Limite de nœuds dans l'ouverture ---
         # 10 demi-coups correspondent aux 5 premiers coups complets
-        if len(self.last_move_list) < 10:
+        if self.is_infinite:
+            max_sims = float('inf')
+        elif len(self.last_move_list) < 10:
             max_sims = DEFAULT_SIMULATIONS  # 1200 nœuds
         else:
             max_sims = 10_000_000
