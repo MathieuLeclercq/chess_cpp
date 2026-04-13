@@ -1,0 +1,54 @@
+#pragma once
+#include <vector>
+#include <memory>
+#include "chessboard.hpp"
+#include "mcts.hpp"
+#include "onnx_evaluator.hpp"
+
+// Structure pour stocker le résultat final d'une partie (pour Python)
+struct GameResult {
+    std::vector<std::vector<float>> state_tensors; // Les positions [119, 8, 8] aplaties
+    std::vector<std::vector<float>> policies;      // Les probabilités MCTS [4672]
+    float final_outcome;                           // 1 (Blanc gagne), -1 (Noir gagne), 0 (Nulle)
+};
+
+class SelfPlayManager {
+private:
+    int m_num_concurrent_games;
+    int m_simulations_per_move;
+    ONNXEvaluator* m_evaluator;
+
+    // L'état complet des parties en cours
+    std::vector<Chessboard> m_boards;
+    std::vector<std::unique_ptr<MCTS>> m_mcts_instances;
+    std::vector<std::unique_ptr<MCTSNode>> m_roots;
+
+    // Suivi de l'avancement de chaque arbre (combien de simulations terminées pour ce coup)
+    std::vector<int> m_sims_completed;
+
+    // Données accumulées pour l'entraînement final
+    std::vector<GameResult> m_finished_games;
+    std::vector<std::vector<std::vector<float>>> m_game_states;
+    std::vector<std::vector<std::vector<float>>> m_game_policies;
+
+    // Buffers pour le GPU
+    std::vector<float> m_batch_input;
+    std::vector<float> m_batch_policies;
+    std::vector<float> m_batch_values;
+
+    // Suivi de l'état de la boucle asynchrone
+    std::vector<MCTSNode*> m_waiting_leaves;
+    std::vector<int> m_waiting_game_indices;
+    std::vector<int> m_waiting_moves_played;
+
+public:
+    SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int simulations_per_move);
+
+    // La fonction principale qui sera appelée par Python
+    std::vector<GameResult> generate_games(int total_games_to_play);
+
+private:
+    void reset_game(int game_idx);
+    void play_best_move(int game_idx);
+    void execute_gpu_batch();
+};

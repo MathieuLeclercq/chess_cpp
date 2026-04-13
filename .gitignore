@@ -12,4 +12,5 @@ lichess_bot/
 
 lichess_token.txt
 *.exe
+*.dll
 CMakeUserPresets.json

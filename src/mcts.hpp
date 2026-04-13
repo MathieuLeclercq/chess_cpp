@@ -59,11 +59,16 @@ public:
     float get_root_q() const;
     std::vector<MoveStats> get_analysis_results() const;
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
+    float expand_node_single(MCTSNode* node, Chessboard& board);
+    bool apply_move_by_index(Chessboard& board, int idx);
+    void add_dirichlet_noise(MCTSNode* root);
+
+    // recherche mcts asynchrone
+    MCTSNode* advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct, int& moves_played);
+    void expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const std::vector<float>& policy, float value);
 
 private:
     void backup(MCTSNode* node, float value);
-    bool apply_move_by_index(Chessboard& board, int idx);
-    float expand_node_single(MCTSNode* node, Chessboard& board);
     std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
 
 };

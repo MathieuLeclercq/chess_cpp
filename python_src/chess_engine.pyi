@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'MoveStats', 'NONE', 'NO_COLOR', 'ONGOING', 'ONNXEvaluator', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE']
+__all__: list[str] = ['BISHOP', 'BLACK', 'CHECKMATE', 'Chessboard', 'Color', 'DRAW_50_MOVES', 'DRAW_INSUFF_MATERIAL', 'DRAW_REPETITION', 'GameResult', 'GameState', 'KING', 'KNIGHT', 'MCTS', 'Move', 'MoveStats', 'NONE', 'NO_COLOR', 'ONGOING', 'ONNXEvaluator', 'PAWN', 'Piece', 'PieceType', 'QUEEN', 'ROOK', 'STALEMATE', 'Square', 'WHITE', 'generate_self_play_games']
 class Chessboard:
     def __init__(self) -> None:
         ...
@@ -87,6 +87,16 @@ class Color:
         ...
     @property
     def value(self) -> int:
+        ...
+class GameResult:
+    @property
+    def final_outcome(self) -> float:
+        ...
+    @property
+    def policies(self) -> list[list[float]]:
+        ...
+    @property
+    def state_tensors(self) -> list[list[float]]:
         ...
 class GameState:
     """
@@ -175,7 +185,7 @@ class MoveStats:
     def visits(self) -> int:
         ...
 class ONNXEvaluator:
-    def __init__(self, model_path: str) -> None:
+    def __init__(self, model_path: str, use_gpu: bool = False) -> None:
         ...
 class Piece:
     @typing.overload
@@ -257,6 +267,10 @@ class Square:
         ...
     def is_occupied(self) -> bool:
         ...
+def generate_self_play_games(evaluator: ONNXEvaluator, concurrent_games: typing.SupportsInt | typing.SupportsIndex, sims_per_move: typing.SupportsInt | typing.SupportsIndex, total_games: typing.SupportsInt | typing.SupportsIndex) -> list[GameResult]:
+    """
+    Génère un dataset de parties en self-play en utilisant un batching GPU massif.
+    """
 BISHOP: PieceType  # value = <PieceType.BISHOP: 2>
 BLACK: Color  # value = <Color.BLACK: 1>
 CHECKMATE: GameState  # value = <GameState.CHECKMATE: 1>

@@ -181,6 +181,26 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     return value;
 }
 
+void MCTS::add_dirichlet_noise(MCTSNode* root) {
+    if (root->children.empty()) return;
+    std::mt19937 gen(std::random_device{}());
+    std::gamma_distribution<float> gamma(0.3f, 1.0f); // Alpha = 0.3 pour les échecs
+
+    float sum_noise = 0.0f;
+    std::vector<float> noise(root->children.size());
+    for (size_t i = 0; i < root->children.size(); i++) {
+        noise[i] = gamma(gen);
+        sum_noise += noise[i];
+    }
+
+    int i = 0;
+    float epsilon = 0.12f; // 0.25 pour alphazero
+    for (auto& pair : root->children) {
+        float dirichlet = noise[i++] / sum_noise;
+        pair.second->prior = (1.0f - epsilon) * pair.second->prior + epsilon * dirichlet;
+    }
+}
+
 std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet) {
 
     //if (board.getZobristHash() != board.computeZobristFromScratch()) {
@@ -190,25 +210,8 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
     std::unique_ptr<MCTSNode> root = std::make_unique<MCTSNode>(0.0f);
     expand_node_single(root.get(), board);
 
-    if (add_dirichlet && !root->children.empty()) {
-        std::mt19937 gen(std::random_device{}());
-        std::gamma_distribution<float> gamma(0.3f, 1.0f); // Alpha = 0.3
-
-        float epsilon = 0.12f;
-        float sum_noise = 0.0f;
-        std::vector<float> noise(root->children.size());
-
-        for (size_t i = 0; i < root->children.size(); i++) {
-            noise[i] = gamma(gen);
-            sum_noise += noise[i];
-        }
-
-        int i = 0;
-        for (auto& pair : root->children) {
-            MCTSNode* child = pair.second.get();
-            float dirichlet = noise[i++] / sum_noise;
-            child->prior = (1.0f - epsilon) * child->prior + epsilon * dirichlet;
-        }
+    if (add_dirichlet) {
+        add_dirichlet_noise(root.get());
     }
 
     for (int sim = 0; sim < num_simulations; sim++) {
@@ -424,4 +427,108 @@ std::vector<MoveStats> MCTS::get_analysis_results() const {
         });
 
     return results;
+}
+
+MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct, int& moves_played) {
+    bool aborted;
+    auto [node, moves] = select_leaf(root, board, c_puct, aborted);
+    moves_played = moves;
+
+    // Cas 1 : Coup invalide généré
+    if (aborted) {
+        for (int i = 0; i < moves_played; i++) board.undoMove();
+        return nullptr;
+    }
+
+    // Cas 2 : Fin de partie (Mat, Pat, Nulle)
+    if (node->is_terminal) {
+        float value = 0.0f;
+        if (board.checkThreefoldRepetition() ||
+            board.getHalfMoveClock() >= 100 ||
+            board.checkInsufficientMaterial()) {
+            value = 0.0f;
+        }
+        else {
+            value = board.isInCheck() ? -1.0f : 0.0f;
+        }
+        backup(node, value);
+        for (int i = 0; i < moves_played; i++) board.undoMove();
+        return nullptr; // Pas besoin du GPU
+    }
+
+    // Cas 3 : On vérifie la Table de Transposition (TT) AVANT d'embêter le GPU
+    uint64_t hash = board.getZobristHash();
+    size_t tt_idx = hash % TT_SIZE;
+
+    if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
+        // CACHE HIT : On utilise les données existantes
+        const auto& cached_policy = transposition_table[tt_idx].legal_policy;
+        float value = transposition_table[tt_idx].value;
+
+        float sum_legal = 0.0f;
+        for (const auto& pair : cached_policy) sum_legal += pair.second;
+
+        if (sum_legal > 0.0f) {
+            for (const auto& pair : cached_policy) {
+                node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
+            }
+        }
+        else {
+            float uniform_prob = 1.0f / cached_policy.size();
+            for (const auto& pair : cached_policy) {
+                node->children[pair.first] = std::make_unique<MCTSNode>(uniform_prob, pair.first, node);
+            }
+        }
+
+        backup(node, value);
+        for (int i = 0; i < moves_played; i++) board.undoMove();
+        return nullptr; // Pas besoin du GPU
+    }
+
+    // Cas 4 : Vraie feuille non explorée
+    // On retourne le nœud. Le manager va extraire le tenseur, l'envoyer au GPU,
+    // puis appeler expand_and_backup() plus tard.
+    return node;
+}
+
+void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const std::vector<float>& policy, float value) {
+    // Cette fonction est appelée PAR LE MANAGER une fois que l'inférence ONNX est terminée
+
+    std::vector<int> legal_indices = board.getLegalMoveIndices();
+    if (legal_indices.empty()) {
+        // Sécurité ultime au cas où
+        leaf_node->is_terminal = true;
+        backup(leaf_node, board.isInCheck() ? -1.0f : 0.0f);
+        return;
+    }
+
+    // Mise en cache dans la Table de Transposition
+    uint64_t hash = board.getZobristHash();
+    size_t tt_idx = hash % TT_SIZE;
+    transposition_table[tt_idx].hash = hash;
+    transposition_table[tt_idx].value = value;
+    transposition_table[tt_idx].legal_policy.clear();
+
+    float sum_legal = 0.0f;
+    for (int idx : legal_indices) {
+        float prob = policy[idx];
+        transposition_table[tt_idx].legal_policy.push_back({ idx, prob });
+        sum_legal += prob;
+    }
+
+    // Instanciation des enfants
+    if (sum_legal > 0.0f) {
+        for (const auto& pair : transposition_table[tt_idx].legal_policy) {
+            leaf_node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, leaf_node);
+        }
+    }
+    else {
+        float uniform_prob = 1.0f / legal_indices.size();
+        for (int idx : legal_indices) {
+            leaf_node->children[idx] = std::make_unique<MCTSNode>(uniform_prob, idx, leaf_node);
+        }
+    }
+
+    // On remonte la valeur prédite
+    backup(leaf_node, value);
 }

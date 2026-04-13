@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # RÉCUPÉRATION DE ONNX RUNTIME (C++)
 # ==========================================
 set(ONNXRUNTIME_VERSION "1.24.3")
-set(ONNXRUNTIME_URL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-win-x64-${ONNXRUNTIME_VERSION}.zip")
+set(ONNXRUNTIME_URL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-win-x64-gpu-${ONNXRUNTIME_VERSION}.zip")
 include(FetchContent)
 
 FetchContent_Declare(
@@ -19,10 +19,12 @@ FetchContent_MakeAvailable(onnxruntime)
 
 # Extraction des chemins vers les dossiers de l'archive téléchargée
 FetchContent_GetProperties(onnxruntime SOURCE_DIR onnxruntime_src)
-set(ONNXRUNTIME_INCLUDE_DIR "${onnxruntime_src}/include")
-set(ONNXRUNTIME_LIB "${onnxruntime_src}/lib/onnxruntime.lib")
-set(ONNXRUNTIME_DLL "${onnxruntime_src}/lib/onnxruntime.dll")
-
+set(ONNX_GPU_DIR "${onnxruntime_src}/onnxruntime-win-x64-gpu-${ONNXRUNTIME_VERSION}")
+set(ONNXRUNTIME_INCLUDE_DIR "${ONNX_GPU_DIR}/include")
+set(ONNXRUNTIME_LIB "${ONNX_GPU_DIR}/lib/onnxruntime.lib")
+set(ONNXRUNTIME_DLL "${ONNX_GPU_DIR}/lib/onnxruntime.dll")
+set(ONNXRUNTIME_SHARED_DLL "${ONNX_GPU_DIR}/lib/onnxruntime_providers_shared.dll")
+set(ONNXRUNTIME_CUDA_DLL "${ONNX_GPU_DIR}/lib/onnxruntime_providers_cuda.dll")
 # ==========================================
 # 1. Création de la librairie core
 # ==========================================
@@ -34,7 +36,8 @@ add_library(chess_core STATIC
     src/pgn_parser.cpp
     src/mcts.cpp 
     src/zobrist.cpp
-    src/onnx_evaluator.cpp)
+    src/onnx_evaluator.cpp
+    src/selfplay_manager.cpp)
 
 # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
@@ -71,10 +74,18 @@ target_link_libraries(chess_engine PRIVATE chess_core)
 
 # Génération des stubs ET copie de la DLL ONNX
 add_custom_command(TARGET chess_engine POST_BUILD
-    # Copie de la DLL nécessaire à l'exécution
+    # Copie de la DLL principale
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_DLL}
         ${CMAKE_SOURCE_DIR}/python_src/onnxruntime.dll
+    
+    # Ajout pour le GPU
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ONNXRUNTIME_SHARED_DLL}
+        ${CMAKE_SOURCE_DIR}/python_src/onnxruntime_providers_shared.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ONNXRUNTIME_CUDA_DLL}
+        ${CMAKE_SOURCE_DIR}/python_src/onnxruntime_providers_cuda.dll
         
     # Génération des stubs (.pyi) en utilisant l'exécutable Python trouvé dynamiquement
     COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${CMAKE_SOURCE_DIR}/python_src" 

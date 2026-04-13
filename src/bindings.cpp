@@ -6,6 +6,7 @@
 #include "square.hpp"
 #include "mcts.hpp"
 #include "onnx_evaluator.hpp"
+#include "selfplay_manager.hpp"
 #include <pybind11/numpy.h>
 
 namespace py = pybind11;
@@ -123,7 +124,7 @@ PYBIND11_MODULE(chess_engine, m) {
         .def_readonly("prior", &MoveStats::prior);
 
     py::class_<ONNXEvaluator>(m, "ONNXEvaluator")
-        .def(py::init<const std::string&>(), py::arg("model_path"));
+        .def(py::init<const std::string&, bool>(), py::arg("model_path"), py::arg("use_gpu") = false);
 
     py::class_<MCTS>(m, "MCTS")
         .def(py::init<ONNXEvaluator*>(), py::arg("evaluator"))
@@ -139,4 +140,21 @@ PYBIND11_MODULE(chess_engine, m) {
         .def("update_root", &MCTS::update_root, "Déplace la racine de l'arbre vers un coup spécifique")
         .def("get_root_q", &MCTS::get_root_q)
         .def("get_analysis_results", &MCTS::get_analysis_results);
+
+    py::class_<GameResult>(m, "GameResult")
+        .def_readonly("state_tensors", &GameResult::state_tensors)
+        .def_readonly("policies", &GameResult::policies)
+        .def_readonly("final_outcome", &GameResult::final_outcome);
+
+    m.def("generate_self_play_games", [](ONNXEvaluator* evaluator, int concurrent_games, int sims_per_move, int total_games) {
+        SelfPlayManager manager(evaluator, concurrent_games, sims_per_move);
+        return manager.generate_games(total_games);
+
+        },
+        py::call_guard<py::gil_scoped_release>(), // Libère le GIL Python pour que le C++ tourne à 100%
+        py::arg("evaluator"),
+        py::arg("concurrent_games"),
+        py::arg("sims_per_move"),
+        py::arg("total_games"),
+        "Génère un dataset de parties en self-play en utilisant un batching GPU massif.");
 }
