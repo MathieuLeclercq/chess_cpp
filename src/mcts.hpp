@@ -65,7 +65,7 @@ public:
 
     // recherche mcts asynchrone
     MCTSNode* advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct, int& moves_played);
-    void expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const std::vector<float>& policy, float value);
+    void expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float* policy, float value);
 
 private:
     void backup(MCTSNode* node, float value);

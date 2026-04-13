@@ -165,15 +165,13 @@ PYBIND11_MODULE(chess_engine, m) {
 
     // --- Fonction de génération globale ---
     m.def("generate_self_play_games", [](
-        ONNXEvaluator* evaluator, 
-        int concurrent_games, 
+        ONNXEvaluator* evaluator,
+        int concurrent_games,
         int sims_per_move, int total_games) {
-            // Le Manager est créé ici, génère les parties, puis est détruit.
-            // Cela garantit que la RAM est libérée entre deux appels Python.
             SelfPlayManager manager(evaluator, concurrent_games, sims_per_move);
             return manager.generate_games(total_games);
         },
-        py::call_guard<py::gil_scoped_release>(), // Libère le GIL pour le multi-threading C++
+        py::call_guard<py::gil_scoped_release>(),
         py::arg("evaluator"),
         py::arg("concurrent_games"),
         py::arg("sims_per_move"),

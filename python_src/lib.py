@@ -393,6 +393,32 @@ def export_model_to_onnx(model, onnx_path, device):
         os.remove(temp_infer_path)
 
 
+def export_model_to_onnx_gpu(model, onnx_path, device):
+    """
+    Export ONNX avec batch dynamique, FP32, pour inférence GPU batchée.
+    """
+    model.eval()
+    dummy_input = (torch.randn(1, 119, 8, 8, device=device),)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        torch.onnx.export(
+            model,
+            dummy_input,
+            onnx_path,
+            export_params=True,
+            opset_version=18,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['policy', 'value'],
+            dynamic_axes={
+                'input': {0: 'batch'},
+                'policy': {0: 'batch'},
+                'value': {0: 'batch'}
+            },
+            verbose=False
+        )
+
 def get_model_hash(filepath):
     """Génère un hash unique basé sur le contenu du fichier."""
     hasher = hashlib.sha256()

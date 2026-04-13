@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <random>
 #include "chessboard.hpp"
 #include "mcts.hpp"
 #include "onnx_evaluator.hpp"
@@ -41,8 +42,12 @@ private:
     std::vector<MCTSNode*> m_waiting_leaves;
     std::vector<int> m_waiting_game_indices;
     std::vector<int> m_waiting_moves_played;
+    std::vector<bool> m_is_waiting;
 
     std::vector<float> m_tensor_buffer;
+
+    std::mt19937 m_rng{ std::random_device{}() };
+
 
 public:
     SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int simulations_per_move);

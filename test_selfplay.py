@@ -2,8 +2,9 @@ import sys
 import time
 import os
 import gc
-import torch # On utilise torch pour sauvegarder les données proprement
-sys.path.append("./python_src") 
+import threading
+import torch
+sys.path.append("./python_src")
 import chess_engine
 
 # Configuration
@@ -11,10 +12,11 @@ MODEL_PATH = r"C:\Users\M47h1\Documents\chess_cpp\python_src\checkpoints\model_d
 SAVE_DIR = "selfplay_data"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+
 def save_chunk(games, chunk_id):
     """Sauvegarde un bloc de parties sur le disque."""
     filename = os.path.join(SAVE_DIR, f"batch_{chunk_id}_{int(time.time())}.pth")
-    
+
     data_to_save = []
     for g in games:
         data_to_save.append({
@@ -22,19 +24,46 @@ def save_chunk(games, chunk_id):
             'policies': g.policies,
             'outcome': g.final_outcome
         })
-    
+
     torch.save(data_to_save, filename)
     print(f"  -> Sauvegardé : {filename}")
+
+
+def run_with_interrupt(fn, *args):
+    """Lance fn(*args) dans un thread séparé pour que Ctrl+C reste réactif."""
+    result = [None]
+    exc = [None]
+
+    def target():
+        try:
+            result[0] = fn(*args)
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=target)
+    t.start()
+
+    try:
+        while t.is_alive():
+            t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n[Interruption détectée] Le chunk C++ en cours va se terminer...")
+        raise
+
+    if exc[0]:
+        raise exc[0]
+    return result[0]
+
 
 def main():
     print("Chargement du modèle sur GPU...")
     evaluator = chess_engine.ONNXEvaluator(MODEL_PATH, True)
-    
+
     # --- PARAMÈTRES D'OPTIMISATION ---
-    CONCURRENT_GAMES = 32    # Largeur du batch GPU (tu peux tester 512 si ça tient)
-    SIMS_PER_MOVE = 200       # Qualité de la recherche
-    GAMES_PER_CHUNK = 64     # Nombre de parties avant de vider la RAM
-    TOTAL_GOAL = 128         # Objectif total de la session
+    CONCURRENT_GAMES = 8
+    SIMS_PER_MOVE = 200
+    GAMES_PER_CHUNK = 8
+    TOTAL_GOAL = 32
     # ----------------------------------
 
     print(f"\nObjectif : {TOTAL_GOAL} parties.")
@@ -45,37 +74,44 @@ def main():
     chunk_count = 0
     start_global = time.time()
 
-    while total_generated < TOTAL_GOAL:
-        chunk_count += 1
-        print(f"\n[Chunk {chunk_count}] Génération en cours...")
-        
-        start_chunk = time.time()
-        
-        # Le manager est créé et détruit à chaque chunk pour libérer la RAM des arbres MCTS
-        games = chess_engine.generate_self_play_games(
-            evaluator, 
-            CONCURRENT_GAMES, 
-            SIMS_PER_MOVE, 
-            GAMES_PER_CHUNK
-        )
-        
-        duration_chunk = time.time() - start_chunk
-        total_generated += len(games)
-        
-        save_chunk(games, chunk_count)
-        vitesse = len(games) / duration_chunk
-        
-        # Libération TOTALE
-        del games
-        # Forcer le Garbage Collector à passer tout de suite
-        gc.collect()
-        
-        print(f"Chunk terminé en {duration_chunk:.1f}s ({vitesse:.2f} parties/s)")
-        print(f"Progression totale : {total_generated}/{TOTAL_GOAL}")
+    try:
+        while total_generated < TOTAL_GOAL:
+            chunk_count += 1
+            print(f"\n[Chunk {chunk_count}] Génération en cours...")
+
+            start_chunk = time.time()
+
+            games = run_with_interrupt(
+                chess_engine.generate_self_play_games,
+                evaluator,
+                CONCURRENT_GAMES,
+                SIMS_PER_MOVE,
+                GAMES_PER_CHUNK
+            )
+
+            duration_chunk = time.time() - start_chunk
+            num_games = len(games)
+            total_generated += num_games
+
+            save_chunk(games, chunk_count)
+            vitesse = num_games / duration_chunk
+
+            del games
+            gc.collect()
+
+            print(f"Chunk terminé en {duration_chunk:.1f}s ({vitesse:.2f} parties/s)")
+            print(f"Progression totale : {total_generated}/{TOTAL_GOAL}")
+
+    except KeyboardInterrupt:
+        print("\n[Interruption] Arrêt propre.")
 
     end_global = time.time()
-    print(f"\n=== SESSION TERMINÉE EN {end_global - start_global:.1f}s ===")
-    print(f"Vitesse moyenne : {total_generated / (end_global - start_global):.2f} parties/s")
+    elapsed = end_global - start_global
+    print(f"\n=== SESSION TERMINÉE EN {elapsed:.1f}s ===")
+    if total_generated > 0:
+        print(f"Parties générées : {total_generated}")
+        print(f"Vitesse moyenne : {total_generated / elapsed:.2f} parties/s")
+
 
 if __name__ == "__main__":
     main()

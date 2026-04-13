@@ -10,6 +10,7 @@ SelfPlayManager::SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_ga
     m_boards.resize(num_concurrent_games);
     m_roots.resize(num_concurrent_games);
     m_sims_completed.resize(num_concurrent_games, 0);
+    m_is_waiting.resize(num_concurrent_games, false);
 
     m_game_states.resize(num_concurrent_games);
     m_game_policies.resize(num_concurrent_games);
@@ -34,7 +35,6 @@ void SelfPlayManager::reset_game(int game_idx) {
     m_game_policies[game_idx].clear();
 
     // Premier appel bloquant pour initialiser la racine de la nouvelle partie
-    float dummy_val;
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
     m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
 }
@@ -50,12 +50,10 @@ void SelfPlayManager::execute_gpu_batch() {
         int game_idx = m_waiting_game_indices[i];
         int moves_played = m_waiting_moves_played[i];
 
-        auto policy_start = m_batch_policies.begin() + (i * 4672);
-        std::vector<float> single_policy(policy_start, policy_start + 4672);
         float value = m_batch_values[i];
-
-        // Rétropropagation
+        const float* single_policy = m_batch_policies.data() + (i * 4672);
         m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
+
 
         // RESTAURATION DE L'ECHIQUIER
         for (int k = 0; k < moves_played; ++k) {
@@ -63,6 +61,10 @@ void SelfPlayManager::execute_gpu_batch() {
         }
 
         m_sims_completed[game_idx]++;
+    }
+
+    for (int i = 0; i < current_batch_size; ++i) {
+        m_is_waiting[m_waiting_game_indices[i]] = false;
     }
 
     m_waiting_leaves.clear();
@@ -86,9 +88,8 @@ void SelfPlayManager::play_best_move(int game_idx) {
     int best_move = -1;
     if (m_boards[game_idx].getMoveHistory().size() < 30) {
         // Sélection proportionnelle (Température = 1)
-        std::mt19937 gen(std::random_device{}());
         std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-        float r = dis(gen);
+        float r = dis(m_rng);
         float accum = 0.0f;
 
         for (int i = 0; i < 4672; ++i) {
@@ -153,7 +154,6 @@ void SelfPlayManager::play_best_move(int game_idx) {
 }
 
 std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play) {
-    std::cout << "Debut generate_games" << std::endl;
     int games_completed = 0;
 
     while (games_completed < total_games_to_play) {
@@ -163,11 +163,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (games_completed >= total_games_to_play) break;
 
             // Si la partie attend le GPU, on passe à la suivante
-            if (std::find(
-                m_waiting_game_indices.begin(), m_waiting_game_indices.end(), i
-            ) != m_waiting_game_indices.end()) {
-                continue;
-            }
+            if (m_is_waiting[i]) continue;
 
             // Phase de simulation MCTS
             if (m_sims_completed[i] < m_simulations_per_move) {
@@ -178,6 +174,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                     m_waiting_leaves.push_back(leaf);
                     m_waiting_game_indices.push_back(i);
                     m_waiting_moves_played.push_back(moves_played);
+                    m_is_waiting[i] = true;
 
                     m_boards[i].getAlphaZeroTensor(m_tensor_buffer); // Remplit m_tensor_buffer
                     int offset = (m_waiting_leaves.size() - 1) * 119 * 64;
@@ -244,10 +241,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
         if (!batch_executed && !m_waiting_leaves.empty()) {
             bool all_blocked = true;
             for (int i = 0; i < m_num_concurrent_games; ++i) {
-                if (m_sims_completed[i] < m_simulations_per_move &&
-                    std::find(
-                        m_waiting_game_indices.begin(), m_waiting_game_indices.end(), i
-                    ) == m_waiting_game_indices.end()) {
+                if (m_sims_completed[i] < m_simulations_per_move && !m_is_waiting[i]) {
                     all_blocked = false;
                     break;
                 }
@@ -256,6 +250,5 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
         }
     }
     
-    std::cout << "Calcul termine, conversion vers Python en cours..." << std::endl;
     return m_finished_games;
 }

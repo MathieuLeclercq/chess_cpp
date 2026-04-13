@@ -1,5 +1,6 @@
 import os.path
 import warnings
+import threading
 
 warnings.filterwarnings("ignore", module="requests")
 import wandb
@@ -7,20 +8,14 @@ import torch
 import numpy as np
 from collections import deque
 import torch.nn.functional as f
-import torch.multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torch.amp import GradScaler
 from datetime import datetime
-from tqdm import tqdm
 
 import chess_engine
-from lib import (decode_move_index, move_to_san, save_buffer, load_buffer,
-                 export_model_to_onnx, chose_move_idx, calculate_performance_rating)
+from lib import (save_buffer, load_buffer, export_model_to_onnx, calculate_performance_rating, export_model_to_onnx_gpu)
 from stockfish_player import evaluate_against_anchor
-
 from model import ChessNet
-
-global_mcts_engine: chess_engine.MCTS | None = None
 
 
 # ============================================================
@@ -43,141 +38,99 @@ class SelfPlayDataset(Dataset):
 
 
 # ============================================================
-#                     WORKER & SELF-PLAY
+#                     UTILS
 # ============================================================
-def self_play_game(mcts_engine, num_simulations=600, fast_sims=100, slow_ratio=0.25, max_moves=200):
-    board = chess_engine.Chessboard()
-    board.set_startup_pieces()
+def run_with_interrupt(fn, *args):
+    """Lance fn(*args) dans un thread pour que Ctrl+C reste réactif."""
+    result = [None]
+    exc = [None]
 
-    history = []
-    san_moves = []
-    move_num = 0
+    def target():
+        try:
+            result[0] = fn(*args)
+        except Exception as e:
+            exc[0] = e
 
-    while board.game_state == chess_engine.GameState.ONGOING and move_num < max_moves:
-        is_slow_play = (np.random.rand() < slow_ratio)
-        current_sims = num_simulations if is_slow_play else fast_sims
+    t = threading.Thread(target=target)
+    t.start()
 
-        tensor_np = board.get_alphazero_tensor()
-        current_turn_color = board.turn
+    try:
+        while t.is_alive():
+            t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n[Interruption détectée] En attente de la fin du self-play C++...")
+        raise
 
-        pi_raw = mcts_engine.mcts_search(board, current_sims, 1.4, True)
-        pi = np.array(pi_raw, dtype=np.float32)
+    if exc[0]:
+        raise exc[0]
+    return result[0]
 
-        if move_num < 30:
-            tau = 1.0
-            chosen_idx = chose_move_idx(pi, tau)
+def convert_game_results(games):
+    """
+    Convertit les GameResult C++ en tuples (tensor_np, pi_np, value)
+    compatibles avec le replay buffer existant.
+    """
+    data = []
+    stats = {"checkmates": 0, "draws": 0, "total_moves": 0}
+
+    for game in games:
+        states = game.state_tensors   # numpy (N, 119, 8, 8)
+        policies = game.policies       # numpy (N, 4672)
+        outcome = game.final_outcome
+        n = states.shape[0]
+        stats["total_moves"] += n
+
+        if abs(outcome) > 0.5:
+            stats["checkmates"] += 1
         else:
-            chosen_idx = np.argmax(pi)
+            stats["draws"] += 1
 
-        if is_slow_play:
-            history.append((tensor_np, pi, current_turn_color))
+        for i in range(n):
+            tensor_np = states[i]        # (119, 8, 8)
+            pi_np = policies[i]          # (4672,)
+            value = outcome if (i % 2 == 0) else -outcome
+            data.append((tensor_np, pi_np, value))
 
-        is_black = (board.turn == chess_engine.Color.BLACK)
-        orig_f, orig_r, dest_f, dest_r, promo = decode_move_index(board, chosen_idx, is_black)
-
-        san = move_to_san(board, orig_f, orig_r, dest_f, dest_r, promo)
-        success = board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
-        if not success:
-            print(f"SELF-PLAY ERROR: move failed ({orig_f},{orig_r})->({dest_f},{dest_r})")
-            raise Exception
-
-        if board.game_state == chess_engine.GameState.CHECKMATE:
-            san += "#"
-        elif board.is_in_check():
-            san += "+"
-        san_moves.append(san)
-        move_num += 1
-
-    dataset = []
-    if board.game_state == chess_engine.GameState.CHECKMATE:
-        if board.turn == chess_engine.Color.WHITE:
-            winner_color = chess_engine.Color.BLACK
-        else:
-            winner_color = chess_engine.Color.WHITE
-
-        for tensor_np, pi, color in history:
-            value = 1.0 if color == winner_color else -1.0
-            dataset.append((tensor_np, pi, value))
-    else:
-        for tensor_np, pi, color in history:
-            dataset.append((tensor_np, pi, 0.0))
-
-    return dataset, move_num, board.game_state
+    return data, stats
 
 
-def init_worker(onnx_path):
+# ============================================================
+#                     SELF-PLAY (GPU Batched)
+# ============================================================
+def generate_games(onnx_path, games_per_iter, concurrent_games, sims_per_move):
     """
-    S'exécute une seule fois par processus lors de sa création.
-    Charge le modèle ONNX et alloue la mémoire de manière persistante.
+    Génère des parties via le SelfPlayManager C++ avec inférence batchée sur GPU.
     """
-    global global_mcts_engine
-    global_mcts_engine = chess_engine.MCTS(onnx_path)
+    evaluator = chess_engine.ONNXEvaluator(onnx_path, True)
 
-
-def worker_self_play(args):
-    """
-    Utilise le moteur persistant en mémoire globale au lieu de le recréer.
-    """
-    num_simulations, fast_sims, max_moves = args
-
-    game_data, move_count, state = self_play_game(
-        global_mcts_engine,
-        num_simulations=num_simulations,
-        fast_sims=fast_sims,
-        max_moves=max_moves
+    game_results = run_with_interrupt(
+        chess_engine.generate_self_play_games,
+        evaluator,
+        concurrent_games,
+        sims_per_move,
+        games_per_iter
     )
-    return game_data, move_count, state
 
+    data, stats = convert_game_results(game_results)
 
-def generate_games(onnx_path, num_games, num_simulations, fast_sims, num_workers=4):
-    all_data = []
-    total_moves = 0
+    num_games = len(game_results)
+    avg_length = stats["total_moves"] / max(num_games, 1)
 
-    results = {
-        "CHECKMATE": 0, "STALEMATE": 0, "DRAW_REPETITION": 0,
-        "DRAW_50_MOVES": 0, "DRAW_INSUFF_MATERIAL": 0, "ONGOING": 0
-    }
-
-    args_list = [(num_simulations, fast_sims, 200) for _ in range(num_games)]
-
-    print(f"Lancement de {num_games} parties sur {num_workers} processus (MCTS C++ / ONNX)...")
-
-    with mp.Pool(processes=num_workers, initializer=init_worker, initargs=(onnx_path,)) as pool:
-        for game_data, move_count, state in tqdm(pool.imap_unordered(worker_self_play, args_list),
-                                                 total=num_games,
-                                                 desc="Génération du Self-Play"):
-            all_data.extend(game_data)
-            total_moves += move_count
-            if state == chess_engine.GameState.CHECKMATE:
-                results["CHECKMATE"] += 1
-            elif state == chess_engine.GameState.STALEMATE:
-                results["STALEMATE"] += 1
-            elif state == chess_engine.GameState.DRAW_REPETITION:
-                results["DRAW_REPETITION"] += 1
-            elif state == chess_engine.GameState.DRAW_50_MOVES:
-                results["DRAW_50_MOVES"] += 1
-            elif state == chess_engine.GameState.DRAW_INSUFF_MATERIAL:
-                results["DRAW_INSUFF_MATERIAL"] += 1
-            elif state == chess_engine.GameState.ONGOING:
-                results["ONGOING"] += 1
-
-    avg_length = total_moves / max(num_games, 1)
-    print("\n" + "=" * 30)
+    print(f"\n{'=' * 30}")
     print(f"      BILAN DE L'ITERATION")
-    print("=" * 30)
-    print(f"Nombre total de coups : {total_moves}")
-    print(f"Moyenne de coups/partie : {avg_length:.1f}")
-    print("-" * 30)
-    print(f" Victoires (Checkmate) : {results['CHECKMATE']}")
-    print(f" Pat (Stalemate)       : {results['STALEMATE']}")
-    print(f" Répétition            : {results['DRAW_REPETITION']}")
-    print(f" Règle des 50 coups    : {results['DRAW_50_MOVES']}")
-    print(f" Matériel insuffisant  : {results['DRAW_INSUFF_MATERIAL']}")
-    if results['ONGOING'] > 0:
-        print(f" Non terminées (Max)   : {results['ONGOING']}")
-    print("=" * 30 + "\n")
+    print(f"{'=' * 30}")
+    print(f"  Parties jouées       : {num_games}")
+    print(f"  Positions générées   : {len(data)}")
+    print(f"  Moyenne coups/partie : {avg_length:.1f}")
+    print(f"  Victoires (mat)      : {stats['checkmates']}")
+    print(f"  Nulles               : {stats['draws']}")
+    print(f"{'=' * 30}\n")
 
-    return all_data, results, avg_length
+    # Libération explicite de l'évaluateur ONNX GPU
+    del game_results
+    del evaluator
+
+    return data, avg_length
 
 
 # ============================================================
@@ -243,9 +196,9 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_ra
 # ============================================================
 def pipeline(
         num_iterations=2,
-        games_per_iter=4,
-        num_simulations=600,
-        fast_sims=100,
+        games_per_iter=128,
+        concurrent_games=128,
+        sims_per_move=200,
         train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
@@ -253,7 +206,6 @@ def pipeline(
         num_filters=128,
         max_buffer_size=100_000,
         samples_per_epoch=15_000,
-        num_workers=4,
         eval_stockfish_every=4,
         checkpoint_path=None,
         stockfish_path=None,
@@ -291,25 +243,25 @@ def pipeline(
     buffer_filepath = "checkpoints/replay_buffer.npz"
     replay_buffer = deque(load_buffer(buffer_filepath), maxlen=max_buffer_size)
 
-    init_onnx_filename = f"{timestamp}_iter0_unsupervised"
-    print("  Exportation et quantification du modèle vers ONNX...")
-    onnx_path = f"checkpoints/{init_onnx_filename}.onnx"
-    export_model_to_onnx(model, onnx_path, gpu_device)
-
     for iteration in range(start_iteration, start_iteration + num_iterations):
         print(f"\n{'=' * 50}")
         print(f"  ITERATION {iteration + 1}/{start_iteration + num_iterations}")
         print(f"{'=' * 50}")
 
-        # ── 1. Phase Self-Play (C++ / ONNX) ──
-        new_data, results, avg_length = generate_games(
-            onnx_path, games_per_iter, num_simulations, fast_sims, num_workers=num_workers
+
+        # ── 1. Export ONNX pour le self-play GPU ──
+        onnx_path = f"checkpoints/{timestamp}_selfplay_tmp.onnx"
+        export_model_to_onnx_gpu(model, onnx_path, gpu_device)
+
+        # ── 2. Self-Play (C++ / GPU batched) ──
+        new_data, avg_length = generate_games(
+            onnx_path, games_per_iter, concurrent_games, sims_per_move
         )
 
         replay_buffer.extend(new_data)
         print(f"  Buffer: {len(replay_buffer)} positions")
 
-        # ── 2. Phase Training (GPU) ──
+        # ── 3. Training (GPU / PyTorch) ──
         current_batch_size = min(batch_size, len(replay_buffer))
 
         if current_batch_size > 0:
@@ -319,7 +271,7 @@ def pipeline(
                 samples_per_epoch=samples_per_epoch
             )
         else:
-            print("Pas assez de données pour entraîner.")
+            print("  Pas assez de données pour entraîner.")
 
         wandb.log({
             "selfplay/buffer_size": len(replay_buffer),
@@ -328,7 +280,7 @@ def pipeline(
             "selfplay/iteration": iteration + 1,
         }, step=global_step)
 
-        # ── 3. Sauvegarde ──
+        # ── 4. Sauvegarde checkpoint ──
         ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
         save_path = f"checkpoints/{ckpt_filename}.pt"
         torch.save({
@@ -339,15 +291,20 @@ def pipeline(
             "global_step": global_step,
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
-        print("  Exportation et quantification du modèle vers ONNX...")
-        onnx_path = f"checkpoints/{ckpt_filename}.onnx"
-        export_model_to_onnx(model, onnx_path, gpu_device)
         save_buffer(list(replay_buffer), buffer_filepath)
 
-        # ── 4. Évaluation Rapide ──
+        # Nettoyage du fichier ONNX temporaire
+        if os.path.exists(onnx_path):
+            os.remove(onnx_path)
+
+        # ── 5. Évaluation Stockfish ──
         if (iteration + 1) % eval_stockfish_every == 0:
+            # Export un ONNX dédié à l'évaluation (CPU, utilisé par l'ancien MCTS)
+            eval_onnx_path = f"checkpoints/{ckpt_filename}.onnx"
+            export_model_to_onnx(model, eval_onnx_path, gpu_device)
+
             eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
-                onnx_path=onnx_path,
+                onnx_path=eval_onnx_path,
                 stockfish_path=stockfish_path,
                 num_games=16,
                 mcts_sims=num_sim_eval_sf,
@@ -357,10 +314,7 @@ def pipeline(
             )
 
             estim_elo = calculate_performance_rating(
-                stockfish_elo,
-                eval_wins,
-                eval_draws,
-                eval_losses
+                stockfish_elo, eval_wins, eval_draws, eval_losses
             )
 
             wandb.log({
@@ -374,6 +328,7 @@ def pipeline(
         else:
             print(f"  Évaluation ignorée.")
 
+    # Export final
     last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
     ckpt_onnx_final_path = f"checkpoints/{last_timestamp}_last_unsupervised.onnx"
     export_model_to_onnx(model, ckpt_onnx_final_path, gpu_device)
@@ -382,22 +337,19 @@ def pipeline(
 
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn', force=True)
-
     try:
         pipeline(
             num_iterations=150,
             games_per_iter=256,
-            num_workers=8,
-            num_simulations=700,
-            fast_sims=100,
+            concurrent_games=128,
+            sims_per_move=700,
             train_epochs=1,
             batch_size=2048,
             learning_rate=2e-5,
-            max_buffer_size=100_000,
+            max_buffer_size=500_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_09_16h43_iter30_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_12_19h17_iter34_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

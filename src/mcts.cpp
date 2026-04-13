@@ -472,7 +472,7 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
     return node;
 }
 
-void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const std::vector<float>& policy, float value) {
+void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float* policy, float value) {
     // Cette fonction est appelée PAR LE MANAGER une fois que l'inférence ONNX est terminée
 
     std::vector<int> legal_indices = board.getLegalMoveIndices();
