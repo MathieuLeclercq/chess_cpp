@@ -352,7 +352,7 @@ def export_model_to_onnx(model, onnx_path, device):
     from onnxruntime.quantization import quantize_dynamic, QuantType
     from onnxruntime.quantization.preprocess import quant_pre_process
     model.eval()
-    dummy_input = torch.randn(1, 119, 8, 8, device=device)
+    dummy_input = (torch.randn(1, 119, 8, 8, device=device),)
 
     temp_fp32_path = onnx_path.replace(".onnx", "_temp_fp32.onnx")
     temp_infer_path = onnx_path.replace(".onnx", "_temp_infer.onnx")
@@ -365,18 +365,14 @@ def export_model_to_onnx(model, onnx_path, device):
             dummy_input,
             temp_fp32_path,
             export_params=True,
-            opset_version=14,
+            opset_version=18,
             do_constant_folding=True,
             input_names=['input'],
             output_names=['policy', 'value'],
-            dynamic_axes={
-                'input': {0: 'batch_size'},
-                'policy': {0: 'batch_size'},
-                'value': {0: 'batch_size'}
-            }
+            verbose=False
         )
 
-    # 2. Pré-processing (Optimisation ONNX : Fusion Conv + BatchNorm)
+    # 2. Pré-processing
     quant_pre_process(
         input_model_path=temp_fp32_path,
         output_model_path=temp_infer_path,
@@ -384,7 +380,6 @@ def export_model_to_onnx(model, onnx_path, device):
     )
 
     # 3. Quantification dynamique en INT8 sur le modèle optimisé
-    # On désactive l'optimisation ici (optimize_model=False) car elle a déjà été faite à l'étape 2
     quantize_dynamic(
         model_input=temp_infer_path,
         model_output=onnx_path,
