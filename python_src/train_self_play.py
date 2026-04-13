@@ -1,7 +1,7 @@
 import os.path
 import warnings
 import threading
-
+import logging
 warnings.filterwarnings("ignore", module="requests")
 import wandb
 import torch
@@ -78,6 +78,7 @@ def convert_game_results(games):
         policies = game.policies       # numpy (N, 4672)
         outcome = game.final_outcome
         n = states.shape[0]
+
         stats["total_moves"] += n
 
         if abs(outcome) > 0.5:
@@ -86,9 +87,11 @@ def convert_game_results(games):
             stats["draws"] += 1
 
         for i in range(n):
-            tensor_np = states[i]        # (119, 8, 8)
-            pi_np = policies[i]          # (4672,)
-            value = outcome if (i % 2 == 0) else -outcome
+            tensor_np = states[i].astype(np.float16)
+            pi_np = policies[i].astype(np.float16)
+            is_white_turn = states[i][112, 0, 0] > 0.5
+            value = outcome if is_white_turn else -outcome
+            
             data.append((tensor_np, pi_np, value))
 
     return data, stats
@@ -97,7 +100,7 @@ def convert_game_results(games):
 # ============================================================
 #                     SELF-PLAY (GPU Batched)
 # ============================================================
-def generate_games(onnx_path, games_per_iter, concurrent_games, sims_per_move):
+def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio):
     """
     Génère des parties via le SelfPlayManager C++ avec inférence batchée sur GPU.
     """
@@ -107,7 +110,9 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, sims_per_move):
         chess_engine.generate_self_play_games,
         evaluator,
         concurrent_games,
-        sims_per_move,
+        slow_sims,
+        fast_sims,
+        slow_ratio,
         games_per_iter
     )
 
@@ -119,11 +124,11 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, sims_per_move):
     print(f"\n{'=' * 30}")
     print(f"      BILAN DE L'ITERATION")
     print(f"{'=' * 30}")
-    print(f"  Parties jouées       : {num_games}")
-    print(f"  Positions générées   : {len(data)}")
-    print(f"  Moyenne coups/partie : {avg_length:.1f}")
-    print(f"  Victoires (mat)      : {stats['checkmates']}")
-    print(f"  Nulles               : {stats['draws']}")
+    print(f"  Parties jouées          : {num_games}")
+    print(f"  Positions générées      : {len(data)}")
+    print(f"  Pos sauvegardées/Partie : {avg_length:.1f}")
+    print(f"  Victoires (mat)         : {stats['checkmates']}")
+    print(f"  Nulles                  : {stats['draws']}")
     print(f"{'=' * 30}\n")
 
     # Libération explicite de l'évaluateur ONNX GPU
@@ -198,7 +203,9 @@ def pipeline(
         num_iterations=2,
         games_per_iter=128,
         concurrent_games=128,
-        sims_per_move=200,
+        slow_sims=700,
+        fast_sims=100,
+        slow_ratio=0.25,
         train_epochs=3,
         batch_size=1024,
         learning_rate=1e-4,
@@ -213,6 +220,7 @@ def pipeline(
         stockfish_nodes=200_000,
         num_sim_eval_sf=700
 ):
+    logging.getLogger("torch").setLevel(logging.ERROR)
     hyperparams = locals().copy()
 
     timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
@@ -255,7 +263,7 @@ def pipeline(
 
         # ── 2. Self-Play (C++ / GPU batched) ──
         new_data, avg_length = generate_games(
-            onnx_path, games_per_iter, concurrent_games, sims_per_move
+            onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
         )
 
         replay_buffer.extend(new_data)
@@ -340,16 +348,18 @@ if __name__ == "__main__":
     try:
         pipeline(
             num_iterations=150,
-            games_per_iter=256,
-            concurrent_games=128,
-            sims_per_move=700,
+            games_per_iter=512,
+            concurrent_games=512,
+            slow_sims=700,
+            fast_sims=100,
+            slow_ratio=0.25,
             train_epochs=1,
             batch_size=2048,
             learning_rate=2e-5,
             max_buffer_size=500_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_12_19h17_iter34_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_13_17h39_iter36_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

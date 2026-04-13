@@ -4,7 +4,7 @@
 #include <iostream>
 
 ONNXEvaluator::ONNXEvaluator(const std::string& model_path, bool use_gpu)
-    : env(ORT_LOGGING_LEVEL_WARNING, "AlphaZeroMCTS")
+    : env(ORT_LOGGING_LEVEL_ERROR, "AlphaZeroMCTS")
 {
     if (use_gpu) {
         // Activation de la carte graphique (Nvidia CUDA)

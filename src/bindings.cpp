@@ -167,14 +167,17 @@ PYBIND11_MODULE(chess_engine, m) {
     m.def("generate_self_play_games", [](
         ONNXEvaluator* evaluator,
         int concurrent_games,
-        int sims_per_move, int total_games) {
-            SelfPlayManager manager(evaluator, concurrent_games, sims_per_move);
+        int slow_sims, int fast_sims, float slow_ratio,
+        int total_games) {
+            SelfPlayManager manager(evaluator, concurrent_games, slow_sims, fast_sims, slow_ratio);
             return manager.generate_games(total_games);
         },
         py::call_guard<py::gil_scoped_release>(),
         py::arg("evaluator"),
         py::arg("concurrent_games"),
-        py::arg("sims_per_move"),
+        py::arg("slow_sims"),
+        py::arg("fast_sims"),
+        py::arg("slow_ratio") = 0.25f,
         py::arg("total_games"),
         "Génère un dataset de parties en self-play en utilisant un batching GPU massif.");
 }

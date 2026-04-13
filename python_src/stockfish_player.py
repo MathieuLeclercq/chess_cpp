@@ -41,7 +41,9 @@ def eval_worker(args):
     onnx_path, stockfish_path, mcts_sims, sf_elo, sf_nodes, is_mcts_white = args
 
     sf = StockfishPlayer(stockfish_path, elo=sf_elo)
-    mcts = chess_engine.MCTS(onnx_path)
+
+    evaluator = chess_engine.ONNXEvaluator(onnx_path, False)
+    mcts = chess_engine.MCTS(evaluator)
 
     board = chess_engine.Chessboard()
     board.set_startup_pieces()

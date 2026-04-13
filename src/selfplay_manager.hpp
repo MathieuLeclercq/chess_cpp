@@ -17,7 +17,13 @@ struct GameResult {
 class SelfPlayManager {
 private:
     int m_num_concurrent_games;
-    int m_simulations_per_move;
+    //int m_simulations_per_move;
+    int m_slow_sims;
+    int m_fast_sims;
+    float m_slow_ratio;
+    std::vector<int> m_sims_target;  // sims à faire pour le coup en cours
+    std::vector<bool> m_is_slow_move;
+
     ONNXEvaluator* m_evaluator;
 
     // L'état complet des parties en cours
@@ -50,7 +56,7 @@ private:
 
 
 public:
-    SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int simulations_per_move);
+    SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int slow_sims, int fast_sims, float slow_ratio);
 
     // La fonction principale qui sera appelée par Python
     std::vector<GameResult> generate_games(int total_games_to_play);
@@ -58,5 +64,6 @@ public:
 private:
     void reset_game(int game_idx);
     void play_best_move(int game_idx);
+    void roll_next_move(int game_idx);
     void execute_gpu_batch();
 };

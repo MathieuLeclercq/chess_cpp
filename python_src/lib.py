@@ -1,5 +1,6 @@
 import os
 import math
+import gc
 import torch
 import warnings
 import hashlib
@@ -306,32 +307,39 @@ def ai_pick_move_instant(board, model, device, temperature=0.1):
 
 
 def save_buffer(buffer, filepath):
-    """Sauvegarde le replay buffer dans un fichier .npz compressé."""
     if not buffer:
         return
 
-    # Séparation des tuples en trois listes distinctes
-    states = np.array([item[0] for item in buffer], dtype=np.float32)
-    policies = np.array([item[1] for item in buffer], dtype=np.float32)
+    states = np.array([item[0] for item in buffer], dtype=np.float16)
+    policies = np.array([item[1] for item in buffer], dtype=np.float16)
     values = np.array([item[2] for item in buffer], dtype=np.float32)
 
-    # Sauvegarde compressée
-    np.savez_compressed(filepath, states=states, policies=policies, values=values)
+    tmp_path = filepath.replace(".npz", "_tmp.npz")
+    gc.collect()
+    try:
+        np.savez_compressed(tmp_path, states=states, policies=policies, values=values)
+    except Exception as e:
+        print(f"  [Disque] ERREUR sauvegarde buffer : {e}")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return
+
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    os.rename(tmp_path, filepath)
     print(f"  [Disque] Buffer sauvegardé : {len(buffer)} positions dans {filepath}")
 
 
 def load_buffer(filepath):
-    """Charge le replay buffer depuis un fichier .npz."""
     if not os.path.exists(filepath):
         print(f"  [Disque] Aucun buffer existant trouvé à {filepath}. Démarrage à vide.")
         return []
 
     data = np.load(filepath)
-    states = data['states']
+    states = data['states']    # sera float16 maintenant
     policies = data['policies']
     values = data['values']
 
-    # Reconstruction de la liste de tuples
     buffer = []
     for i in range(len(states)):
         buffer.append((states[i], policies[i], float(values[i])))

@@ -1,16 +1,26 @@
 #include "selfplay_manager.hpp"
 #include <iostream>
 #include <random>
+#include <chrono>
+#include <iomanip>
 
-SelfPlayManager::SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int simulations_per_move)
+SelfPlayManager::SelfPlayManager(
+    ONNXEvaluator* evaluator, 
+    int num_concurrent_games, 
+    int slow_sims, int fast_sims, float slow_ratio)
     : m_evaluator(evaluator),
-    m_num_concurrent_games(num_concurrent_games),
-    m_simulations_per_move(simulations_per_move)
+      m_num_concurrent_games(num_concurrent_games),
+      m_slow_sims(slow_sims),
+      m_fast_sims(fast_sims),
+      m_slow_ratio(slow_ratio)
 {
     m_boards.resize(num_concurrent_games);
     m_roots.resize(num_concurrent_games);
     m_sims_completed.resize(num_concurrent_games, 0);
     m_is_waiting.resize(num_concurrent_games, false);
+
+    m_sims_target.resize(num_concurrent_games, 0);
+    m_is_slow_move.resize(num_concurrent_games, false);
 
     m_game_states.resize(num_concurrent_games);
     m_game_policies.resize(num_concurrent_games);
@@ -37,6 +47,7 @@ void SelfPlayManager::reset_game(int game_idx) {
     // Premier appel bloquant pour initialiser la racine de la nouvelle partie
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
     m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+    roll_next_move(game_idx);
 }
 
 void SelfPlayManager::execute_gpu_batch() {
@@ -113,10 +124,12 @@ void SelfPlayManager::play_best_move(int game_idx) {
     }
 
     // 3. Sauvegarde des données pour l'entraînement
-    std::vector<float> tensor;
-    m_boards[game_idx].getAlphaZeroTensor(tensor);
-    m_game_states[game_idx].push_back(tensor);
-    m_game_policies[game_idx].push_back(pi);
+    if (m_is_slow_move[game_idx]) {
+        std::vector<float> tensor;
+        m_boards[game_idx].getAlphaZeroTensor(tensor);
+        m_game_states[game_idx].push_back(tensor);
+        m_game_policies[game_idx].push_back(pi);
+    }
 
     // 4. On joue le coup sur le vrai échiquier
     m_shared_mcts->apply_move_by_index(m_boards[game_idx], best_move);
@@ -135,7 +148,8 @@ void SelfPlayManager::play_best_move(int game_idx) {
     // 6. Si la partie est finie, on ne prépare pas le prochain coup
     if (game_over) {
         m_roots[game_idx].reset();
-        m_sims_completed[game_idx] = m_simulations_per_move; // Empêche de relancer des sims
+        m_sims_target[game_idx] = 0;
+        m_sims_completed[game_idx] = 0; // Empêche de relancer des sims
         return;
     }
 
@@ -150,11 +164,19 @@ void SelfPlayManager::play_best_move(int game_idx) {
     }
 
     m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+    roll_next_move(game_idx);
+}
+
+void SelfPlayManager::roll_next_move(int game_idx) {
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+    m_is_slow_move[game_idx] = (dis(m_rng) < m_slow_ratio);
+    m_sims_target[game_idx] = m_is_slow_move[game_idx] ? m_slow_sims : m_fast_sims;
     m_sims_completed[game_idx] = 0;
 }
 
 std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play) {
     int games_completed = 0;
+    auto start_time = std::chrono::steady_clock::now();
 
     while (games_completed < total_games_to_play) {
         bool batch_executed = false;
@@ -166,9 +188,10 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (m_is_waiting[i]) continue;
 
             // Phase de simulation MCTS
-            if (m_sims_completed[i] < m_simulations_per_move) {
+            if (m_sims_completed[i] < m_sims_target[i]) {
                 int moves_played = 0;
-                MCTSNode* leaf = m_shared_mcts->advance_to_leaf(m_roots[i].get(), m_boards[i], 1.4f, moves_played);
+                MCTSNode* leaf = m_shared_mcts->advance_to_leaf(
+                    m_roots[i].get(), m_boards[i], 1.4f, moves_played);
 
                 if (leaf != nullptr) {
                     m_waiting_leaves.push_back(leaf);
@@ -228,6 +251,18 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                     m_finished_games.push_back(res);
                     games_completed++;
 
+                    // --- PROGRESSION ---
+                    if (games_completed % 16 == 0 || games_completed == total_games_to_play) {
+                        auto now = std::chrono::steady_clock::now();
+                        double elapsed = std::chrono::duration<double>(now - start_time).count();
+                        double speed = games_completed / elapsed;
+                        double eta = (total_games_to_play - games_completed) / speed;
+                        std::cout << "\r  Self-play: " << games_completed << "/" << total_games_to_play
+                            << " (" << std::fixed << std::setprecision(1) << speed << " parties/s"
+                            << ", ETA: " << (int)(eta / 60) << "m" << (int)((int)eta % 60) << "s)"
+                            << std::flush;
+                    }
+
                     if (games_completed < total_games_to_play) {
                         reset_game(i);
                     }
@@ -241,7 +276,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
         if (!batch_executed && !m_waiting_leaves.empty()) {
             bool all_blocked = true;
             for (int i = 0; i < m_num_concurrent_games; ++i) {
-                if (m_sims_completed[i] < m_simulations_per_move && !m_is_waiting[i]) {
+                if (m_sims_completed[i] < m_sims_target[i] && !m_is_waiting[i]) {
                     all_blocked = false;
                     break;
                 }
@@ -249,6 +284,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (all_blocked) execute_gpu_batch();
         }
     }
-    
+
+    std::cout << std::endl;
     return m_finished_games;
 }
