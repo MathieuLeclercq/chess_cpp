@@ -63,13 +63,13 @@ def main():
         total_generated += len(games)
         
         save_chunk(games, chunk_count)
+        vitesse = len(games) / duration_chunk
         
         # Libération TOTALE
         del games
         # Forcer le Garbage Collector à passer tout de suite
         gc.collect()
         
-        vitesse = len(games) / duration_chunk
         print(f"Chunk terminé en {duration_chunk:.1f}s ({vitesse:.2f} parties/s)")
         print(f"Progression totale : {total_generated}/{TOTAL_GOAL}")
 

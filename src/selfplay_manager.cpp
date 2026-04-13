@@ -120,7 +120,25 @@ void SelfPlayManager::play_best_move(int game_idx) {
     // 4. On joue le coup sur le vrai échiquier
     m_shared_mcts->apply_move_by_index(m_boards[game_idx], best_move);
 
-    // 5. On descend la racine de l'arbre
+    // 5. Détection de fin de partie
+    bool game_over = false;
+    if (m_boards[game_idx].checkThreefoldRepetition() ||
+        m_boards[game_idx].getHalfMoveClock() >= 100 ||
+        m_boards[game_idx].checkInsufficientMaterial()) {
+        game_over = true;
+    }
+    else if (!m_boards[game_idx].hasAnyLegalMove()) {
+        game_over = true;
+    }
+
+    // 6. Si la partie est finie, on ne prépare pas le prochain coup
+    if (game_over) {
+        m_roots[game_idx].reset();
+        m_sims_completed[game_idx] = m_simulations_per_move; // Empêche de relancer des sims
+        return;
+    }
+
+    // 7. On descend la racine de l'arbre (seulement si la partie continue)
     if (m_roots[game_idx]->children.count(best_move)) {
         m_roots[game_idx] = std::move(m_roots[game_idx]->children[best_move]);
         m_roots[game_idx]->parent = nullptr;
@@ -181,31 +199,33 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             // Fin de la réflexion : on joue le coup
             else {
                 play_best_move(i);
-
-                // Vérification de fin de partie
-                if (m_boards[i].getGameState() != ONGOING || m_boards[i].getHalfMoveClock() >= 100) {
+                if (m_roots[i] == nullptr) {
+                    // play_best_move a détecté une fin de partie
                     GameResult res;
                     res.move_count = m_game_states[i].size();
 
-                    // 1. On réserve la mémoire d'un seul coup (très rapide)
                     res.flat_states.reserve(res.move_count * 119 * 64);
                     res.flat_policies.reserve(res.move_count * 4672);
 
-                    // 2. On "aplatit" les données
-                    for (const auto& tensor : m_game_states[i]) {
-                        res.flat_states.insert(res.flat_states.end(), tensor.begin(), tensor.end());
+                    for (const auto& t : m_game_states[i]) {
+                        res.flat_states.insert(res.flat_states.end(), t.begin(), t.end());
                     }
-                    for (const auto& pi : m_game_policies[i]) {
-                        res.flat_policies.insert(res.flat_policies.end(), pi.begin(), pi.end());
+                    for (const auto& p : m_game_policies[i]) {
+                        res.flat_policies.insert(res.flat_policies.end(), p.begin(), p.end());
                     }
 
-                    if (m_boards[i].checkThreefoldRepetition() || 
-                        m_boards[i].getHalfMoveClock() >= 100 || 
+                    // Détermination du résultat
+                    if (m_boards[i].checkThreefoldRepetition() ||
+                        m_boards[i].getHalfMoveClock() >= 100 ||
                         m_boards[i].checkInsufficientMaterial()) {
-                        res.final_outcome = 0.0f;
+                        res.final_outcome = 0.0f;  // Nulle par règle
+                    }
+                    else if (m_boards[i].isInCheck()) {
+                        // Pas de coup légal + en échec = mat
+                        res.final_outcome = (m_boards[i].getTurn() == WHITE) ? -1.0f : 1.0f;
                     }
                     else {
-                        res.final_outcome = (m_boards[i].getTurn() == WHITE) ? -1.0f : 1.0f;
+                        res.final_outcome = 0.0f;  // Pat
                     }
 
                     m_finished_games.push_back(res);
@@ -215,6 +235,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                         reset_game(i);
                     }
                 }
+
             }
         }
 
