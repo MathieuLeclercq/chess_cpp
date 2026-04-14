@@ -42,10 +42,9 @@ void SelfPlayManager::reset_game(int game_idx) {
     m_game_states[game_idx].clear();
     m_game_policies[game_idx].clear();
 
-    // Premier appel bloquant pour initialiser la racine de la nouvelle partie
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
-    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
     roll_next_move(game_idx);
+    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
 }
 
 void SelfPlayManager::execute_gpu_batch() {
@@ -61,6 +60,10 @@ void SelfPlayManager::execute_gpu_batch() {
         float value = m_batch_values[i];
         const float* single_policy = m_batch_policies.data() + (i * 4672);
         m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
+
+        if (m_waiting_leaves[i] == m_roots[game_idx].get()) {
+            m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+        }
 
         for (int k = 0; k < moves_played; ++k) {
             m_boards[game_idx].undoMove();
@@ -154,8 +157,13 @@ void SelfPlayManager::play_best_move(int game_idx) {
         m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
     }
 
-    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
     roll_next_move(game_idx);
+
+    // Si la racine réutilisée avait déjà des enfants (rare mais possible), 
+    // on applique le bruit de suite. Sinon, ça sera fait dans execute_gpu_batch.
+    if (!m_roots[game_idx]->children.empty()) {
+        m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+    }
 }
 
 void SelfPlayManager::roll_next_move(int game_idx) {
@@ -190,6 +198,13 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (m_sims_completed[i] >= m_sims_target[i] && m_sims_target[i] > 0) {
                 play_best_move(i);
 
+                if (m_roots[i] != nullptr && m_boards[i].getMoveHistory().size() >= 200) {
+                    // on force la nulle : partie trop longue
+                    m_roots[i].reset();
+                    m_sims_target[i] = 0;
+                    m_sims_completed[i] = 0;
+                }
+
                 if (m_roots[i] == nullptr) {
                     GameResult res;
                     res.move_count = m_game_states[i].size();
@@ -203,6 +218,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
 
                     if (m_boards[i].checkThreefoldRepetition() ||
                         m_boards[i].getHalfMoveClock() >= 100 ||
+                        m_boards[i].getMoveHistory().size() >= 200 ||
                         m_boards[i].checkInsufficientMaterial()) {
                         res.final_outcome = 0.0f;
                     }

@@ -43,7 +43,7 @@ def eval_worker(args):
     sf = StockfishPlayer(stockfish_path, elo=sf_elo)
 
     evaluator = chess_engine.ONNXEvaluator(onnx_path, False)
-    mcts = chess_engine.MCTS(evaluator)
+    mcts = chess_engine.MCTS(evaluator, tt_size=131071)
 
     board = chess_engine.Chessboard()
     board.set_startup_pieces()

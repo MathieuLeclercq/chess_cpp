@@ -1,12 +1,10 @@
 import os.path
 import warnings
-import threading
 import logging
 
 warnings.filterwarnings("ignore", module="requests")
 import wandb
 import torch
-import numpy as np
 from collections import deque
 import torch.nn.functional as f
 from torch.utils.data import Dataset, DataLoader, RandomSampler
@@ -15,7 +13,7 @@ from datetime import datetime
 
 import chess_engine
 from lib import (save_buffer, load_buffer, export_model_to_onnx, calculate_performance_rating,
-                 export_model_to_onnx_gpu)
+                 export_model_to_onnx_gpu, convert_game_results, run_with_interrupt)
 from stockfish_player import evaluate_against_anchor
 from model import ChessNet
 
@@ -40,67 +38,6 @@ class SelfPlayDataset(Dataset):
 
 
 # ============================================================
-#                     UTILS
-# ============================================================
-def run_with_interrupt(fn, *args):
-    """Lance fn(*args) dans un thread pour que Ctrl+C reste réactif."""
-    result = [None]
-    exc = [None]
-
-    def target():
-        try:
-            result[0] = fn(*args)
-        except Exception as e:
-            exc[0] = e
-
-    t = threading.Thread(target=target)
-    t.start()
-
-    try:
-        while t.is_alive():
-            t.join(timeout=0.5)
-    except KeyboardInterrupt:
-        print("\n[Interruption détectée] En attente de la fin du self-play C++...")
-        raise
-
-    if exc[0]:
-        raise exc[0]
-    return result[0]
-
-
-def convert_game_results(games):
-    """
-    Convertit les GameResult C++ en tuples (tensor_np, pi_np, value)
-    compatibles avec le replay buffer existant.
-    """
-    data = []
-    stats = {"checkmates": 0, "draws": 0, "total_moves": 0}
-
-    for game in games:
-        states = game.state_tensors  # numpy (N, 119, 8, 8)
-        policies = game.policies  # numpy (N, 4672)
-        outcome = game.final_outcome
-        n = states.shape[0]
-
-        stats["total_moves"] += n
-
-        if abs(outcome) > 0.5:
-            stats["checkmates"] += 1
-        else:
-            stats["draws"] += 1
-
-        for i in range(n):
-            tensor_np = states[i].astype(np.float16)
-            pi_np = policies[i].astype(np.float16)
-            is_white_turn = states[i][112, 0, 0] > 0.5
-            value = outcome if is_white_turn else -outcome
-
-            data.append((tensor_np, pi_np, value))
-
-    return data, stats
-
-
-# ============================================================
 #                     SELF-PLAY (GPU Batched)
 # ============================================================
 def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio):
@@ -115,8 +52,8 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
         concurrent_games,
         slow_sims,
         fast_sims,
-        slow_ratio,
-        games_per_iter
+        games_per_iter,
+        slow_ratio
     )
 
     data, stats = convert_game_results(game_results)
@@ -358,12 +295,12 @@ if __name__ == "__main__":
             fast_sims=100,
             slow_ratio=0.25,
             train_epochs=1,
-            batch_size=2048,
-            learning_rate=2e-5,
-            max_buffer_size=500_000,
-            samples_per_epoch=60_000,
-            eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_13_23h12_iter37_unsupervised.pt",
+            batch_size=4096,
+            learning_rate=4e-5,
+            max_buffer_size=750_000,
+            samples_per_epoch=170_000,
+            eval_stockfish_every=6,
+            checkpoint_path="checkpoints/2026_04_14_13h33_iter40_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

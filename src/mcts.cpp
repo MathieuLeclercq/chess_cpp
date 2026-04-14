@@ -54,9 +54,8 @@ std::unique_ptr<MCTSNode> MCTSNode::extract_child(int idx) {
 // ============================================================
 //                     MCTS
 // ============================================================
-
-MCTS::MCTS(ONNXEvaluator* evaluator) : m_evaluator(evaluator) {
-    transposition_table.resize(TT_SIZE);
+MCTS::MCTS(ONNXEvaluator* evaluator, size_t tt_size) : m_evaluator(evaluator) {
+    transposition_table.resize(tt_size);
     m_eval_tensor.reserve(119 * 64);
     m_eval_policy.reserve(4672);
 }

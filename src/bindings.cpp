@@ -127,7 +127,8 @@ PYBIND11_MODULE(chess_engine, m) {
         .def(py::init<const std::string&, bool>(), py::arg("model_path"), py::arg("use_gpu") = false);
 
     py::class_<MCTS>(m, "MCTS")
-        .def(py::init<ONNXEvaluator*>(), py::arg("evaluator"))
+        .def(py::init<ONNXEvaluator*, size_t>(),
+            py::arg("evaluator"), py::arg("tt_size") = 2097143)
         .def("mcts_search", &MCTS::mcts_search,
             py::call_guard<py::gil_scoped_release>(),
             py::arg("board"), py::arg("num_simulations"), py::arg("c_puct") = 1.4f, py::arg("add_dirichlet") = false)
@@ -167,8 +168,8 @@ PYBIND11_MODULE(chess_engine, m) {
     m.def("generate_self_play_games", [](
         ONNXEvaluator* evaluator,
         int concurrent_games,
-        int slow_sims, int fast_sims, float slow_ratio,
-        int total_games) {
+        int slow_sims, int fast_sims,
+        int total_games, float slow_ratio) {
             SelfPlayManager manager(evaluator, concurrent_games, slow_sims, fast_sims, slow_ratio);
             return manager.generate_games(total_games);
         },
@@ -177,7 +178,7 @@ PYBIND11_MODULE(chess_engine, m) {
         py::arg("concurrent_games"),
         py::arg("slow_sims"),
         py::arg("fast_sims"),
-        py::arg("slow_ratio") = 0.25f,
         py::arg("total_games"),
+        py::arg("slow_ratio") = 0.25f,
         "Génère un dataset de parties en self-play en utilisant un batching GPU massif.");
 }

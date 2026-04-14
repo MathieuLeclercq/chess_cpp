@@ -148,7 +148,7 @@ class GameState:
     def value(self) -> int:
         ...
 class MCTS:
-    def __init__(self, evaluator: ONNXEvaluator) -> None:
+    def __init__(self, evaluator: ONNXEvaluator, tt_size: typing.SupportsInt | typing.SupportsIndex = 2097143) -> None:
         ...
     def get_analysis_results(self) -> list[MoveStats]:
         ...
@@ -267,7 +267,13 @@ class Square:
         ...
     def is_occupied(self) -> bool:
         ...
-def generate_self_play_games(evaluator: ONNXEvaluator, concurrent_games: typing.SupportsInt | typing.SupportsIndex, slow_sims: typing.SupportsInt | typing.SupportsIndex, fast_sims: typing.SupportsInt | typing.SupportsIndex, slow_ratio: typing.SupportsFloat | typing.SupportsIndex = 0.25, total_games: typing.SupportsInt | typing.SupportsIndex) -> list[GameResult]:
+def generate_self_play_games(evaluator: ONNXEvaluator,
+                             concurrent_games: typing.SupportsInt | typing.SupportsIndex,
+                             slow_sims: typing.SupportsInt | typing.SupportsIndex,
+                             fast_sims: typing.SupportsInt | typing.SupportsIndex,
+                             total_games: typing.SupportsInt | typing.SupportsIndex,
+                             slow_ratio: typing.SupportsFloat | typing.SupportsIndex = 0.25
+                             ) -> list[GameResult]:
     """
     Génère un dataset de parties en self-play en utilisant un batching GPU massif.
     """

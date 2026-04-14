@@ -59,7 +59,7 @@ private:
     ONNXEvaluator* m_evaluator;
 
 public:
-    MCTS(ONNXEvaluator* evaluator);
+    MCTS(ONNXEvaluator* evaluator, size_t tt_size = TT_SIZE);
 
     void step_analysis(Chessboard& board, int num_simulations, float c_puct);
     void reset_analysis();

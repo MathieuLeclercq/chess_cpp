@@ -3,8 +3,10 @@ import math
 import torch
 import warnings
 import hashlib
+import threading
 import numpy as np
 
+from typing import Any
 import chess_engine
 from model import ChessNet
 
@@ -506,3 +508,63 @@ def calculate_performance_rating(sf_elo, wins, draws, losses):
     elo_diff = 400 * math.log10(percentage / (1 - percentage))
 
     return int(sf_elo + elo_diff)
+
+
+def run_with_interrupt(fn, *args) -> Any:
+    """Lance fn(*args) dans un thread pour que Ctrl+C reste réactif."""
+    result = [None]
+    exc = [None]
+
+    def target():
+        try:
+            result[0] = fn(*args)
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=target)
+    t.start()
+
+    try:
+        while t.is_alive():
+            t.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n[Interruption détectée] En attente de la fin du self-play C++...")
+        raise
+
+    if exc[0]:
+        raise exc[0]
+    return result[0]
+
+
+def convert_game_results(games):
+    """
+    Convertit les GameResult C++ en tuples (tensor_np, pi_np, value)
+    compatibles avec le replay buffer existant.
+    """
+    data = []
+    stats = {"checkmates": 0, "draws": 0, "total_moves": 0}
+
+    for game in games:
+        states = game.state_tensors  # numpy (N, 119, 8, 8)
+        policies = game.policies  # numpy (N, 4672)
+        outcome = game.final_outcome
+        n = states.shape[0]
+
+        stats["total_moves"] += n
+
+        if abs(outcome) > 0.5:
+            stats["checkmates"] += 1
+        else:
+            stats["draws"] += 1
+
+        for i in range(n):
+            tensor_np = states[i].astype(np.float16)
+            pi_np = policies[i].astype(np.float16)
+            is_white_turn = states[i][112, 0, 0] > 0.5
+            value = outcome if is_white_turn else -outcome
+
+            data.append((tensor_np, pi_np, value))
+
+    return data, stats
+
+
