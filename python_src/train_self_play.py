@@ -2,6 +2,7 @@ import os.path
 import warnings
 import threading
 import logging
+
 warnings.filterwarnings("ignore", module="requests")
 import wandb
 import torch
@@ -13,7 +14,8 @@ from torch.amp import GradScaler
 from datetime import datetime
 
 import chess_engine
-from lib import (save_buffer, load_buffer, export_model_to_onnx, calculate_performance_rating, export_model_to_onnx_gpu)
+from lib import (save_buffer, load_buffer, export_model_to_onnx, calculate_performance_rating,
+                 export_model_to_onnx_gpu)
 from stockfish_player import evaluate_against_anchor
 from model import ChessNet
 
@@ -65,6 +67,7 @@ def run_with_interrupt(fn, *args):
         raise exc[0]
     return result[0]
 
+
 def convert_game_results(games):
     """
     Convertit les GameResult C++ en tuples (tensor_np, pi_np, value)
@@ -74,8 +77,8 @@ def convert_game_results(games):
     stats = {"checkmates": 0, "draws": 0, "total_moves": 0}
 
     for game in games:
-        states = game.state_tensors   # numpy (N, 119, 8, 8)
-        policies = game.policies       # numpy (N, 4672)
+        states = game.state_tensors  # numpy (N, 119, 8, 8)
+        policies = game.policies  # numpy (N, 4672)
         outcome = game.final_outcome
         n = states.shape[0]
 
@@ -91,7 +94,7 @@ def convert_game_results(games):
             pi_np = policies[i].astype(np.float16)
             is_white_turn = states[i][112, 0, 0] > 0.5
             value = outcome if is_white_turn else -outcome
-            
+
             data.append((tensor_np, pi_np, value))
 
     return data, stats
@@ -255,7 +258,6 @@ def pipeline(
         print(f"\n{'=' * 50}")
         print(f"  ITERATION {iteration + 1}/{start_iteration + num_iterations}")
         print(f"{'=' * 50}")
-
 
         # ── 1. Export ONNX pour le self-play GPU ──
         onnx_path = f"checkpoints/{timestamp}_selfplay_tmp.onnx"

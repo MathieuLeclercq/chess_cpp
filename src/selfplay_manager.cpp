@@ -87,9 +87,9 @@ void SelfPlayManager::play_best_move(int game_idx) {
     // 1. Calcul des probabilités de visite
     std::vector<float> pi(4672, 0.0f);
     float sum_visits = 0.0f;
-    for (const auto& pair : m_roots[game_idx]->children) {
-        pi[pair.first] = pair.second->visit_count;
-        sum_visits += pair.second->visit_count;
+    for (const auto& pair : m_roots[game_idx]->m_children) {
+        pi[pair.first] = pair.second->m_visit_count;
+        sum_visits += pair.second->m_visit_count;
     }
     if (sum_visits > 0.0f) {
         for (float& p : pi) p /= sum_visits;
@@ -113,7 +113,7 @@ void SelfPlayManager::play_best_move(int game_idx) {
             }
         }
         // Sécurité au cas où l'arrondi flottant pose problème
-        if (best_move == -1) best_move = m_roots[game_idx]->children.begin()->first;
+        if (best_move == -1) best_move = m_roots[game_idx]->m_children.begin()->first;
     }
     else {
         // Argmax pur (Température = 0)
@@ -154,9 +154,9 @@ void SelfPlayManager::play_best_move(int game_idx) {
     }
 
     // 7. On descend la racine de l'arbre (seulement si la partie continue)
-    if (m_roots[game_idx]->children.count(best_move)) {
-        m_roots[game_idx] = std::move(m_roots[game_idx]->children[best_move]);
-        m_roots[game_idx]->parent = nullptr;
+    if (m_roots[game_idx]->has_child(best_move)) {
+        m_roots[game_idx] = m_roots[game_idx]->extract_child(best_move);
+        m_roots[game_idx]->m_parent = nullptr;
     }
     else {
         m_roots[game_idx] = std::make_unique<MCTSNode>(0.0f);

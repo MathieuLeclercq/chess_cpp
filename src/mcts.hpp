@@ -12,18 +12,21 @@
 #include "onnx_evaluator.hpp"
 
 struct MCTSNode {
-    int visit_count;
-    int move_idx;
-    bool is_terminal;
-    float prior;
-    float total_value;
+    int m_visit_count;
+    int m_move_idx;
+    bool m_is_terminal;
+    float m_prior;
+    float m_total_value;
 
-    MCTSNode* parent;
-    std::unordered_map<int, std::unique_ptr<MCTSNode>> children;
+    MCTSNode* m_parent;
+    std::vector<std::pair<int, std::unique_ptr<MCTSNode>>> m_children;
 
     MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr);
     float q_value() const;
     float ucb_score(float exploration_factor, float parent_q, float fpu_reduction) const;
+    MCTSNode* find_child(int idx) const;
+    bool has_child(int idx) const;
+    std::unique_ptr<MCTSNode> extract_child(int idx);
 };
 
 struct TTEntry {

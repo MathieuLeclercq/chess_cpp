@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <utility>
 #include <stdexcept>
 
 
@@ -10,24 +11,46 @@
 // ============================================================
 
 MCTSNode::MCTSNode(float prior, int move_idx, MCTSNode* parent)
-    : prior(prior), move_idx(move_idx), parent(parent),
-    visit_count(0), total_value(0.0f), is_terminal(false) {
+    : m_prior(prior), m_move_idx(move_idx), m_parent(parent),
+    m_visit_count(0), m_total_value(0.0f), m_is_terminal(false) {
 }
 
 float MCTSNode::ucb_score(float exploration_factor, float parent_q, float fpu_reduction) const {
     // Implémentation du FPU de LeelaChess0
     // Si noeud pas visité, on ne met pas sa Q value à 0,
     // mais on utilise celle du parent.
-    float u = exploration_factor * prior / (1.0f + visit_count);
+    float u = exploration_factor * m_prior / (1.0f + m_visit_count);
     // FPU_reduction = 0.1f
-    float exploitation = (visit_count == 0) ? (parent_q - fpu_reduction) : -q_value();
+    float exploitation = (m_visit_count == 0) ? (parent_q - fpu_reduction) : -q_value();
 
     return exploitation + u;
 }
 
 float MCTSNode::q_value() const {
-    if (visit_count == 0) return 0.0f;
-    return total_value / visit_count;
+    if (m_visit_count == 0) return 0.0f;
+    return m_total_value / m_visit_count;
+}
+
+MCTSNode* MCTSNode::find_child(int idx) const {
+    for (const auto& pair : m_children) {
+        if (pair.first == idx) return pair.second.get();
+    }
+    return nullptr;
+}
+
+bool MCTSNode::has_child(int idx) const {
+    return find_child(idx) != nullptr;
+}
+
+std::unique_ptr<MCTSNode> MCTSNode::extract_child(int idx) {
+    for (auto it = m_children.begin(); it != m_children.end(); ++it) {
+        if (it->first == idx) {
+            auto result = std::move(it->second);
+            m_children.erase(it);
+            return result;
+        }
+    }
+    return nullptr;
 }
 
 
@@ -43,10 +66,10 @@ MCTS::MCTS(ONNXEvaluator* evaluator) : m_evaluator(evaluator) {
 
 void MCTS::backup(MCTSNode* node, float value) {
     while (node != nullptr) {
-        node->visit_count += 1;
-        node->total_value += value;
+        node->m_visit_count += 1;
+        node->m_total_value += value;
         value = -value;
-        node = node->parent;
+        node = node->m_parent;
     }
 }
 
@@ -56,11 +79,11 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
     aborted = false;
 
     // On continue tant qu'on n'est pas sur un état terminal
-    while (!node->is_terminal) {
+    while (!node->m_is_terminal) {
 
         // --- 1. EXPANSION PARESSEUSE (Lazy Expansion) ---
         // Si le noeud n'a pas d'enfants, on regarde s'il est dans la Table de Transposition
-        if (node->children.empty()) {
+        if (node->m_children.empty()) {
             uint64_t hash = board.getZobristHash();
             size_t tt_idx = hash % TT_SIZE;
 
@@ -69,10 +92,11 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
                 float sum_legal = 0.0f;
                 for (const auto& pair : cached_policy) sum_legal += pair.second;
 
+                node->m_children.reserve(cached_policy.size());
+
                 for (const auto& pair : cached_policy) {
                     float prob = (sum_legal > 0.0f) ? (pair.second / sum_legal) : (1.0f / (float)cached_policy.size());
-                    // Création du noeud "à la demande"
-                    node->children[pair.first] = std::make_unique<MCTSNode>(prob, pair.first, node);
+                    node->m_children.emplace_back(pair.first, std::make_unique<MCTSNode>(prob, pair.first, node));
                 }
             }
             else {
@@ -83,9 +107,9 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 
         // --- 2. CALCUL DU FPU (COHÉRENT AVEC TON ANCIEN CODE) ---
         float visited_policy_sum = 0.0f;
-        for (const auto& pair : node->children) {
-            if (pair.second->visit_count > 0) {
-                visited_policy_sum += pair.second->prior;
+        for (const auto& pair : node->m_children) {
+            if (pair.second->m_visit_count > 0) {
+                visited_policy_sum += pair.second->m_prior;
             }
         }
         float fpu_reduction = 0.30f * std::sqrt(visited_policy_sum);
@@ -94,9 +118,9 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         float max_ucb = -1e9f;
         int best_move_idx = -1;
         float parent_q = node->q_value();
-        float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
+        float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->m_visit_count));
 
-        for (const auto& pair : node->children) {
+        for (const auto& pair : node->m_children) {
             float score = pair.second->ucb_score(exploration_factor, parent_q, fpu_reduction);
             if (score > max_ucb) {
                 max_ucb = score;
@@ -107,7 +131,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         if (best_move_idx == -1) break;
 
         // --- 4. DESCENTE ET MISE À JOUR ---
-        MCTSNode* next_node = node->children[best_move_idx].get();
+        MCTSNode* next_node = node->find_child(best_move_idx);
         if (!apply_move_by_index(board, best_move_idx)) {
             throw std::runtime_error("Problème lors de l'application du coup dans select_leaf");
         }
@@ -119,7 +143,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         if (board.checkThreefoldRepetition() ||
             board.getHalfMoveClock() >= 100 ||
             board.checkInsufficientMaterial()) {
-            node->is_terminal = true;
+            node->m_is_terminal = true;
             break;
         }
     }
@@ -130,7 +154,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
     if (board.checkThreefoldRepetition() || board.getHalfMoveClock() >= 100 || board.checkInsufficientMaterial()) {
-        node->is_terminal = true;
+        node->m_is_terminal = true;
         return 0.0f;
     }
 
@@ -145,7 +169,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     // 3. CACHE MISS
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
-        node->is_terminal = true;
+        node->m_is_terminal = true;
         return board.isInCheck() ? -1.0f : 0.0f;
     }
 
@@ -165,16 +189,18 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
         sum_legal += prob;
     }
 
-    // 5. INSTANCIATION DES ENFANTS
     if (sum_legal > 0.0f) {
+        node->m_children.reserve(transposition_table[tt_idx].legal_policy.size());
         for (const auto& pair : transposition_table[tt_idx].legal_policy) {
-            node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node);
+            node->m_children.emplace_back(
+                pair.first, std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node));
         }
     }
     else {
+        node->m_children.reserve(legal_indices.size());
         float uniform_prob = 1.0f / legal_indices.size();
         for (int idx : legal_indices) {
-            node->children[idx] = std::make_unique<MCTSNode>(uniform_prob, idx, node);
+            node->m_children.emplace_back(idx, std::make_unique<MCTSNode>(uniform_prob, idx, node));
         }
     }
 
@@ -182,22 +208,22 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 }
 
 void MCTS::add_dirichlet_noise(MCTSNode* root) {
-    if (root->children.empty()) return;
+    if (root->m_children.empty()) return;
     std::mt19937 gen(std::random_device{}());
     std::gamma_distribution<float> gamma(0.3f, 1.0f); // Alpha = 0.3 pour les échecs
 
     float sum_noise = 0.0f;
-    std::vector<float> noise(root->children.size());
-    for (size_t i = 0; i < root->children.size(); i++) {
+    std::vector<float> noise(root->m_children.size());
+    for (size_t i = 0; i < root->m_children.size(); i++) {
         noise[i] = gamma(gen);
         sum_noise += noise[i];
     }
 
     int i = 0;
     float epsilon = 0.12f; // 0.25 pour alphazero
-    for (auto& pair : root->children) {
+    for (auto& pair : root->m_children) {
         float dirichlet = noise[i++] / sum_noise;
-        pair.second->prior = (1.0f - epsilon) * pair.second->prior + epsilon * dirichlet;
+        pair.second->m_prior = (1.0f - epsilon) * pair.second->m_prior + epsilon * dirichlet;
     }
 }
 
@@ -223,7 +249,7 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
             continue;
         }
 
-        if (node->is_terminal) {
+        if (node->m_is_terminal) {
             float value = 0.0f;
             // On teste d'abord les conditions de nulle (très rapide)
             if (board.checkThreefoldRepetition() || 
@@ -241,7 +267,7 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
             continue;
         }
 
-        if (node->children.empty()) {
+        if (node->m_children.empty()) {
             float value = expand_node_single(node, board);
             backup(node, value);
         }
@@ -253,10 +279,10 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
 
     std::vector<float> pi(4672, 0.0f);
     float sum_visits = 0.0f;
-    for (const auto& pair : root->children) {
+    for (const auto& pair : root->m_children) {
         int idx = pair.first;
         MCTSNode* child = pair.second.get();
-        pi[idx] = static_cast<float>(child->visit_count);
+        pi[idx] = static_cast<float>(child->m_visit_count);
         sum_visits += pi[idx];
     }
 
@@ -337,9 +363,9 @@ void MCTS::reset_analysis() {
 void MCTS::update_root(int move_idx) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    if (m_analysis_root && m_analysis_root->children.count(move_idx)) {
-        m_analysis_root = std::move(m_analysis_root->children[move_idx]);
-        m_analysis_root->parent = nullptr;
+    if (m_analysis_root && m_analysis_root->has_child(move_idx)) {
+        m_analysis_root = m_analysis_root->extract_child(move_idx);
+        m_analysis_root->m_parent = nullptr;
     }
     else {
         m_analysis_root.reset();
@@ -375,7 +401,7 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
             continue;
         }
 
-        if (node->is_terminal) {
+        if (node->m_is_terminal) {
             float value = 0.0f;
             if (board.checkThreefoldRepetition() ||
                 board.getHalfMoveClock() >= 100 ||
@@ -391,7 +417,7 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
             continue;
         }
 
-        if (node->children.empty()) {
+        if (node->m_children.empty()) {
             float value = expand_node_single(node, board);
             backup(node, value);
         }
@@ -408,16 +434,16 @@ std::vector<MoveStats> MCTS::get_analysis_results() const {
     std::vector<MoveStats> results;
     if (!m_analysis_root) return results;
 
-    for (const auto& pair : m_analysis_root->children) {
+    for (const auto& pair : m_analysis_root->m_children) {
         int idx = pair.first;
         MCTSNode* child = pair.second.get();
 
-        if (child->visit_count > 0) {
+        if (child->m_visit_count > 0) {
             results.push_back({
                 idx,
-                child->visit_count,
+                child->m_visit_count,
                 -child->q_value(),
-                child->prior
+                child->m_prior
                 });
         }
     }
@@ -441,7 +467,7 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
     }
 
     // Cas 2 : Fin de partie (Mat, Pat, Nulle)
-    if (node->is_terminal) {
+    if (node->m_is_terminal) {
         float value = 0.0f;
         if (board.checkThreefoldRepetition() ||
             board.getHalfMoveClock() >= 100 ||
@@ -478,7 +504,7 @@ void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
         // Sécurité ultime au cas où
-        leaf_node->is_terminal = true;
+        leaf_node->m_is_terminal = true;
         backup(leaf_node, board.isInCheck() ? -1.0f : 0.0f);
         return;
     }
@@ -497,16 +523,18 @@ void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float
         sum_legal += prob;
     }
 
-    // Instanciation des enfants
     if (sum_legal > 0.0f) {
+        leaf_node->m_children.reserve(transposition_table[tt_idx].legal_policy.size());
         for (const auto& pair : transposition_table[tt_idx].legal_policy) {
-            leaf_node->children[pair.first] = std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, leaf_node);
+            leaf_node->m_children.emplace_back(
+                pair.first, std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, leaf_node));
         }
     }
     else {
+        leaf_node->m_children.reserve(legal_indices.size());
         float uniform_prob = 1.0f / legal_indices.size();
         for (int idx : legal_indices) {
-            leaf_node->children[idx] = std::make_unique<MCTSNode>(uniform_prob, idx, leaf_node);
+            leaf_node->m_children.emplace_back(idx, std::make_unique<MCTSNode>(uniform_prob, idx, leaf_node));
         }
     }
 

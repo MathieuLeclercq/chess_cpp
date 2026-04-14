@@ -1,6 +1,5 @@
 import os
 import math
-import gc
 import torch
 import warnings
 import hashlib
@@ -315,14 +314,7 @@ def save_buffer(buffer, filepath):
     values = np.array([item[2] for item in buffer], dtype=np.float32)
 
     tmp_path = filepath.replace(".npz", "_tmp.npz")
-    gc.collect()
-    try:
-        np.savez_compressed(tmp_path, states=states, policies=policies, values=values)
-    except Exception as e:
-        print(f"  [Disque] ERREUR sauvegarde buffer : {e}")
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        return
+    np.savez_compressed(tmp_path, states=states, policies=policies, values=values)
 
     if os.path.exists(filepath):
         os.remove(filepath)
@@ -336,7 +328,7 @@ def load_buffer(filepath):
         return []
 
     data = np.load(filepath)
-    states = data['states']    # sera float16 maintenant
+    states = data['states']  # sera float16 maintenant
     policies = data['policies']
     values = data['values']
 
@@ -427,6 +419,7 @@ def export_model_to_onnx_gpu(model, onnx_path, device):
             verbose=False
         )
 
+
 def get_model_hash(filepath):
     """Génère un hash unique basé sur le contenu du fichier."""
     hasher = hashlib.sha256()
@@ -513,5 +506,3 @@ def calculate_performance_rating(sf_elo, wins, draws, losses):
     elo_diff = 400 * math.log10(percentage / (1 - percentage))
 
     return int(sf_elo + elo_diff)
-
-
