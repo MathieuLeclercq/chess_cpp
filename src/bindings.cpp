@@ -144,9 +144,6 @@ PYBIND11_MODULE(chess_engine, m) {
 
     py::class_<GameResult>(m, "GameResult")
         .def_property_readonly("state_tensors", [](py::object& self) {
-        // "self" représente l'instance de GameResult côté Python.
-        // On l'utilise comme "base" pour que NumPy ne libère pas la mémoire
-        // tant que l'objet GameResult existe.
         auto& res = self.cast<GameResult&>();
         return py::array_t<float>(
             { res.move_count, 119, 8, 8 }, // Shape
@@ -162,7 +159,8 @@ PYBIND11_MODULE(chess_engine, m) {
             self
         );
             })
-        .def_readonly("final_outcome", &GameResult::final_outcome);
+        .def_readonly("final_outcome", &GameResult::final_outcome)
+        .def_readonly("end_reason", &GameResult::end_reason);
 
     // --- Fonction de génération globale ---
     m.def("generate_self_play_games", [](

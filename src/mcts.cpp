@@ -54,8 +54,8 @@ std::unique_ptr<MCTSNode> MCTSNode::extract_child(int idx) {
 // ============================================================
 //                     MCTS
 // ============================================================
-MCTS::MCTS(ONNXEvaluator* evaluator, size_t tt_size) : m_evaluator(evaluator) {
-    transposition_table.resize(tt_size);
+MCTS::MCTS(ONNXEvaluator* evaluator, size_t tt_size) : m_evaluator(evaluator), m_tt_size(tt_size) {
+    transposition_table.resize(m_tt_size);
     m_eval_tensor.reserve(119 * 64);
     m_eval_policy.reserve(4672);
 }
@@ -79,7 +79,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         // --- 1. EXPANSION PARESSEUSE ---
         if (node->children.empty()) {
             uint64_t hash = board.getZobristHash();
-            size_t tt_idx = hash % TT_SIZE;
+            size_t tt_idx = hash % m_tt_size;
             const TTEntry& entry = transposition_table[tt_idx];
 
             if (entry.hash == hash && entry.policy_size > 0) {
@@ -154,7 +154,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     }
 
     uint64_t hash = board.getZobristHash();
-    size_t tt_idx = hash % TT_SIZE;
+    size_t tt_idx = hash % m_tt_size;
 
     // Cache hit
     if (transposition_table[tt_idx].hash == hash && transposition_table[tt_idx].policy_size > 0) {
@@ -472,7 +472,7 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
 
     // Vérification TT avant GPU
     uint64_t hash = board.getZobristHash();
-    size_t tt_idx = hash % TT_SIZE;
+    size_t tt_idx = hash % m_tt_size;
 
     if (transposition_table[tt_idx].hash == hash && transposition_table[tt_idx].policy_size > 0) {
         backup(node, transposition_table[tt_idx].value);
@@ -494,7 +494,7 @@ void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float
 
     // Stockage TT (taille fixe)
     uint64_t hash = board.getZobristHash();
-    size_t tt_idx = hash % TT_SIZE;
+    size_t tt_idx = hash % m_tt_size;
     TTEntry& tt = transposition_table[tt_idx];
     tt.hash = hash;
     tt.value = value;

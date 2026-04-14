@@ -77,7 +77,10 @@ def eval_worker(args):
             f_o, r_o, f_d, r_d, p = parse_uci_to_coords(move_uci)
 
         san = move_to_san(board, f_o, r_o, f_d, r_d, p)
-        board.move_piece(f_o, r_o, f_d, r_d, p)
+        success = board.move_piece(f_o, r_o, f_d, r_d, p)
+        if not success:
+            print(f"Erreur Fatale : L'IA a tenté un coup illégal ({san}) ! Abandon de la partie.")
+            break
         san_moves.append(san)
         uci_moves.append(move_uci)
 

@@ -51,7 +51,8 @@ class MCTS {
 private:
     Ort::AllocatorWithDefaultOptions allocator;
     std::vector<TTEntry> transposition_table;
-    static constexpr size_t TT_SIZE = 2097143;
+    static constexpr size_t DEFAULT_TT_SIZE = 2097143;
+    size_t m_tt_size;
     std::vector<float> m_eval_tensor;
     std::vector<float> m_eval_policy;
     std::unique_ptr<MCTSNode> m_analysis_root;
@@ -59,7 +60,7 @@ private:
     ONNXEvaluator* m_evaluator;
 
 public:
-    MCTS(ONNXEvaluator* evaluator, size_t tt_size = TT_SIZE);
+    MCTS(ONNXEvaluator* evaluator, size_t tt_size = DEFAULT_TT_SIZE);
 
     void step_analysis(Chessboard& board, int num_simulations, float c_puct);
     void reset_analysis();

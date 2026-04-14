@@ -90,6 +90,9 @@ class Color:
         ...
 class GameResult:
     @property
+    def end_reason(self) -> int:
+        ...
+    @property
     def final_outcome(self) -> float:
         ...
     @property
@@ -267,13 +270,7 @@ class Square:
         ...
     def is_occupied(self) -> bool:
         ...
-def generate_self_play_games(evaluator: ONNXEvaluator,
-                             concurrent_games: typing.SupportsInt | typing.SupportsIndex,
-                             slow_sims: typing.SupportsInt | typing.SupportsIndex,
-                             fast_sims: typing.SupportsInt | typing.SupportsIndex,
-                             total_games: typing.SupportsInt | typing.SupportsIndex,
-                             slow_ratio: typing.SupportsFloat | typing.SupportsIndex = 0.25
-                             ) -> list[GameResult]:
+def generate_self_play_games(evaluator: ONNXEvaluator, concurrent_games: typing.SupportsInt | typing.SupportsIndex, slow_sims: typing.SupportsInt | typing.SupportsIndex, fast_sims: typing.SupportsInt | typing.SupportsIndex, total_games: typing.SupportsInt | typing.SupportsIndex, slow_ratio: typing.SupportsFloat | typing.SupportsIndex = 0.25) -> list[GameResult]:
     """
     Génère un dataset de parties en self-play en utilisant un batching GPU massif.
     """

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <omp.h>
+#include <piece.hpp>
 
 SelfPlayManager::SelfPlayManager(
     ONNXEvaluator* evaluator,
@@ -216,17 +217,29 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                     for (const auto& p : m_game_policies[i])
                         res.flat_policies.insert(res.flat_policies.end(), p.begin(), p.end());
 
-                    if (m_boards[i].checkThreefoldRepetition() ||
-                        m_boards[i].getHalfMoveClock() >= 100 ||
-                        m_boards[i].getMoveHistory().size() >= 200 ||
-                        m_boards[i].checkInsufficientMaterial()) {
-                        res.final_outcome = 0.0f;
-                    }
-                    else if (m_boards[i].isInCheck()) {
+                    if (!m_boards[i].hasAnyLegalMove() && m_boards[i].isInCheck()) {
                         res.final_outcome = (m_boards[i].getTurn() == WHITE) ? -1.0f : 1.0f;
+                        res.end_reason = 0; // Checkmate
+                    }
+                    else if (m_boards[i].getMoveHistory().size() >= 200) {
+                        res.final_outcome = 0.0f;
+                        res.end_reason = 5; // Max Moves (200 coups)
+                    }
+                    else if (m_boards[i].checkThreefoldRepetition()) {
+                        res.final_outcome = 0.0f;
+                        res.end_reason = 2; // Répétition
+                    }
+                    else if (m_boards[i].getHalfMoveClock() >= 100) {
+                        res.final_outcome = 0.0f;
+                        res.end_reason = 3; // Règle des 50 coups
+                    }
+                    else if (m_boards[i].checkInsufficientMaterial()) {
+                        res.final_outcome = 0.0f;
+                        res.end_reason = 4; // Matériel insuffisant
                     }
                     else {
-                        res.final_outcome = 0.0f; // Pat
+                        res.final_outcome = 0.0f;
+                        res.end_reason = 1; // Pat (Stalemate)
                     }
 
                     m_finished_games.push_back(res);

@@ -67,15 +67,20 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
     print(f"  Parties jouées          : {num_games}")
     print(f"  Positions générées      : {len(data)}")
     print(f"  Pos sauvegardées/Partie : {avg_length:.1f}")
+    print(f"{'-' * 30}")
     print(f"  Victoires (mat)         : {stats['checkmates']}")
-    print(f"  Nulles                  : {stats['draws']}")
+    print(f"  Pat (Stalemate)         : {stats['stalemates']}")
+    print(f"  Répétition              : {stats['repetition']}")
+    print(f"  Règle des 50 coups      : {stats['50_moves']}")
+    print(f"  Matériel insuffisant    : {stats['insuff_mat']}")
+    print(f"  Non terminées (Max)     : {stats['max_moves']}")
     print(f"{'=' * 30}\n")
 
     # Libération explicite de l'évaluateur ONNX GPU
     del game_results
     del evaluator
 
-    return data, avg_length
+    return data, avg_length, stats
 
 
 # ============================================================
@@ -201,7 +206,7 @@ def pipeline(
         export_model_to_onnx_gpu(model, onnx_path, gpu_device)
 
         # ── 2. Self-Play (C++ / GPU batched) ──
-        new_data, avg_length = generate_games(
+        new_data, avg_length, stats = generate_games(
             onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
         )
 
@@ -220,10 +225,17 @@ def pipeline(
         else:
             print("  Pas assez de données pour entraîner.")
 
+        draw_rate = 1 - (stats["checkmates"] / max(1, games_per_iter))
         wandb.log({
             "selfplay/buffer_size": len(replay_buffer),
             "selfplay/new_positions": len(new_data),
             "selfplay/avg_game_length": avg_length,
+            "selfplay/draw_rate": draw_rate,
+            "selfplay/draws_repetition": stats["repetition"],
+            "selfplay/draws_50_moves": stats["50_moves"],
+            "selfplay/draws_stalemate": stats["stalemates"],
+            "selfplay/draws_insuff_mat": stats["insuff_mat"],
+            "selfplay/draws_max_moves": stats["max_moves"],
             "selfplay/iteration": iteration + 1,
         }, step=global_step)
 
@@ -299,7 +311,7 @@ if __name__ == "__main__":
             learning_rate=4e-5,
             max_buffer_size=750_000,
             samples_per_epoch=170_000,
-            eval_stockfish_every=6,
+            eval_stockfish_every=8,
             checkpoint_path="checkpoints/2026_04_14_13h33_iter40_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,

@@ -537,25 +537,29 @@ def run_with_interrupt(fn, *args) -> Any:
 
 
 def convert_game_results(games):
-    """
-    Convertit les GameResult C++ en tuples (tensor_np, pi_np, value)
-    compatibles avec le replay buffer existant.
-    """
     data = []
-    stats = {"checkmates": 0, "draws": 0, "total_moves": 0}
+    stats = {
+        "checkmates": 0, "stalemates": 0, "repetition": 0,
+        "50_moves": 0, "insuff_mat": 0, "max_moves": 0,
+        "total_moves": 0
+    }
+
+    # Mapping entre l'entier C++ et la clé du dictionnaire
+    reason_keys = ["checkmates", "stalemates", "repetition", "50_moves", "insuff_mat", "max_moves"]
 
     for game in games:
-        states = game.state_tensors  # numpy (N, 119, 8, 8)
-        policies = game.policies  # numpy (N, 4672)
+        states = game.state_tensors
+        policies = game.policies
         outcome = game.final_outcome
+        reason_idx = game.end_reason # On récupère la raison depuis le C++
         n = states.shape[0]
 
         stats["total_moves"] += n
 
-        if abs(outcome) > 0.5:
-            stats["checkmates"] += 1
-        else:
-            stats["draws"] += 1
+        # Comptage détaillé
+        if 0 <= reason_idx <= 5:
+            key = reason_keys[reason_idx]
+            stats[key] += 1
 
         for i in range(n):
             tensor_np = states[i].astype(np.float16)
@@ -566,5 +570,3 @@ def convert_game_results(games):
             data.append((tensor_np, pi_np, value))
 
     return data, stats
-
-
