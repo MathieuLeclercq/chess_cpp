@@ -3,23 +3,23 @@
 #include "chessboard.hpp"
 #include <onnxruntime_cxx_api.h>
 #include <vector>
-#include <unordered_map>
 #include <memory>
 #include <utility>
 #include <cstdint>
 #include <mutex>
+#include <array>
 
 #include "onnx_evaluator.hpp"
 
 struct MCTSNode {
-    int m_visit_count;
-    int m_move_idx;
-    bool m_is_terminal;
-    float m_prior;
-    float m_total_value;
+    int visit_count;
+    int move_idx;
+    bool is_terminal;
+    float prior;
+    float total_value;
 
-    MCTSNode* m_parent;
-    std::vector<std::pair<int, std::unique_ptr<MCTSNode>>> m_children;
+    MCTSNode* parent;
+    std::vector<std::pair<int, std::unique_ptr<MCTSNode>>> children;
 
     MCTSNode(float prior, int move_idx = -1, MCTSNode* parent = nullptr);
     float q_value() const;
@@ -29,11 +29,16 @@ struct MCTSNode {
     std::unique_ptr<MCTSNode> extract_child(int idx);
 };
 
+
+static constexpr int TT_MAX_MOVES = 128;
+
 struct TTEntry {
     uint64_t hash = 0;
     float value = 0.0f;
-    std::vector<std::pair<int, float>> legal_policy;
+    int policy_size = 0;
+    std::array<std::pair<int, float>, TT_MAX_MOVES> legal_policy;
 };
+
 
 struct MoveStats {
     int move_idx;

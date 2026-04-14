@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <random>
+#include <omp.h>
 #include "chessboard.hpp"
 #include "mcts.hpp"
 #include "onnx_evaluator.hpp"
@@ -14,10 +15,23 @@ struct GameResult {
     int move_count; // Pour savoir comment découper le vecteur plat
 };
 
+struct ThreadLocalBuffer {
+    std::vector<MCTSNode*> leaves;
+    std::vector<int> game_indices;
+    std::vector<int> moves_played;
+    std::vector<float> tensors;
+    std::vector<float> tensor_scratch;
+
+    void clear() {
+        leaves.clear();
+        game_indices.clear();
+        moves_played.clear();
+    }
+};
+
 class SelfPlayManager {
 private:
     int m_num_concurrent_games;
-    //int m_simulations_per_move;
     int m_slow_sims;
     int m_fast_sims;
     float m_slow_ratio;
@@ -56,9 +70,8 @@ private:
 
 
 public:
-    SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, int slow_sims, int fast_sims, float slow_ratio);
-
-    // La fonction principale qui sera appelée par Python
+    SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, 
+                    int slow_sims, int fast_sims, float slow_ratio);
     std::vector<GameResult> generate_games(int total_games_to_play);
 
 private:
