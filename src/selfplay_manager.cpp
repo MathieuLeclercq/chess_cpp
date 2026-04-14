@@ -172,10 +172,9 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
     // Initialisation OpenMP
     const int num_threads = std::min(8, m_num_concurrent_games);
     std::vector<ThreadLocalBuffer> thread_buffers(num_threads);
-    int games_per_thread = (m_num_concurrent_games + num_threads - 1) / num_threads;
 
     for (auto& buf : thread_buffers) {
-        buf.tensors.resize(games_per_thread * 119 * 64);
+        buf.tensors.resize(m_num_concurrent_games * 119 * 64);
         buf.tensor_scratch.resize(119 * 64);
     }
 

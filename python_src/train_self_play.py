@@ -348,6 +348,8 @@ def pipeline(
 
 if __name__ == "__main__":
     try:
+        # import os
+        # os.environ["WANDB_MODE"] = "disabled"
         pipeline(
             num_iterations=150,
             games_per_iter=512,
@@ -361,7 +363,7 @@ if __name__ == "__main__":
             max_buffer_size=500_000,
             samples_per_epoch=60_000,
             eval_stockfish_every=4,
-            checkpoint_path="checkpoints/2026_04_13_17h39_iter36_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_13_23h12_iter37_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2200,
             stockfish_nodes=200_000

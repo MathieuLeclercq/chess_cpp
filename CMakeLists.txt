@@ -3,6 +3,7 @@ project(Chess)
 cmake_policy(SET CMP0135 NEW)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(OpenMP REQUIRED)
 
 # ==========================================
 # RÉCUPÉRATION DE ONNX RUNTIME (C++)
@@ -43,7 +44,7 @@ add_library(chess_core STATIC
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
 
 # On lie la librairie ONNX Runtime
-target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB})
+target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB} OpenMP::OpenMP_CXX)
 
 # ==========================================
 # 2. Exécutable de test (C++ pur)

@@ -36,7 +36,7 @@ private:
     int m_fast_sims;
     float m_slow_ratio;
     std::vector<int> m_sims_target;  // sims à faire pour le coup en cours
-    std::vector<bool> m_is_slow_move;
+    std::vector<char> m_is_slow_move;
 
     ONNXEvaluator* m_evaluator;
 
@@ -62,7 +62,7 @@ private:
     std::vector<MCTSNode*> m_waiting_leaves;
     std::vector<int> m_waiting_game_indices;
     std::vector<int> m_waiting_moves_played;
-    std::vector<bool> m_is_waiting;
+    std::vector<char> m_is_waiting;
 
     std::mt19937 m_rng{ std::random_device{}() };
 
