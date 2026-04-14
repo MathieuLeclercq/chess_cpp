@@ -3,16 +3,17 @@
 #include <random>
 #include <chrono>
 #include <iomanip>
+#include <omp.h>
 
 SelfPlayManager::SelfPlayManager(
-    ONNXEvaluator* evaluator, 
-    int num_concurrent_games, 
+    ONNXEvaluator* evaluator,
+    int num_concurrent_games,
     int slow_sims, int fast_sims, float slow_ratio)
     : m_evaluator(evaluator),
-      m_num_concurrent_games(num_concurrent_games),
-      m_slow_sims(slow_sims),
-      m_fast_sims(fast_sims),
-      m_slow_ratio(slow_ratio)
+    m_num_concurrent_games(num_concurrent_games),
+    m_slow_sims(slow_sims),
+    m_fast_sims(fast_sims),
+    m_slow_ratio(slow_ratio)
 {
     m_boards.resize(num_concurrent_games);
     m_roots.resize(num_concurrent_games);
@@ -25,10 +26,7 @@ SelfPlayManager::SelfPlayManager(
     m_game_states.resize(num_concurrent_games);
     m_game_policies.resize(num_concurrent_games);
 
-    // Pré-allocation du tenseur de batch
     m_batch_input.resize(num_concurrent_games * 119 * 64);
-
-    m_tensor_buffer.resize(119 * 8 * 8);
 
     m_shared_mcts = std::make_unique<MCTS>(m_evaluator);
     for (int i = 0; i < num_concurrent_games; ++i) {
@@ -54,7 +52,6 @@ void SelfPlayManager::execute_gpu_batch() {
     if (m_waiting_leaves.empty()) return;
     int current_batch_size = m_waiting_leaves.size();
 
-    // Inférence
     m_evaluator->evaluate_batch(m_batch_input, m_batch_policies, m_batch_values, current_batch_size);
 
     for (int i = 0; i < current_batch_size; ++i) {
@@ -65,8 +62,6 @@ void SelfPlayManager::execute_gpu_batch() {
         const float* single_policy = m_batch_policies.data() + (i * 4672);
         m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
 
-
-        // RESTAURATION DE L'ECHIQUIER
         for (int k = 0; k < moves_played; ++k) {
             m_boards[game_idx].undoMove();
         }
@@ -95,10 +90,9 @@ void SelfPlayManager::play_best_move(int game_idx) {
         for (float& p : pi) p /= sum_visits;
     }
 
-    // 2. Sélection (Température pour les 30 premiers coups, Argmax ensuite)
+    // 2. Sélection
     int best_move = -1;
     if (m_boards[game_idx].getMoveHistory().size() < 30) {
-        // Sélection proportionnelle (Température = 1)
         std::uniform_real_distribution<float> dis(0.0f, 1.0f);
         float r = dis(m_rng);
         float accum = 0.0f;
@@ -112,18 +106,16 @@ void SelfPlayManager::play_best_move(int game_idx) {
                 }
             }
         }
-        // Sécurité au cas où l'arrondi flottant pose problème
-        if (best_move == -1) best_move = m_roots[game_idx]->children.begin()->first;
+        if (best_move == -1) best_move = m_roots[game_idx]->children.front().first;
     }
     else {
-        // Argmax pur (Température = 0)
         float max_p = -1.0f;
         for (int i = 0; i < 4672; ++i) {
             if (pi[i] > max_p) { max_p = pi[i]; best_move = i; }
         }
     }
 
-    // 3. Sauvegarde des données pour l'entraînement
+    // 3. Sauvegarde (slow moves uniquement)
     if (m_is_slow_move[game_idx]) {
         std::vector<float> tensor;
         m_boards[game_idx].getAlphaZeroTensor(tensor);
@@ -131,10 +123,10 @@ void SelfPlayManager::play_best_move(int game_idx) {
         m_game_policies[game_idx].push_back(pi);
     }
 
-    // 4. On joue le coup sur le vrai échiquier
+    // 4. Jouer le coup
     m_shared_mcts->apply_move_by_index(m_boards[game_idx], best_move);
 
-    // 5. Détection de fin de partie
+    // 5. Détection fin de partie
     bool game_over = false;
     if (m_boards[game_idx].checkThreefoldRepetition() ||
         m_boards[game_idx].getHalfMoveClock() >= 100 ||
@@ -145,15 +137,14 @@ void SelfPlayManager::play_best_move(int game_idx) {
         game_over = true;
     }
 
-    // 6. Si la partie est finie, on ne prépare pas le prochain coup
     if (game_over) {
         m_roots[game_idx].reset();
         m_sims_target[game_idx] = 0;
-        m_sims_completed[game_idx] = 0; // Empêche de relancer des sims
+        m_sims_completed[game_idx] = 0;
         return;
     }
 
-    // 7. On descend la racine de l'arbre (seulement si la partie continue)
+    // 6. Descente de racine
     if (m_roots[game_idx]->has_child(best_move)) {
         m_roots[game_idx] = m_roots[game_idx]->extract_child(best_move);
         m_roots[game_idx]->parent = nullptr;
@@ -178,80 +169,54 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
     int games_completed = 0;
     auto start_time = std::chrono::steady_clock::now();
 
-    while (games_completed < total_games_to_play) {
-        bool batch_executed = false;
+    // Initialisation OpenMP
+    const int num_threads = std::min(8, m_num_concurrent_games);
+    std::vector<ThreadLocalBuffer> thread_buffers(num_threads);
+    int games_per_thread = (m_num_concurrent_games + num_threads - 1) / num_threads;
 
+    for (auto& buf : thread_buffers) {
+        buf.tensors.resize(games_per_thread * 119 * 64);
+        buf.tensor_scratch.resize(119 * 64);
+    }
+
+    while (games_completed < total_games_to_play) {
+
+        // ==========================================================
+        // PHASE 1 : Séquentiel — Jouer les coups, gérer les fins
+        // ==========================================================
         for (int i = 0; i < m_num_concurrent_games; ++i) {
             if (games_completed >= total_games_to_play) break;
-
-            // Si la partie attend le GPU, on passe à la suivante
             if (m_is_waiting[i]) continue;
 
-            // Phase de simulation MCTS
-            if (m_sims_completed[i] < m_sims_target[i]) {
-                int moves_played = 0;
-                MCTSNode* leaf = m_shared_mcts->advance_to_leaf(
-                    m_roots[i].get(), m_boards[i], 1.4f, moves_played);
-
-                if (leaf != nullptr) {
-                    m_waiting_leaves.push_back(leaf);
-                    m_waiting_game_indices.push_back(i);
-                    m_waiting_moves_played.push_back(moves_played);
-                    m_is_waiting[i] = true;
-
-                    m_boards[i].getAlphaZeroTensor(m_tensor_buffer); // Remplit m_tensor_buffer
-                    int offset = (m_waiting_leaves.size() - 1) * 119 * 64;
-                    std::copy(
-                        m_tensor_buffer.begin(), 
-                        m_tensor_buffer.end(), 
-                        m_batch_input.begin() + offset);
-
-                    // Exécution si le batch est plein
-                    if (m_waiting_leaves.size() == m_num_concurrent_games) {
-                        execute_gpu_batch();
-                        batch_executed = true;
-                    }
-                }
-                else {
-                    m_sims_completed[i]++;
-                }
-            }
-            // Fin de la réflexion : on joue le coup
-            else {
+            if (m_sims_completed[i] >= m_sims_target[i] && m_sims_target[i] > 0) {
                 play_best_move(i);
+
                 if (m_roots[i] == nullptr) {
-                    // play_best_move a détecté une fin de partie
                     GameResult res;
                     res.move_count = m_game_states[i].size();
-
                     res.flat_states.reserve(res.move_count * 119 * 64);
                     res.flat_policies.reserve(res.move_count * 4672);
 
-                    for (const auto& t : m_game_states[i]) {
+                    for (const auto& t : m_game_states[i])
                         res.flat_states.insert(res.flat_states.end(), t.begin(), t.end());
-                    }
-                    for (const auto& p : m_game_policies[i]) {
+                    for (const auto& p : m_game_policies[i])
                         res.flat_policies.insert(res.flat_policies.end(), p.begin(), p.end());
-                    }
 
-                    // Détermination du résultat
                     if (m_boards[i].checkThreefoldRepetition() ||
                         m_boards[i].getHalfMoveClock() >= 100 ||
                         m_boards[i].checkInsufficientMaterial()) {
-                        res.final_outcome = 0.0f;  // Nulle par règle
+                        res.final_outcome = 0.0f;
                     }
                     else if (m_boards[i].isInCheck()) {
-                        // Pas de coup légal + en échec = mat
                         res.final_outcome = (m_boards[i].getTurn() == WHITE) ? -1.0f : 1.0f;
                     }
                     else {
-                        res.final_outcome = 0.0f;  // Pat
+                        res.final_outcome = 0.0f; // Pat
                     }
 
                     m_finished_games.push_back(res);
                     games_completed++;
 
-                    // --- PROGRESSION ---
                     if (games_completed % 16 == 0 || games_completed == total_games_to_play) {
                         auto now = std::chrono::steady_clock::now();
                         double elapsed = std::chrono::duration<double>(now - start_time).count();
@@ -263,25 +228,80 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                             << std::flush;
                     }
 
-                    if (games_completed < total_games_to_play) {
+                    if (games_completed < total_games_to_play)
                         reset_game(i);
-                    }
                 }
-
             }
         }
 
-        // Anti-blocage : Si on n'a pas pu remplir le batch, mais que toutes les parties
-        // actives sont en attente, on lance quand même l'inférence.
-        if (!batch_executed && !m_waiting_leaves.empty()) {
-            bool all_blocked = true;
+        // ==========================================================
+        // PHASE 2 : Parallèle (OpenMP) — Traversée MCTS
+        // ==========================================================
+        for (auto& buf : thread_buffers) buf.clear();
+
+#pragma omp parallel num_threads(num_threads)
+        {
+            int tid = omp_get_thread_num();
+            auto& buf = thread_buffers[tid];
+
+#pragma omp for schedule(dynamic, 4)
             for (int i = 0; i < m_num_concurrent_games; ++i) {
-                if (m_sims_completed[i] < m_sims_target[i] && !m_is_waiting[i]) {
-                    all_blocked = false;
-                    break;
+                if (m_is_waiting[i] || m_sims_completed[i] >= m_sims_target[i]) continue;
+
+                int moves_played = 0;
+                MCTSNode* leaf = m_shared_mcts->advance_to_leaf(
+                    m_roots[i].get(), m_boards[i], 1.4f, moves_played);
+
+                if (leaf != nullptr) {
+                    buf.leaves.push_back(leaf);
+                    buf.game_indices.push_back(i);
+                    buf.moves_played.push_back(moves_played);
+
+                    m_boards[i].getAlphaZeroTensor(buf.tensor_scratch);
+                    int offset = (buf.leaves.size() - 1) * 119 * 64;
+                    std::copy(buf.tensor_scratch.begin(),
+                        buf.tensor_scratch.end(),
+                        buf.tensors.begin() + offset);
+
+                    m_is_waiting[i] = true;
+                }
+                else {
+                    m_sims_completed[i]++;
                 }
             }
-            if (all_blocked) execute_gpu_batch();
+        }
+
+        // ==========================================================
+        // PHASE 3 : Séquentiel — Fusion et batch GPU
+        // ==========================================================
+        for (const auto& buf : thread_buffers) {
+            for (size_t j = 0; j < buf.leaves.size(); ++j) {
+                if ((int)m_waiting_leaves.size() >= m_num_concurrent_games) break;
+
+                m_waiting_leaves.push_back(buf.leaves[j]);
+                m_waiting_game_indices.push_back(buf.game_indices[j]);
+                m_waiting_moves_played.push_back(buf.moves_played[j]);
+
+                int batch_offset = m_waiting_leaves.size() - 1;
+                std::copy(buf.tensors.begin() + j * 119 * 64,
+                    buf.tensors.begin() + (j + 1) * 119 * 64,
+                    m_batch_input.begin() + batch_offset * 119 * 64);
+            }
+        }
+
+        // Exécution : batch plein OU tout le monde est bloqué
+        bool batch_full = ((int)m_waiting_leaves.size() >= m_num_concurrent_games);
+
+        bool all_blocked = true;
+        for (int i = 0; i < m_num_concurrent_games; ++i) {
+            if (m_sims_completed[i] < m_sims_target[i] && !m_is_waiting[i]) {
+                all_blocked = false;
+                break;
+            }
+        }
+
+        if ((batch_full || all_blocked) && !m_waiting_leaves.empty()) {
+            execute_gpu_batch();
         }
     }
 

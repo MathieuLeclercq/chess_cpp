@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
-#include <utility>
 #include <stdexcept>
 
 
@@ -20,9 +19,7 @@ float MCTSNode::ucb_score(float exploration_factor, float parent_q, float fpu_re
     // Si noeud pas visité, on ne met pas sa Q value à 0,
     // mais on utilise celle du parent.
     float u = exploration_factor * prior / (1.0f + visit_count);
-    // FPU_reduction = 0.1f
     float exploitation = (visit_count == 0) ? (parent_q - fpu_reduction) : -q_value();
-
     return exploitation + u;
 }
 
@@ -78,34 +75,34 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
     int moves_played = 0;
     aborted = false;
 
-    // On continue tant qu'on n'est pas sur un état terminal
     while (!node->is_terminal) {
 
-        // --- 1. EXPANSION PARESSEUSE (Lazy Expansion) ---
-        // Si le noeud n'a pas d'enfants, on regarde s'il est dans la Table de Transposition
+        // --- 1. EXPANSION PARESSEUSE ---
         if (node->children.empty()) {
             uint64_t hash = board.getZobristHash();
             size_t tt_idx = hash % TT_SIZE;
+            const TTEntry& entry = transposition_table[tt_idx];
 
-            if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
-                const auto& cached_policy = transposition_table[tt_idx].legal_policy;
+            if (entry.hash == hash && entry.policy_size > 0) {
+                int size = entry.policy_size;
                 float sum_legal = 0.0f;
-                for (const auto& pair : cached_policy) sum_legal += pair.second;
+                for (int k = 0; k < size; ++k) sum_legal += entry.legal_policy[k].second;
 
-                node->children.reserve(cached_policy.size());
-
-                for (const auto& pair : cached_policy) {
-                    float prob = (sum_legal > 0.0f) ? (pair.second / sum_legal) : (1.0f / (float)cached_policy.size());
-                    node->children.emplace_back(pair.first, std::make_unique<MCTSNode>(prob, pair.first, node));
+                node->children.reserve(size);
+                for (int k = 0; k < size; ++k) {
+                    int idx = entry.legal_policy[k].first;
+                    float prob = (sum_legal > 0.0f)
+                        ? (entry.legal_policy[k].second / sum_legal)
+                        : (1.0f / (float)size);
+                    node->children.emplace_back(idx, std::make_unique<MCTSNode>(prob, idx, node));
                 }
             }
             else {
-                // Pas en cache : c'est une vraie feuille qui nécessite le GPU
-                break;
+                break; // Vraie feuille, besoin du GPU
             }
         }
 
-        // --- 2. CALCUL DU FPU (COHÉRENT AVEC TON ANCIEN CODE) ---
+        // --- 2. FPU ---
         float visited_policy_sum = 0.0f;
         for (const auto& pair : node->children) {
             if (pair.second->visit_count > 0) {
@@ -114,7 +111,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         }
         float fpu_reduction = 0.30f * std::sqrt(visited_policy_sum);
 
-        // --- 3. SÉLECTION DU MEILLEUR COUP (UCB) ---
+        // --- 3. SÉLECTION UCB ---
         float max_ucb = -1e9f;
         int best_move_idx = -1;
         float parent_q = node->q_value();
@@ -130,7 +127,7 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
 
         if (best_move_idx == -1) break;
 
-        // --- 4. DESCENTE ET MISE À JOUR ---
+        // --- 4. DESCENTE ---
         MCTSNode* next_node = node->find_child(best_move_idx);
         if (!apply_move_by_index(board, best_move_idx)) {
             throw std::runtime_error("Problème lors de l'application du coup dans select_leaf");
@@ -139,7 +136,6 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         node = next_node;
         moves_played++;
 
-        // Vérification dynamique pendant la descente
         if (board.checkThreefoldRepetition() ||
             board.getHalfMoveClock() >= 100 ||
             board.checkInsufficientMaterial()) {
@@ -159,14 +155,14 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     }
 
     uint64_t hash = board.getZobristHash();
-    size_t tt_idx = hash % TT_SIZE; // <-- L'index constant en O(1)
+    size_t tt_idx = hash % TT_SIZE;
 
-    // 2. TABLE DE TRANSPOSITION (Lookup immédiat)
-    if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
-        return transposition_table[tt_idx].value; // On retourne juste la valeur, pas de création de noeuds !
+    // Cache hit
+    if (transposition_table[tt_idx].hash == hash && transposition_table[tt_idx].policy_size > 0) {
+        return transposition_table[tt_idx].value;
     }
 
-    // 3. CACHE MISS
+    // Cache miss
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
         node->is_terminal = true;
@@ -177,30 +173,35 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     float value;
     m_evaluator->evaluate(m_eval_tensor, m_eval_policy, value);
 
-    // 4. STOCKAGE SANS ALLOCATION (Réutilisation de la capacité)
-    transposition_table[tt_idx].hash = hash;
-    transposition_table[tt_idx].value = value;
-    transposition_table[tt_idx].legal_policy.clear(); // O(1), garde la mémoire allouée intacte
+    // Stockage dans la TT (taille fixe, pas d'allocation)
+    TTEntry& tt = transposition_table[tt_idx];
+    tt.hash = hash;
+    tt.value = value;
+    tt.policy_size = std::min((int)legal_indices.size(), TT_MAX_MOVES);
 
     float sum_legal = 0.0f;
-    for (int idx : legal_indices) {
+    for (int k = 0; k < tt.policy_size; ++k) {
+        int idx = legal_indices[k];
         float prob = m_eval_policy[idx];
-        transposition_table[tt_idx].legal_policy.push_back({ idx, prob }); // Pas d'allocation !
+        tt.legal_policy[k] = { idx, prob };
         sum_legal += prob;
     }
 
+    // Création des enfants
+    node->children.reserve(tt.policy_size);
     if (sum_legal > 0.0f) {
-        node->children.reserve(transposition_table[tt_idx].legal_policy.size());
-        for (const auto& pair : transposition_table[tt_idx].legal_policy) {
+        for (int k = 0; k < tt.policy_size; ++k) {
             node->children.emplace_back(
-                pair.first, std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, node));
+                tt.legal_policy[k].first,
+                std::make_unique<MCTSNode>(tt.legal_policy[k].second / sum_legal, tt.legal_policy[k].first, node));
         }
     }
     else {
-        node->children.reserve(legal_indices.size());
-        float uniform_prob = 1.0f / legal_indices.size();
-        for (int idx : legal_indices) {
-            node->children.emplace_back(idx, std::make_unique<MCTSNode>(uniform_prob, idx, node));
+        float uniform_prob = 1.0f / tt.policy_size;
+        for (int k = 0; k < tt.policy_size; ++k) {
+            node->children.emplace_back(
+                tt.legal_policy[k].first,
+                std::make_unique<MCTSNode>(uniform_prob, tt.legal_policy[k].first, node));
         }
     }
 
@@ -210,7 +211,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 void MCTS::add_dirichlet_noise(MCTSNode* root) {
     if (root->children.empty()) return;
     std::mt19937 gen(std::random_device{}());
-    std::gamma_distribution<float> gamma(0.3f, 1.0f); // Alpha = 0.3 pour les échecs
+    std::gamma_distribution<float> gamma(0.3f, 1.0f);
 
     float sum_noise = 0.0f;
     std::vector<float> noise(root->children.size());
@@ -251,9 +252,8 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
 
         if (node->is_terminal) {
             float value = 0.0f;
-            // On teste d'abord les conditions de nulle (très rapide)
-            if (board.checkThreefoldRepetition() || 
-                board.getHalfMoveClock() >= 100 || 
+            if (board.checkThreefoldRepetition() ||
+                board.getHalfMoveClock() >= 100 ||
                 board.checkInsufficientMaterial()) {
                 value = 0.0f;
             }
@@ -280,10 +280,8 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
     std::vector<float> pi(4672, 0.0f);
     float sum_visits = 0.0f;
     for (const auto& pair : root->children) {
-        int idx = pair.first;
-        MCTSNode* child = pair.second.get();
-        pi[idx] = static_cast<float>(child->visit_count);
-        sum_visits += pi[idx];
+        pi[pair.first] = static_cast<float>(pair.second->visit_count);
+        sum_visits += pi[pair.first];
     }
 
     if (sum_visits > 0.0f) {
@@ -338,7 +336,6 @@ bool MCTS::apply_move_by_index(Chessboard& board, int index) {
         dest_r = 7 - dest_r;
     }
 
-    // Gestion automatique de la promotion en Dame si non spécifiée
     if (board.getSquare(orig_f, orig_r).getPiece().getType() == PAWN) {
         if ((!is_black && dest_r == 7) || (is_black && dest_r == 0)) {
             if (promotion == NONE) {
@@ -378,7 +375,6 @@ float MCTS::get_root_q() const {
 }
 
 void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
-    // 1. Initialisation paresseuse protégée par un scope très court
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_analysis_root) {
@@ -387,10 +383,7 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
         }
     }
 
-    // 2. Boucle de simulation
     for (int sim = 0; sim < num_simulations; sim++) {
-
-        // Le mutex se verrouille ici pour UNE seule simulation...
         std::lock_guard<std::mutex> lock(m_mutex);
 
         bool aborted;
@@ -435,12 +428,10 @@ std::vector<MoveStats> MCTS::get_analysis_results() const {
     if (!m_analysis_root) return results;
 
     for (const auto& pair : m_analysis_root->children) {
-        int idx = pair.first;
         MCTSNode* child = pair.second.get();
-
         if (child->visit_count > 0) {
             results.push_back({
-                idx,
+                pair.first,
                 child->visit_count,
                 -child->q_value(),
                 child->prior
@@ -460,13 +451,11 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
     auto [node, moves] = select_leaf(root, board, c_puct, aborted);
     moves_played = moves;
 
-    // Cas 1 : Coup invalide généré
     if (aborted) {
         for (int i = 0; i < moves_played; i++) board.undoMove();
         return nullptr;
     }
 
-    // Cas 2 : Fin de partie (Mat, Pat, Nulle)
     if (node->is_terminal) {
         float value = 0.0f;
         if (board.checkThreefoldRepetition() ||
@@ -479,65 +468,64 @@ MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct,
         }
         backup(node, value);
         for (int i = 0; i < moves_played; i++) board.undoMove();
-        return nullptr; // Pas besoin du GPU
+        return nullptr;
     }
 
-    // Cas 3 : On vérifie la Table de Transposition (TT) AVANT d'embêter le GPU
+    // Vérification TT avant GPU
     uint64_t hash = board.getZobristHash();
     size_t tt_idx = hash % TT_SIZE;
 
-    if (transposition_table[tt_idx].hash == hash && !transposition_table[tt_idx].legal_policy.empty()) {
+    if (transposition_table[tt_idx].hash == hash && transposition_table[tt_idx].policy_size > 0) {
         backup(node, transposition_table[tt_idx].value);
         for (int i = 0; i < moves_played; i++) board.undoMove();
-        return nullptr; // Pas de création de noeuds ici 
+        return nullptr;
     }
 
-    // Cas 4 : Vraie feuille non explorée
-    // On retourne le nœud. Le manager va extraire le tenseur, l'envoyer au GPU,
-    // puis appeler expand_and_backup() plus tard.
     return node;
 }
 
 void MCTS::expand_and_backup(MCTSNode* leaf_node, Chessboard& board, const float* policy, float value) {
-    // Cette fonction est appelée PAR LE MANAGER une fois que l'inférence ONNX est terminée
 
     std::vector<int> legal_indices = board.getLegalMoveIndices();
     if (legal_indices.empty()) {
-        // Sécurité ultime au cas où
         leaf_node->is_terminal = true;
         backup(leaf_node, board.isInCheck() ? -1.0f : 0.0f);
         return;
     }
 
-    // Mise en cache dans la Table de Transposition
+    // Stockage TT (taille fixe)
     uint64_t hash = board.getZobristHash();
     size_t tt_idx = hash % TT_SIZE;
-    transposition_table[tt_idx].hash = hash;
-    transposition_table[tt_idx].value = value;
-    transposition_table[tt_idx].legal_policy.clear();
+    TTEntry& tt = transposition_table[tt_idx];
+    tt.hash = hash;
+    tt.value = value;
+    tt.policy_size = std::min((int)legal_indices.size(), TT_MAX_MOVES);
 
     float sum_legal = 0.0f;
-    for (int idx : legal_indices) {
+    for (int k = 0; k < tt.policy_size; ++k) {
+        int idx = legal_indices[k];
         float prob = policy[idx];
-        transposition_table[tt_idx].legal_policy.push_back({ idx, prob });
+        tt.legal_policy[k] = { idx, prob };
         sum_legal += prob;
     }
 
+    // Création des enfants
+    leaf_node->children.reserve(tt.policy_size);
     if (sum_legal > 0.0f) {
-        leaf_node->children.reserve(transposition_table[tt_idx].legal_policy.size());
-        for (const auto& pair : transposition_table[tt_idx].legal_policy) {
+        for (int k = 0; k < tt.policy_size; ++k) {
             leaf_node->children.emplace_back(
-                pair.first, std::make_unique<MCTSNode>(pair.second / sum_legal, pair.first, leaf_node));
+                tt.legal_policy[k].first,
+                std::make_unique<MCTSNode>(tt.legal_policy[k].second / sum_legal, tt.legal_policy[k].first, leaf_node));
         }
     }
     else {
-        leaf_node->children.reserve(legal_indices.size());
-        float uniform_prob = 1.0f / legal_indices.size();
-        for (int idx : legal_indices) {
-            leaf_node->children.emplace_back(idx, std::make_unique<MCTSNode>(uniform_prob, idx, leaf_node));
+        float uniform_prob = 1.0f / tt.policy_size;
+        for (int k = 0; k < tt.policy_size; ++k) {
+            leaf_node->children.emplace_back(
+                tt.legal_policy[k].first,
+                std::make_unique<MCTSNode>(uniform_prob, tt.legal_policy[k].first, leaf_node));
         }
     }
 
-    // On remonte la valeur prédite
     backup(leaf_node, value);
 }

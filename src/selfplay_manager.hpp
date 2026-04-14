@@ -64,8 +64,6 @@ private:
     std::vector<int> m_waiting_moves_played;
     std::vector<bool> m_is_waiting;
 
-    std::vector<float> m_tensor_buffer;
-
     std::mt19937 m_rng{ std::random_device{}() };
 
 
