@@ -151,13 +151,12 @@ def pipeline(
         slow_sims=700,
         fast_sims=100,
         slow_ratio=0.25,
-        train_epochs=3,
+        train_epochs=1,
         batch_size=1024,
         learning_rate=1e-4,
         num_res_blocks=10,
         num_filters=128,
         max_buffer_size=100_000,
-        samples_per_epoch=15_000,
         eval_stockfish_every=4,
         checkpoint_path=None,
         stockfish_path=None,
@@ -193,8 +192,8 @@ def pipeline(
 
     wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
-    buffer_filepath = "checkpoints/replay_buffer.npz"
-    replay_buffer = deque(load_buffer(buffer_filepath), maxlen=max_buffer_size)
+    buffer_folder = "python_src/replay_buffer"
+    replay_buffer = deque(load_buffer(buffer_folder), maxlen=max_buffer_size)
 
     for iteration in range(start_iteration, start_iteration + num_iterations):
         print(f"\n{'=' * 50}")
@@ -215,6 +214,9 @@ def pipeline(
 
         # ── 3. Training (GPU / PyTorch) ──
         current_batch_size = min(batch_size, len(replay_buffer))
+
+        samples_per_epoch = round((TARGET_SAMPLING_RATIO * len(new_data)) / train_epochs)
+        print(f"Training on {samples_per_epoch} samples...")
 
         if current_batch_size > 0:
             global_step = train_on_buffer(
@@ -250,7 +252,7 @@ def pipeline(
             "global_step": global_step,
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
-        save_buffer(list(replay_buffer), buffer_filepath)
+        save_buffer(replay_buffer, buffer_folder)
 
         # Nettoyage du fichier ONNX temporaire
         if os.path.exists(onnx_path):
@@ -299,6 +301,8 @@ if __name__ == "__main__":
     try:
         # import os
         # os.environ["WANDB_MODE"] = "disabled"
+
+        TARGET_SAMPLING_RATIO = 14.0
         pipeline(
             num_iterations=150,
             games_per_iter=512,
@@ -310,11 +314,10 @@ if __name__ == "__main__":
             batch_size=4096,
             learning_rate=4e-5,
             max_buffer_size=750_000,
-            samples_per_epoch=170_000,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_14_13h33_iter40_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_14_21h05_iter69_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
-            stockfish_elo=2200,
+            stockfish_elo=2300,
             stockfish_nodes=200_000
         )
     except KeyboardInterrupt:

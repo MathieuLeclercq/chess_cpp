@@ -24,7 +24,7 @@ GAMES_PER_PAIR = 16
 MAX_WORKERS = 8  # Nombre de parties en parallèle
 WHR_STATE_FILE = "tournament_data/tournament_state.whr"
 STATS_FILE = "tournament_data/tournament_stats.json"
-MODE = "2-3"  # Options : "default", "all", "x-y", ou "endless"
+MODE = "default"  # Options : "default", "all", "x-y", ou "endless"
 STOCKFISH_ANCHOR_ELO = 2600
 
 
@@ -102,14 +102,14 @@ def play_game_worker(args):
         model_white = StockfishPlayer(STOCKFISH_PATH, elo=sf_anchor_elo)
     else:
         evaluator_w = chess_engine.ONNXEvaluator(os.path.join(CHECKPOINT_DIR, white_p))
-        model_white = chess_engine.MCTS(evaluator_w)
+        model_white = chess_engine.MCTS(evaluator_w, tt_size=131071)
 
     # 2. Instanciation locale du modèle Noir
     if black_h == sf_hash_str:
         model_black = StockfishPlayer(STOCKFISH_PATH, elo=sf_anchor_elo)
     else:
         evaluator = chess_engine.ONNXEvaluator(os.path.join(CHECKPOINT_DIR, black_p))
-        model_black = chess_engine.MCTS(evaluator)
+        model_black = chess_engine.MCTS(evaluator, tt_size=131071)
 
     # 3. Exécution de la partie
     winner, moves = play_game_between_two_bots(model_white, model_black, sims)

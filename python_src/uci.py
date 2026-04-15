@@ -10,7 +10,7 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 #                     CONFIGURATION EN DUR
 # ============================================================
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints/2026_04_12_19h17_iter34_unsupervised.onnx")
+              r"\checkpoints/2026_04_14_21h05_selfplay_tmp.onnx")
 DEFAULT_SIMULATIONS = 1000
 BATCH_SIZE = 100
 
