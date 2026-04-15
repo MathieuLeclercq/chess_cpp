@@ -1,18 +1,19 @@
 import os.path
 import warnings
 import logging
+import numpy as np
 
 warnings.filterwarnings("ignore", module="requests")
 import wandb
 import torch
-from collections import deque
 import torch.nn.functional as f
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torch.amp import GradScaler
 from datetime import datetime
 
 import chess_engine
-from lib import (save_buffer, load_buffer, export_model_to_onnx, calculate_performance_rating,
+from lib import (append_to_disk_buffer, export_model_to_onnx,
+                 calculate_performance_rating,
                  export_model_to_onnx_gpu, convert_game_results, run_with_interrupt)
 from stockfish_player import evaluate_against_anchor
 from model import ChessNet
@@ -21,19 +22,23 @@ from model import ChessNet
 # ============================================================
 #                     DATASET
 # ============================================================
-class SelfPlayDataset(Dataset):
-    def __init__(self, buffer):
-        self.buffer = buffer
+class ShardedDataset(Dataset):
+    """Dataset qui charge un seul shard à la fois en mémoire."""
+
+    def __init__(self, shard_path):
+        data = np.load(shard_path)
+        self.states = data['states']
+        self.policies = data['policies']
+        self.values = data['values']
 
     def __len__(self):
-        return len(self.buffer)
+        return len(self.states)
 
     def __getitem__(self, idx):
-        tensor_np, pi, value = self.buffer[idx]
         return (
-            torch.from_numpy(tensor_np).float(),
-            torch.from_numpy(pi).float(),
-            torch.tensor(value, dtype=torch.float32)
+            torch.from_numpy(self.states[idx].copy()).float(),
+            torch.from_numpy(self.policies[idx].copy()).float(),
+            torch.tensor(float(self.values[idx]), dtype=torch.float32)
         )
 
 
@@ -86,21 +91,44 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
 # ============================================================
 #                     TRAINING
 # ============================================================
-def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_rate,
-                    epochs=10, batch_size=256, global_step=0, samples_per_epoch=15000):
+def train_on_shards(model, optimizer, scaler, device, buffer_folder, learning_rate,
+                    batch_size=256, global_step=0, samples_per_epoch=15000):
+    import glob, random
+
     model.train()
-    dataset = SelfPlayDataset(list(replay_buffer))
+    shards = sorted(glob.glob(os.path.join(buffer_folder, "shard_*.npz")))
+    if not shards:
+        return global_step
 
-    num_samples = min(len(dataset), samples_per_epoch)
-    sampler = RandomSampler(dataset, replacement=True, num_samples=num_samples)
-    loader = DataLoader(dataset, batch_size=batch_size,
-                        sampler=sampler, num_workers=0, pin_memory=True)
+    shard_sizes = []
+    for s in shards:
+        try:
+            size = int(os.path.splitext(s)[0].split("_")[-1])
+        except (ValueError, IndexError):
+            size = 50000
+        shard_sizes.append(size)
+    total_positions = sum(shard_sizes)
 
-    for epoch in range(epochs):
-        epoch_loss = 0.0
-        epoch_policy_loss = 0.0
-        epoch_value_loss = 0.0
-        num_batches = 0
+    paired = list(zip(shards, shard_sizes))
+    random.shuffle(paired)
+
+    epoch_loss = 0.0
+    epoch_policy_loss = 0.0
+    epoch_value_loss = 0.0
+    num_batches = 0
+    samples_remaining = samples_per_epoch
+
+    for shard_path, shard_size in paired:
+        if samples_remaining <= 0:
+            break
+
+        shard_samples = max(1, round(samples_per_epoch * shard_size / total_positions))
+        shard_samples = min(shard_samples, samples_remaining)
+
+        dataset = ShardedDataset(shard_path)
+        sampler = RandomSampler(dataset, replacement=True, num_samples=shard_samples)
+        loader = DataLoader(dataset, batch_size=batch_size,
+                            sampler=sampler, num_workers=0, pin_memory=True)
 
         for x, target_pi, y_value in loader:
             x = x.to(device)
@@ -126,17 +154,19 @@ def train_on_buffer(model, optimizer, scaler, device, replay_buffer, learning_ra
             num_batches += 1
             global_step += 1
 
-        if num_batches > 0:
-            avg_loss = epoch_loss / num_batches
-            wandb.log({
-                "train/epoch_loss": avg_loss,
-                "train/epoch_policy_loss": epoch_policy_loss / num_batches,
-                "train/epoch_value_loss": epoch_value_loss / num_batches,
-                "train/epoch": epoch + 1,
-                "train/global_step": global_step,
-                "train/learning_rate": learning_rate,
-            }, step=global_step)
-            print(f"    Epoch {epoch + 1}/{epochs} — loss: {avg_loss:.4f}")
+        samples_remaining -= shard_samples
+        del dataset
+
+    if num_batches > 0:
+        avg_loss = epoch_loss / num_batches
+        wandb.log({
+            "train/epoch_loss": avg_loss,
+            "train/epoch_policy_loss": epoch_policy_loss / num_batches,
+            "train/epoch_value_loss": epoch_value_loss / num_batches,
+            "train/global_step": global_step,
+            "train/learning_rate": learning_rate,
+        }, step=global_step)
+        print(f"    Training — loss: {avg_loss:.4f} ({num_batches} batches)")
 
     return global_step
 
@@ -151,12 +181,12 @@ def pipeline(
         slow_sims=700,
         fast_sims=100,
         slow_ratio=0.25,
-        train_epochs=1,
         batch_size=1024,
         learning_rate=1e-4,
         num_res_blocks=10,
         num_filters=128,
         max_buffer_size=100_000,
+        target_sampling_ratio=14.0,
         eval_stockfish_every=4,
         checkpoint_path=None,
         stockfish_path=None,
@@ -193,7 +223,6 @@ def pipeline(
     wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
     buffer_folder = "replay_buffer"
-    replay_buffer = deque(load_buffer(buffer_folder), maxlen=max_buffer_size)
 
     for iteration in range(start_iteration, start_iteration + num_iterations):
         print(f"\n{'=' * 50}")
@@ -209,28 +238,25 @@ def pipeline(
             onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
         )
 
-        replay_buffer.extend(new_data)
-        print(f"  Buffer: {len(replay_buffer)} positions")
+        # ── 3. Sauvegarde des nouvelles positions sur disque ──
+        buffer_size = append_to_disk_buffer(new_data, buffer_folder, max_buffer_size)
+        num_new_positions = len(new_data)
+        del new_data  # libère la RAM avant le chargement du buffer
 
-        # ── 3. Training (GPU / PyTorch) ──
-        current_batch_size = min(batch_size, len(replay_buffer))
+        # ── 4. Training (GPU / PyTorch) ──
+        samples_per_epoch = round(target_sampling_ratio * num_new_positions)
+        print(f"  Training on ~{samples_per_epoch} samples from shards...")
 
-        samples_per_epoch = round((TARGET_SAMPLING_RATIO * len(new_data)) / train_epochs)
-        print(f"Training on {samples_per_epoch} samples...")
-
-        if current_batch_size > 0:
-            global_step = train_on_buffer(
-                model, optimizer, scaler, gpu_device, replay_buffer, learning_rate,
-                epochs=train_epochs, batch_size=current_batch_size, global_step=global_step,
-                samples_per_epoch=samples_per_epoch
-            )
-        else:
-            print("  Pas assez de données pour entraîner.")
+        global_step = train_on_shards(
+            model, optimizer, scaler, gpu_device, buffer_folder, learning_rate,
+            batch_size=batch_size, global_step=global_step,
+            samples_per_epoch=samples_per_epoch
+        )
 
         draw_rate = 1 - (stats["checkmates"] / max(1, games_per_iter))
         wandb.log({
-            "selfplay/buffer_size": len(replay_buffer),
-            "selfplay/new_positions": len(new_data),
+            "selfplay/buffer_size": buffer_size,
+            "selfplay/new_positions": num_new_positions,
             "selfplay/avg_game_length": avg_length,
             "selfplay/draw_rate": draw_rate,
             "selfplay/draws_repetition": stats["repetition"],
@@ -241,7 +267,7 @@ def pipeline(
             "selfplay/iteration": iteration + 1,
         }, step=global_step)
 
-        # ── 4. Sauvegarde checkpoint ──
+        # ── 5. Sauvegarde checkpoint ──
         ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
         save_path = f"checkpoints/{ckpt_filename}.pt"
         torch.save({
@@ -252,15 +278,13 @@ def pipeline(
             "global_step": global_step,
         }, save_path)
         print(f"  Checkpoint sauvegardé: {save_path}")
-        save_buffer(replay_buffer, buffer_folder)
 
         # Nettoyage du fichier ONNX temporaire
         if os.path.exists(onnx_path):
             os.remove(onnx_path)
 
-        # ── 5. Évaluation Stockfish ──
+        # ── 6. Évaluation Stockfish ──
         if (iteration + 1) % eval_stockfish_every == 0:
-            # Export un ONNX dédié à l'évaluation (CPU, utilisé par l'ancien MCTS)
             eval_onnx_path = f"checkpoints/{ckpt_filename}.onnx"
             export_model_to_onnx(model, eval_onnx_path, gpu_device)
 
@@ -302,7 +326,6 @@ if __name__ == "__main__":
         # import os
         # os.environ["WANDB_MODE"] = "disabled"
 
-        TARGET_SAMPLING_RATIO = 14.0
         pipeline(
             num_iterations=150,
             games_per_iter=512,
@@ -310,10 +333,10 @@ if __name__ == "__main__":
             slow_sims=700,
             fast_sims=100,
             slow_ratio=0.25,
-            train_epochs=1,
             batch_size=4096,
             learning_rate=4e-5,
-            max_buffer_size=750_000,
+            max_buffer_size=2_000_000,
+            target_sampling_ratio=14.0,
             eval_stockfish_every=8,
             checkpoint_path="checkpoints/2026_04_14_21h05_iter69_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",

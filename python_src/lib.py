@@ -7,6 +7,7 @@ import threading
 import glob
 import numpy as np
 
+from datetime import datetime
 from typing import Any
 import chess_engine
 from model import ChessNet
@@ -308,74 +309,49 @@ def ai_pick_move_instant(board, model, device, temperature=0.1):
     return orig_f, orig_r, dest_f, dest_r, promo
 
 
-def save_buffer(buffer, folder_path, chunk_size=50000):
-    """
-    Sauvegarde le replay buffer par fragments (shards) dans un dossier dédié.
-    Le partitionnement évite les pics de RAM supérieurs à ~800 Mo.
-    """
-    if not buffer:
-        return
+def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
+    """Sauvegarde les nouvelles positions sur disque et supprime les shards les plus anciens."""
+    if not new_data:
+        return None
 
-    # Création du dossier si nécessaire
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
 
-    # 1. Nettoyage des anciens fragments pour éviter les reliquats
-    old_files = glob.glob(os.path.join(folder_path, "buffer_part_*.npz"))
-    for f in old_files:
+    num_new = len(new_data)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"shard_{timestamp}_{num_new}.npz"
+    filepath = os.path.join(folder_path, filename)
+
+    states = np.array([item[0] for item in new_data], dtype=np.float16)
+    policies = np.array([item[1] for item in new_data], dtype=np.float16)
+    values = np.array([item[2] for item in new_data], dtype=np.float32)
+
+    np.savez_compressed(filepath, states=states, policies=policies, values=values)
+
+    # Nettoyage : supprime les shards les plus anciens si on dépasse la limite
+    shards = sorted(glob.glob(os.path.join(folder_path, "shard_*.npz")))
+    total = 0
+    keep_from = 0
+    for i in range(len(shards) - 1, -1, -1):
         try:
-            os.remove(f)
-        except OSError:
-            pass
+            size = int(os.path.splitext(shards[i])[0].split("_")[-1])
+        except (ValueError, IndexError):
+            continue
+        total += size
+        if total > max_buffer_size:
+            keep_from = i + 1
+            break
 
-    buffer_list = list(buffer)
-    total_size = len(buffer_list)
-    num_shards = (total_size + chunk_size - 1) // chunk_size
-    for i in range(0, total_size, chunk_size):
-        chunk = buffer_list[i: i + chunk_size]
-        states = np.array([item[0] for item in chunk], dtype=np.float16)
-        policies = np.array([item[1] for item in chunk], dtype=np.float16)
-        values = np.array([item[2] for item in chunk], dtype=np.float32)
-        part_id = i // chunk_size
-        filename = f"buffer_part_{part_id:03d}.npz"
-        filepath = os.path.join(folder_path, filename)
-        np.savez_compressed(filepath, states=states, policies=policies, values=values)
-    print(
-        f"  [Disque] Buffer sauvegardé : {total_size} positions "
-        f"réparties en {num_shards} fichiers dans {folder_path}")
+    for shard in shards[:keep_from]:
+        os.remove(shard)
 
-
-def load_buffer(folder_path):
-    """
-    Reconstitue le buffer en chargeant tous les fragments .npz du dossier.
-    """
-    if not os.path.exists(folder_path):
-        print(f"  [Disque] Dossier {folder_path} non trouvé. Démarrage à vide.")
-        return []
-    shards = sorted(glob.glob(os.path.join(folder_path, "buffer_part_*.npz")))
-    if not shards:
-        legacy_file = "checkpoints/replay_buffer.npz"  # Rétrocompatibilité
-        if os.path.exists(legacy_file):
-            print(f"  [Disque] Migration de l'ancien buffer unique détectée...")
-            data = np.load(legacy_file)
-            buffer = []
-            for i in range(len(data['states'])):
-                buffer.append((data['states'][i], data['policies'][i], float(data['values'][i])))
-            return buffer
-        return []
-
-    full_buffer = []
-    for shard_path in shards:
-        with np.load(shard_path) as data:
-            states = data['states']
-            policies = data['policies']
-            values = data['values']
-            for i in range(len(states)):
-                full_buffer.append((states[i], policies[i], float(values[i])))
-
-    print(
-        f"  [Disque] Buffer chargé : {len(full_buffer)} positions depuis {len(shards)} fragments.")
-    return full_buffer
+    remaining = sum(
+        int(os.path.splitext(s)[0].split("_")[-1])
+        for s in shards[keep_from:]
+        if os.path.exists(s)
+    )
+    print(f"  [Disque] +{num_new} positions. Buffer total : ~{remaining} / {max_buffer_size}")
+    return remaining
 
 
 # ============================================================
