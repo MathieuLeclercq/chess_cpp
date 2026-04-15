@@ -192,7 +192,7 @@ def pipeline(
 
     wandb.init(project="alphazero-chess", name=f"{timestamp}_self_play", config=hyperparams)
 
-    buffer_folder = "python_src/replay_buffer"
+    buffer_folder = "replay_buffer"
     replay_buffer = deque(load_buffer(buffer_folder), maxlen=max_buffer_size)
 
     for iteration in range(start_iteration, start_iteration + num_iterations):
