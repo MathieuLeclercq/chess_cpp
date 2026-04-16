@@ -1,6 +1,8 @@
 import os.path
 import warnings
 import logging
+import time
+
 import numpy as np
 
 warnings.filterwarnings("ignore", module="requests")
@@ -26,10 +28,10 @@ class ShardedDataset(Dataset):
     """Dataset qui charge un seul shard à la fois en mémoire."""
 
     def __init__(self, shard_path):
-        data = np.load(shard_path)
-        self.states = data['states']
-        self.policies = data['policies']
-        self.values = data['values']
+        with np.load(shard_path) as data:
+            self.states = data['states'].copy()
+            self.policies = data['policies'].copy()
+            self.values = data['values'].copy()
 
     def __len__(self):
         return len(self.states)
@@ -64,21 +66,21 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
     data, stats = convert_game_results(game_results)
 
     num_games = len(game_results)
-    avg_length = stats["total_moves"] / max(num_games, 1)
+    avg_length = (stats["total_saved_moves"] / max(num_games, 1)) / slow_ratio
 
     print(f"\n{'=' * 30}")
     print(f"      BILAN DE L'ITERATION")
     print(f"{'=' * 30}")
-    print(f"  Parties jouées          : {num_games}")
-    print(f"  Positions générées      : {len(data)}")
-    print(f"  Pos sauvegardées/Partie : {avg_length:.1f}")
+    print(f"  Parties jouées                     : {num_games}")
+    print(f"  Positions générées (slow moves)    : {len(data)}")
+    print(f"  Positions par Partie               : {avg_length:.1f}")
     print(f"{'-' * 30}")
-    print(f"  Victoires (mat)         : {stats['checkmates']}")
-    print(f"  Pat (Stalemate)         : {stats['stalemates']}")
-    print(f"  Répétition              : {stats['repetition']}")
-    print(f"  Règle des 50 coups      : {stats['50_moves']}")
-    print(f"  Matériel insuffisant    : {stats['insuff_mat']}")
-    print(f"  Non terminées (Max)     : {stats['max_moves']}")
+    print(f"  Victoires (mat)                    : {stats['checkmates']}")
+    print(f"  Pat (Stalemate)                    : {stats['stalemates']}")
+    print(f"  Répétition                         : {stats['repetition']}")
+    print(f"  Règle des 50 coups                 : {stats['50_moves']}")
+    print(f"  Matériel insuffisant               : {stats['insuff_mat']}")
+    print(f"  Non terminées (Max)                : {stats['max_moves']}")
     print(f"{'=' * 30}\n")
 
     # Libération explicite de l'évaluateur ONNX GPU
@@ -234,9 +236,17 @@ def pipeline(
         export_model_to_onnx_gpu(model, onnx_path, gpu_device)
 
         # ── 2. Self-Play (C++ / GPU batched) ──
+        start_time = time.time()
         new_data, avg_length, stats = generate_games(
             onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
         )
+        generation_time = time.time() - start_time
+        games_per_sec = games_per_iter / generation_time
+        saved_pos_per_sec = len(new_data) / generation_time
+
+        print(
+            f"  Vitesse : {games_per_sec:.2f} parties/s | "
+            f"{saved_pos_per_sec:.0f} saved positions/s (Total: {generation_time:.1f}s)")
 
         # ── 3. Sauvegarde des nouvelles positions sur disque ──
         buffer_size = append_to_disk_buffer(new_data, buffer_folder, max_buffer_size)
@@ -245,7 +255,7 @@ def pipeline(
 
         # ── 4. Training (GPU / PyTorch) ──
         samples_per_epoch = round(target_sampling_ratio * num_new_positions)
-        print(f"  Training on ~{samples_per_epoch} samples from shards...")
+        print(f"  Entraînement sur {samples_per_epoch} samples...")
 
         global_step = train_on_shards(
             model, optimizer, scaler, gpu_device, buffer_folder, learning_rate,
@@ -253,17 +263,20 @@ def pipeline(
             samples_per_epoch=samples_per_epoch
         )
 
-        draw_rate = 1 - (stats["checkmates"] / max(1, games_per_iter))
+        num_games = max(1, games_per_iter)
+        draw_rate = 1 - (stats["checkmates"] / num_games)
         wandb.log({
             "selfplay/buffer_size": buffer_size,
             "selfplay/new_positions": num_new_positions,
             "selfplay/avg_game_length": avg_length,
             "selfplay/draw_rate": draw_rate,
-            "selfplay/draws_repetition": stats["repetition"],
-            "selfplay/draws_50_moves": stats["50_moves"],
-            "selfplay/draws_stalemate": stats["stalemates"],
-            "selfplay/draws_insuff_mat": stats["insuff_mat"],
-            "selfplay/draws_max_moves": stats["max_moves"],
+            "selfplay/draws_repetition": stats["repetition"] / num_games,
+            "selfplay/draws_50_moves": stats["50_moves"] / num_games,
+            "selfplay/draws_stalemate": stats["stalemates"] / num_games,
+            "selfplay/draws_insuff_mat": stats["insuff_mat"] / num_games,
+            "selfplay/draws_max_moves": stats["max_moves"] / num_games,
+            "selfplay/games_per_sec": games_per_sec,
+            "selfplay/saved_positions_per_sec": saved_pos_per_sec,
             "selfplay/iteration": iteration + 1,
         }, step=global_step)
 
@@ -308,10 +321,12 @@ def pipeline(
                 "eval/wins": eval_wins,
                 "eval/draws": eval_draws,
                 "eval/losses": eval_losses,
+                "eval/stockfish_elo": stockfish_elo,
                 "eval/iteration": iteration + 1,
             }, step=global_step)
         else:
             print(f"  Évaluation ignorée.")
+        wandb.log({}, commit=True)  # force le log à ce moment
 
     # Export final
     last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
@@ -338,7 +353,7 @@ if __name__ == "__main__":
             max_buffer_size=2_000_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_14_21h05_iter69_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_16_00h37_iter81_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2300,
             stockfish_nodes=200_000

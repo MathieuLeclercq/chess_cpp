@@ -312,7 +312,15 @@ def ai_pick_move_instant(board, model, device, temperature=0.1):
 def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
     """Sauvegarde les nouvelles positions sur disque et supprime les shards les plus anciens."""
     if not new_data:
-        return None
+        remaining = 0
+        if os.path.exists(folder_path):
+            for s in glob.glob(os.path.join(folder_path, "shard_*.npz")):
+                try:
+                    remaining += int(os.path.splitext(s)[0].split("_")[-1])
+                except (ValueError, IndexError):
+                    continue
+        print(f"  [Disque] +0 positions. Buffer total : ~{remaining} / {max_buffer_size}")
+        return remaining
 
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
@@ -328,7 +336,6 @@ def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
 
     np.savez_compressed(filepath, states=states, policies=policies, values=values)
 
-    # Nettoyage : supprime les shards les plus anciens si on dépasse la limite
     shards = sorted(glob.glob(os.path.join(folder_path, "shard_*.npz")))
     total = 0
     keep_from = 0
@@ -343,7 +350,10 @@ def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
             break
 
     for shard in shards[:keep_from]:
-        os.remove(shard)
+        try:
+            os.remove(shard)
+        except OSError:
+            pass
 
     remaining = sum(
         int(os.path.splitext(s)[0].split("_")[-1])
@@ -553,7 +563,7 @@ def convert_game_results(games):
     stats = {
         "checkmates": 0, "stalemates": 0, "repetition": 0,
         "50_moves": 0, "insuff_mat": 0, "max_moves": 0,
-        "total_moves": 0
+        "total_saved_moves": 0
     }
 
     # Mapping entre l'entier C++ et la clé du dictionnaire
@@ -563,10 +573,10 @@ def convert_game_results(games):
         states = game.state_tensors
         policies = game.policies
         outcome = game.final_outcome
-        reason_idx = game.end_reason  # On récupère la raison depuis le C++
+        reason_idx = game.end_reason
         n = states.shape[0]
 
-        stats["total_moves"] += n
+        stats["total_saved_moves"] += n
 
         # Comptage détaillé
         if 0 <= reason_idx <= 5:
