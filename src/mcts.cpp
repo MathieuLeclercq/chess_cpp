@@ -3,6 +3,7 @@
 #include <cmath>
 #include <random>
 #include <stdexcept>
+#include <cstdint>
 
 
 // ============================================================
@@ -54,7 +55,10 @@ std::unique_ptr<MCTSNode> MCTSNode::extract_child(int idx) {
 // ============================================================
 //                     MCTS
 // ============================================================
-MCTS::MCTS(ONNXEvaluator* evaluator, size_t tt_size) : m_evaluator(evaluator), m_tt_size(tt_size) {
+MCTS::MCTS(ONNXEvaluator* evaluator, size_t tt_size) : 
+        m_evaluator(evaluator), 
+        m_tt_size(tt_size),
+        m_noise_rng(std::random_device{}()) {
     transposition_table.resize(m_tt_size);
     m_eval_tensor.reserve(119 * 64);
     m_eval_policy.reserve(4672);
@@ -69,10 +73,9 @@ void MCTS::backup(MCTSNode* node, float value) {
     }
 }
 
-std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted) {
+std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, float c_puct) {
     MCTSNode* node = root;
     int moves_played = 0;
-    aborted = false;
 
     while (!node->is_terminal) {
 
@@ -116,23 +119,23 @@ std::pair<MCTSNode*, int> MCTS::select_leaf(MCTSNode* root, Chessboard& board, f
         float parent_q = node->q_value();
         float exploration_factor = c_puct * std::sqrt(static_cast<float>(node->visit_count));
 
+        MCTSNode* best_child = nullptr;
         for (const auto& pair : node->children) {
             float score = pair.second->ucb_score(exploration_factor, parent_q, fpu_reduction);
             if (score > max_ucb) {
                 max_ucb = score;
                 best_move_idx = pair.first;
+                best_child = pair.second.get(); // Descente
             }
         }
 
         if (best_move_idx == -1) break;
 
-        // --- 4. DESCENTE ---
-        MCTSNode* next_node = node->find_child(best_move_idx);
         if (!apply_move_by_index(board, best_move_idx)) {
             throw std::runtime_error("Problème lors de l'application du coup dans select_leaf");
         }
 
-        node = next_node;
+        node = best_child;
         moves_played++;
 
         if (board.checkThreefoldRepetition() ||
@@ -209,13 +212,12 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
 
 void MCTS::add_dirichlet_noise(MCTSNode* root) {
     if (root->children.empty()) return;
-    std::mt19937 gen(std::random_device{}());
     std::gamma_distribution<float> gamma(0.3f, 1.0f);
 
     float sum_noise = 0.0f;
     std::vector<float> noise(root->children.size());
     for (size_t i = 0; i < root->children.size(); i++) {
-        noise[i] = gamma(gen);
+        noise[i] = gamma(m_noise_rng);
         sum_noise += noise[i];
     }
 
@@ -241,13 +243,7 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
     }
 
     for (int sim = 0; sim < num_simulations; sim++) {
-        bool aborted;
-        auto [node, moves_played] = select_leaf(root.get(), board, c_puct, aborted);
-
-        if (aborted) {
-            for (int i = 0; i < moves_played; i++) board.undoMove();
-            continue;
-        }
+        auto [node, moves_played] = select_leaf(root.get(), board, c_puct);
 
         if (node->is_terminal) {
             float value = 0.0f;
@@ -385,13 +381,7 @@ void MCTS::step_analysis(Chessboard& board, int num_simulations, float c_puct) {
     for (int sim = 0; sim < num_simulations; sim++) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        bool aborted;
-        auto [node, moves_played] = select_leaf(m_analysis_root.get(), board, c_puct, aborted);
-
-        if (aborted) {
-            for (int i = 0; i < moves_played; i++) board.undoMove();
-            continue;
-        }
+        auto [node, moves_played] = select_leaf(m_analysis_root.get(), board, c_puct);
 
         if (node->is_terminal) {
             float value = 0.0f;
@@ -446,14 +436,8 @@ std::vector<MoveStats> MCTS::get_analysis_results() const {
 }
 
 MCTSNode* MCTS::advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct, int& moves_played) {
-    bool aborted;
-    auto [node, moves] = select_leaf(root, board, c_puct, aborted);
+    auto [node, moves] = select_leaf(root, board, c_puct);
     moves_played = moves;
-
-    if (aborted) {
-        for (int i = 0; i < moves_played; i++) board.undoMove();
-        return nullptr;
-    }
 
     if (node->is_terminal) {
         float value = 0.0f;

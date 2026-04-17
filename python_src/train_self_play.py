@@ -350,12 +350,12 @@ if __name__ == "__main__":
             slow_ratio=0.25,
             batch_size=4096,
             learning_rate=4e-5,
-            max_buffer_size=2_000_000,
+            max_buffer_size=750_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_16_00h37_iter81_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_16_13h44_iter96_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
-            stockfish_elo=2300,
+            stockfish_elo=2450,
             stockfish_nodes=200_000
         )
     except KeyboardInterrupt:

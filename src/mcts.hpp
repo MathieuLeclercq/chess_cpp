@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <mutex>
 #include <array>
+#include <random>
 
 #include "onnx_evaluator.hpp"
 
@@ -58,6 +59,7 @@ private:
     std::unique_ptr<MCTSNode> m_analysis_root;
     std::mutex m_mutex;
     ONNXEvaluator* m_evaluator;
+    std::mt19937 m_noise_rng;
 
 public:
     MCTS(ONNXEvaluator* evaluator, size_t tt_size = DEFAULT_TT_SIZE);
@@ -78,6 +80,6 @@ public:
 
 private:
     void backup(MCTSNode* node, float value);
-    std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct, bool& aborted);
+    std::pair<MCTSNode*, int> select_leaf(MCTSNode* root, Chessboard& board, float c_puct);
 
 };

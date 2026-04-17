@@ -96,26 +96,30 @@ void SelfPlayManager::play_best_move(int game_idx) {
 
     // 2. Sélection
     int best_move = -1;
+
+    // Sélection proportionnelle (30 premiers demi-coups)
     if (m_boards[game_idx].getMoveHistory().size() < 30) {
         std::uniform_real_distribution<float> dis(0.0f, 1.0f);
         float r = dis(m_rng);
         float accum = 0.0f;
 
-        for (int i = 0; i < 4672; ++i) {
-            if (pi[i] > 0.0f) {
-                accum += pi[i];
+        for (const auto& pair : m_roots[game_idx]->children) {
+            float p = pi[pair.first];
+            if (p > 0.0f) {
+                accum += p;
                 if (r <= accum) {
-                    best_move = i;
+                    best_move = pair.first;
                     break;
                 }
             }
         }
         if (best_move == -1) best_move = m_roots[game_idx]->children.front().first;
     }
-    else {
+    else { // argmax
         float max_p = -1.0f;
-        for (int i = 0; i < 4672; ++i) {
-            if (pi[i] > max_p) { max_p = pi[i]; best_move = i; }
+        for (const auto& pair : m_roots[game_idx]->children) {
+            float p = pi[pair.first];
+            if (p > max_p) { max_p = p; best_move = pair.first; }
         }
     }
 
@@ -123,8 +127,8 @@ void SelfPlayManager::play_best_move(int game_idx) {
     if (m_is_slow_move[game_idx]) {
         std::vector<float> tensor;
         m_boards[game_idx].getAlphaZeroTensor(tensor);
-        m_game_states[game_idx].push_back(tensor);
-        m_game_policies[game_idx].push_back(pi);
+        m_game_states[game_idx].push_back(std::move(tensor));
+        m_game_policies[game_idx].push_back(std::move(pi));
     }
 
     // 4. Jouer le coup
