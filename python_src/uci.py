@@ -10,9 +10,10 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 #                     CONFIGURATION EN DUR
 # ============================================================
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints/2026_04_14_21h05_selfplay_tmp.onnx")
+              r"\checkpoints/2026_04_18_20h33_selfplay_tmp.onnx")
 DEFAULT_SIMULATIONS = 1000
 BATCH_SIZE = 100
+SNAPSHOT_INTERVAL = 0.2  # Intervalle d'échantillonnage de l'historique (en secondes)
 
 
 # ============================================================
@@ -22,7 +23,7 @@ class UCIEngine:
     def __init__(self):
         self.board = chess_engine.Chessboard()
         self.evaluator = chess_engine.ONNXEvaluator(MODEL_PATH)
-        self.mcts = chess_engine.MCTS(self.evaluator)
+        self.mcts = chess_engine.MCTS(self.evaluator, tt_size=4_000_000)
         self.search_thread = None
 
         self.stop_event = threading.Event()
@@ -51,6 +52,8 @@ class UCIEngine:
                 break
 
             tokens = line.split()
+            if not tokens:
+                continue
             command = tokens[0]
 
             if command == "uci":
@@ -97,12 +100,10 @@ class UCIEngine:
         new_move_list = tokens[moves_idx:] if moves_idx != -1 else []
 
         # 1. Ponder Hit Parfait ou redondance GUI (On ne touche à rien)
-        # SÉCURITÉ : On s'assure qu'on a déjà un historique valide
         if len(self.last_move_list) > 0 and new_move_list == self.last_move_list:
             pass
 
         # 2. Avancée normale d'un coup (On décale la racine)
-        # SÉCURITÉ : len(self.last_move_list) > 0 garantit que le plateau a été initialisé avec ses pièces
         elif len(self.last_move_list) > 0 and len(new_move_list) == len(
                 self.last_move_list) + 1 and new_move_list[:-1] == self.last_move_list:
             last_uci = new_move_list[-1]
@@ -129,6 +130,47 @@ class UCIEngine:
                 self.board.move_piece(orig_f, orig_r, dest_f, dest_r, promo)
 
         self.last_move_list = new_move_list
+
+    def _should_stop_early(self, history, elapsed):
+        """
+        Décide si on peut jouer le coup plus vite.
+        Retourne True si on doit stopper la recherche.
+        """
+        if len(history) < 5:
+            return False
+
+        latest = history[-1]
+        best_move, best_visits, second_visits = latest[1], latest[2], latest[3]
+
+        if second_visits == 0:
+            return False
+
+        ratio = best_visits / second_visits
+
+        # Critère 1 : dominance écrasante (5x) + stabilité sur les 5 derniers snapshots
+        if ratio >= 5.0:
+            recent_bests = [h[1] for h in history[-5:]]
+            if all(m == best_move for m in recent_bests):
+                return True
+
+        # Critère 2 : dominance modérée (3x) + temps déjà consommé (>= 50%) + stabilité
+        if ratio >= 3.0 and elapsed >= self.target_time * 0.5:
+            recent_bests = [h[1] for h in history[-3:]]
+            if all(m == best_move for m in recent_bests):
+                old_ratio = history[-5][2] / max(1, history[-5][3])
+                if ratio >= old_ratio * 0.9:  # ratio ne décroît pas significativement
+                    return True
+
+        return False
+
+    @staticmethod
+    def _should_extend_time(history):
+        """Si la position est incertaine (best_move change souvent), demande du temps supplémentaire."""
+        if len(history) < 10:
+            return False
+
+        changes = sum(1 for i in range(1, 10) if history[-i][1] != history[-i - 1][1])
+        return changes >= 2
 
     def start_search(self, tokens):
         self.stop_search()
@@ -162,6 +204,8 @@ class UCIEngine:
             self.target_time = (movetime_ms / 1000.0) * 0.95
         elif my_time is not None:
             self.target_time = ((my_time / 25) + (my_inc * 0.7)) / 1000.0
+            self.target_time = max(0.05, self.target_time)
+            self.target_time = min(self.target_time, (my_time / 1000.0) * 0.8)
         else:
             self.target_time = 10.0
 
@@ -176,72 +220,108 @@ class UCIEngine:
 
     def search_worker(self):
         total_sims = 0
+        last_info_time = 0.0
+        last_snapshot_time = 0.0
+        elapsed = 0.0
 
-        # --- MODIFICATION : Limite de nœuds dans l'ouverture ---
-        # 10 demi-coups correspondent aux 5 premiers coups complets
-        if self.is_infinite:
-            max_sims = float('inf')
-        elif len(self.last_move_list) < 10:
-            max_sims = DEFAULT_SIMULATIONS  # 1200 nœuds
-        else:
-            max_sims = 10_000_000
-        # -------------------------------------------------------
+        # Historique pour détecter les tendances : (elapsed, best_move, best_visits, second_visits)
+        history = []
 
         # --- 1. BOUCLE DE RECHERCHE ---
         while not self.stop_event.is_set():
 
-            # 1a. Vérification du chrono (uniquement si c'est notre tour)
-            if not self.is_pondering:
-                elapsed = time.time() - self.search_start_time
-                if elapsed >= self.target_time:
-                    break  # Temps écoulé, on sort de la boucle
+            # Recalcul dynamique de max_sims (permet à ponderhit de changer le mode)
+            if self.is_infinite or self.is_pondering:
+                max_sims = float('inf')
+            elif len(self.last_move_list) < 10:
+                max_sims = DEFAULT_SIMULATIONS
+            else:
+                max_sims = 10_000_000
 
-            # 1b. Exécution des simulations si on n'a pas atteint la limite
+            elapsed = time.time() - self.search_start_time
+
+            # 1a. Gestion du temps (hors ponder)
+            if not self.is_pondering:
+                # Temps écoulé — possibilité d'étendre jusqu'à 1.5x si position incertaine
+                if elapsed >= self.target_time:
+                    if self._should_extend_time(history) and elapsed < self.target_time * 1.5:
+                        pass
+                    else:
+                        break
+
+                # Early stop si dominance claire après 30% du temps
+                if elapsed >= self.target_time * 0.3 and self._should_stop_early(history, elapsed):
+                    break
+
+            # 1b. Exécution des simulations
             if total_sims < max_sims:
-                # On s'assure de ne pas dépasser max_sims avec le batch
                 sims_to_do = min(BATCH_SIZE, max_sims - total_sims)
                 self.mcts.step_analysis(self.board, sims_to_do, 1.4)
                 total_sims += sims_to_do
 
-                stats = self.mcts.get_analysis_results()
-                if not stats:
-                    break
+                # Détermine ce qu'il faut faire avec les stats actuelles
+                now = time.time()
+                needs_info = now - last_info_time >= 0.5
+                needs_snapshot = (not self.is_pondering and
+                                  now - last_snapshot_time >= SNAPSHOT_INTERVAL)
 
-                stats_sorted = sorted(stats, key=lambda stat: stat.visits, reverse=True)
+                if needs_info or needs_snapshot:
+                    stats = self.mcts.get_analysis_results()
 
-                real_total_nodes = sum(stat.visits for stat in stats_sorted)
-                if real_total_nodes == 0:
-                    real_total_nodes = 1
+                    # coup forcé
+                    if len(stats) == 1 and not self.is_pondering:
+                        break
 
-                for multipv_idx in range(len(stats_sorted) - 1, -1, -1):
-                    move_stat = stats_sorted[multipv_idx]
-                    is_black = (self.board.turn == chess_engine.Color.BLACK)
-                    o_f, o_r, d_f, d_r, promo = decode_move_index(self.board, move_stat.move_idx,
-                                                                  is_black)
-                    uci_str = coords_to_uci(o_f, o_r, d_f, d_r, promo)
-                    cp_score = self.q_to_cp(move_stat.q_value)
+                    # Mise à jour de l'historique de tendance (uniquement hors ponder)
+                    if needs_snapshot:
+                        last_snapshot_time = now
+                        if len(stats) >= 2:
+                            history.append((
+                                elapsed,
+                                stats[0].move_idx,
+                                stats[0].visits,
+                                stats[1].visits
+                            ))
+                            if len(history) > 20:
+                                history.pop(0)
 
-                    print(
-                        f"info depth {total_sims} multipv {multipv_idx + 1} score cp "
-                        f"{cp_score} nodes {real_total_nodes} pv {uci_str}")
+                    # Affichage UCI info
+                    if needs_info:
+                        last_info_time = now
+                        stats_sorted = sorted(stats, key=lambda s: s.visits, reverse=True)
 
-                    n = move_stat.visits
-                    p = move_stat.prior * 100.0
-                    q = move_stat.q_value
-                    print(
-                        f"info string {uci_str} (0 ) N: {n} (+ 0) "
-                        f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})")
+                        real_total_nodes = sum(s.visits for s in stats_sorted)
+                        if real_total_nodes == 0:
+                            real_total_nodes = 1
 
-                sys.stdout.flush()
+                        for multipv_idx in range(len(stats_sorted) - 1, -1, -1):
+                            move_stat = stats_sorted[multipv_idx]
+                            is_black = (self.board.turn == chess_engine.Color.BLACK)
+                            o_f, o_r, d_f, d_r, promo = decode_move_index(
+                                self.board, move_stat.move_idx, is_black)
+                            uci_str = coords_to_uci(o_f, o_r, d_f, d_r, promo)
+                            cp_score = self.q_to_cp(move_stat.q_value)
+
+                            print(
+                                f"info depth 1 seldepth {total_sims} "
+                                f"multipv {multipv_idx + 1} score cp "
+                                f"{cp_score} nodes {real_total_nodes} pv {uci_str}")
+
+                            n = move_stat.visits
+                            p = move_stat.prior * 100.0
+                            q = move_stat.q_value
+                            print(
+                                f"info string {uci_str} (0 ) N: {n} (+ 0) "
+                                f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})")
+
+                        sys.stdout.flush()
 
             # 1c. Si on a atteint max_sims
             else:
                 if self.is_pondering:
-                    # En ponder, on doit attendre la décision de la GUI (ponderhit ou stop).
-                    # On endort le thread 10ms pour ne pas consommer 100% du CPU pour rien.
+                    # En ponder, on attend la décision de la GUI (ponderhit ou stop).
                     time.sleep(0.01)
                 else:
-                    # C'est notre tour et on a fini nos 1200 nœuds, on joue !
                     break
 
         # --- 2. FIN DE RECHERCHE ET NORME UCI ---
@@ -273,9 +353,8 @@ class UCIEngine:
             if opp_stats:
                 opp_best = opp_stats[0]
                 opp_is_black = (self.board.turn == chess_engine.Color.BLACK)
-                opp_o_f, opp_o_r, opp_d_f, opp_d_r, opp_promo = decode_move_index(self.board,
-                                                                                  opp_best.move_idx,
-                                                                                  opp_is_black)
+                opp_o_f, opp_o_r, opp_d_f, opp_d_r, opp_promo = decode_move_index(
+                    self.board, opp_best.move_idx, opp_is_black)
                 ponder_uci = coords_to_uci(opp_o_f, opp_o_r, opp_d_f, opp_d_r, opp_promo)
 
         if ponder_uci:
