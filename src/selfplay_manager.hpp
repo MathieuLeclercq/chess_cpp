@@ -70,7 +70,8 @@ private:
 
 public:
     SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, 
-                    int slow_sims, int fast_sims, float slow_ratio);
+                    int slow_sims, int fast_sims, float slow_ratio,
+                    size_t tt_size = 2097143);
     std::vector<GameResult> generate_games(int total_games_to_play);
 
 private:

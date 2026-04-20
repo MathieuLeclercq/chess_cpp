@@ -9,7 +9,8 @@
 SelfPlayManager::SelfPlayManager(
     ONNXEvaluator* evaluator,
     int num_concurrent_games,
-    int slow_sims, int fast_sims, float slow_ratio)
+    int slow_sims, int fast_sims, float slow_ratio,
+    size_t tt_size)
     : m_evaluator(evaluator),
     m_num_concurrent_games(num_concurrent_games),
     m_slow_sims(slow_sims),
@@ -29,7 +30,7 @@ SelfPlayManager::SelfPlayManager(
 
     m_batch_input.resize(num_concurrent_games * 119 * 64);
 
-    m_shared_mcts = std::make_unique<MCTS>(m_evaluator);
+    m_shared_mcts = std::make_unique<MCTS>(m_evaluator, tt_size);
     for (int i = 0; i < num_concurrent_games; ++i) {
         reset_game(i);
     }

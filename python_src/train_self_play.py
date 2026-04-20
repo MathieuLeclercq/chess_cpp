@@ -1,7 +1,8 @@
-import os.path
 import warnings
 import logging
 import time
+import gc
+import os.path
 
 import numpy as np
 
@@ -46,7 +47,14 @@ class ShardedDataset(Dataset):
 # ============================================================
 #                     SELF-PLAY (GPU Batched)
 # ============================================================
-def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio):
+def generate_games(
+        onnx_path,
+        games_per_iter,
+        concurrent_games,
+        slow_sims,
+        fast_sims,
+        slow_ratio,
+        tt_size=2097143):
     """
     Génère des parties via le SelfPlayManager C++ avec inférence batchée sur GPU.
     """
@@ -59,7 +67,8 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
         slow_sims,
         fast_sims,
         games_per_iter,
-        slow_ratio
+        slow_ratio,
+        tt_size
     )
 
     data, stats = convert_game_results(game_results)
@@ -85,6 +94,8 @@ def generate_games(onnx_path, games_per_iter, concurrent_games, slow_sims, fast_
     # Libération explicite de l'évaluateur ONNX GPU
     del game_results
     del evaluator
+    gc.collect()
+    torch.cuda.empty_cache()
 
     return data, avg_length, stats
 
@@ -169,6 +180,7 @@ def train_on_shards(model, optimizer, scaler, device, buffer_folder, learning_ra
         }, step=global_step)
         print(f"    Training — loss: {avg_loss:.4f} ({num_batches} batches)")
 
+    torch.cuda.empty_cache()
     return global_step
 
 
@@ -239,7 +251,9 @@ def pipeline(
         # ── 1. Self-Play (C++ / GPU batched) ──
         start_time = time.time()
         new_data, avg_length, stats = generate_games(
-            current_onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
+            current_onnx_path, games_per_iter,
+            concurrent_games, slow_sims, fast_sims, slow_ratio,
+            tt_size=4_000_000
         )
         generation_time = time.time() - start_time
         games_per_sec = games_per_iter / generation_time
@@ -349,7 +363,7 @@ if __name__ == "__main__":
             max_buffer_size=750_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_17_13h07_iter145_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_20_13h45_iter180_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2450,
             stockfish_nodes=200_000
