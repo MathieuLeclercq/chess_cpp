@@ -15,8 +15,7 @@ from datetime import datetime
 
 import chess_engine
 from lib import (append_to_disk_buffer, export_model_to_onnx,
-                 calculate_performance_rating,
-                 export_model_to_onnx_gpu, convert_game_results, run_with_interrupt)
+                 calculate_performance_rating, convert_game_results, run_with_interrupt)
 from stockfish_player import evaluate_against_anchor
 from model import ChessNet
 
@@ -226,19 +225,21 @@ def pipeline(
 
     buffer_folder = "replay_buffer"
 
+    # ── INITIALISATION AVANT LA BOUCLE (Génération de l'iter 0 ou reprise) ──
+    current_onnx_name = f"{timestamp}_iter{start_iteration}_unsupervised"
+    current_onnx_path = f"checkpoints/{current_onnx_name}.onnx"
+    export_model_to_onnx(model, current_onnx_path, gpu_device)
+    print(f"Modèle ONNX initial prêt pour le self-play : {current_onnx_path}")
+
     for iteration in range(start_iteration, start_iteration + num_iterations):
         print(f"\n{'=' * 50}")
         print(f"  ITERATION {iteration + 1}/{start_iteration + num_iterations}")
         print(f"{'=' * 50}")
 
-        # ── 1. Export ONNX pour le self-play GPU ──
-        onnx_path = f"checkpoints/{timestamp}_selfplay_tmp.onnx"
-        export_model_to_onnx_gpu(model, onnx_path, gpu_device)
-
-        # ── 2. Self-Play (C++ / GPU batched) ──
+        # ── 1. Self-Play (C++ / GPU batched) ──
         start_time = time.time()
         new_data, avg_length, stats = generate_games(
-            onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
+            current_onnx_path, games_per_iter, concurrent_games, slow_sims, fast_sims, slow_ratio
         )
         generation_time = time.time() - start_time
         games_per_sec = games_per_iter / generation_time
@@ -248,12 +249,12 @@ def pipeline(
             f"  Vitesse : {games_per_sec:.2f} parties/s | "
             f"{saved_pos_per_sec:.0f} saved positions/s (Total: {generation_time:.1f}s)")
 
-        # ── 3. Sauvegarde des nouvelles positions sur disque ──
+        # ── 2. Sauvegarde des nouvelles positions sur disque ──
         buffer_size = append_to_disk_buffer(new_data, buffer_folder, max_buffer_size)
         num_new_positions = len(new_data)
-        del new_data  # libère la RAM avant le chargement du buffer
+        del new_data
 
-        # ── 4. Training (GPU / PyTorch) ──
+        # ── 3. Training (GPU / PyTorch) ──
         samples_per_epoch = round(target_sampling_ratio * num_new_positions)
         print(f"  Entraînement sur {samples_per_epoch} samples...")
 
@@ -280,29 +281,29 @@ def pipeline(
             "selfplay/iteration": iteration + 1,
         }, step=global_step)
 
-        # ── 5. Sauvegarde checkpoint ──
+        # ── 4. Sauvegarde checkpoint .pt ET .onnx ──
         ckpt_filename = f"{timestamp}_iter{iteration + 1}_unsupervised"
-        save_path = f"checkpoints/{ckpt_filename}.pt"
+        save_pt_path = f"checkpoints/{ckpt_filename}.pt"
+
+        # Sauvegarde PyTorch
         torch.save({
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scaler_state_dict": scaler.state_dict(),
             "iteration": iteration + 1,
             "global_step": global_step,
-        }, save_path)
-        print(f"  Checkpoint sauvegardé: {save_path}")
+        }, save_pt_path)
 
-        # Nettoyage du fichier ONNX temporaire
-        if os.path.exists(onnx_path):
-            os.remove(onnx_path)
+        # Nouvel export ONNX qui servira pour l'itération suivante et l'évaluation
+        current_onnx_path = f"checkpoints/{ckpt_filename}.onnx"
+        export_model_to_onnx(model, current_onnx_path, gpu_device)
 
-        # ── 6. Évaluation Stockfish ──
+        print(f"  Checkpoints sauvegardés : {ckpt_filename} (.pt et .onnx)")
+
+        # ── 5. Évaluation Stockfish ──
         if (iteration + 1) % eval_stockfish_every == 0:
-            eval_onnx_path = f"checkpoints/{ckpt_filename}.onnx"
-            export_model_to_onnx(model, eval_onnx_path, gpu_device)
-
             eval_winrate, eval_wins, eval_draws, eval_losses = evaluate_against_anchor(
-                onnx_path=eval_onnx_path,
+                onnx_path=current_onnx_path,
                 stockfish_path=stockfish_path,
                 num_games=16,
                 mcts_sims=num_sim_eval_sf,
@@ -326,12 +327,7 @@ def pipeline(
             }, step=global_step)
         else:
             print(f"  Évaluation ignorée.")
-        wandb.log({}, commit=True)  # force le log à ce moment
-
-    # Export final
-    last_timestamp = datetime.now().strftime("%Y_%m_%d_%Hh%M")
-    ckpt_onnx_final_path = f"checkpoints/{last_timestamp}_last_unsupervised.onnx"
-    export_model_to_onnx(model, ckpt_onnx_final_path, gpu_device)
+        wandb.log({}, commit=True)
 
     wandb.finish()
 
@@ -353,7 +349,7 @@ if __name__ == "__main__":
             max_buffer_size=750_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_16_13h44_iter96_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_17_13h07_iter145_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2450,
             stockfish_nodes=200_000

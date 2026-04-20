@@ -367,57 +367,8 @@ def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
 # ============================================================
 #                     EXPORT ONNX & QUANTIFICATION
 # ============================================================
+
 def export_model_to_onnx(model, onnx_path, device):
-    """
-    Exporte le modèle PyTorch vers ONNX,
-    l'optimise (fusion de nœuds),
-    puis le quantifie en INT8.
-    """
-    from onnxruntime.quantization import quantize_dynamic, QuantType
-    from onnxruntime.quantization.preprocess import quant_pre_process
-    model.eval()
-    dummy_input = (torch.randn(1, 119, 8, 8, device=device),)
-
-    temp_fp32_path = onnx_path.replace(".onnx", "_temp_fp32.onnx")
-    temp_infer_path = onnx_path.replace(".onnx", "_temp_infer.onnx")
-
-    # 1. Export standard en FP32
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        torch.onnx.export(
-            model,
-            dummy_input,
-            temp_fp32_path,
-            export_params=True,
-            opset_version=18,
-            do_constant_folding=True,
-            input_names=['input'],
-            output_names=['policy', 'value'],
-            verbose=False
-        )
-
-    # 2. Pré-processing
-    quant_pre_process(
-        input_model_path=temp_fp32_path,
-        output_model_path=temp_infer_path,
-        skip_symbolic_shape=False
-    )
-
-    # 3. Quantification dynamique en INT8 sur le modèle optimisé
-    quantize_dynamic(
-        model_input=temp_infer_path,
-        model_output=onnx_path,
-        weight_type=QuantType.QUInt8,
-    )
-
-    # 4. Nettoyage des fichiers temporaires
-    if os.path.exists(temp_fp32_path):
-        os.remove(temp_fp32_path)
-    if os.path.exists(temp_infer_path):
-        os.remove(temp_infer_path)
-
-
-def export_model_to_onnx_gpu(model, onnx_path, device):
     """
     Export ONNX avec batch dynamique, FP32, pour inférence GPU batchée.
     """
