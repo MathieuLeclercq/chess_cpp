@@ -74,7 +74,8 @@ def generate_games(
     data, stats = convert_game_results(game_results)
 
     num_games = len(game_results)
-    avg_length = (stats["total_saved_moves"] / max(num_games, 1)) / slow_ratio
+    total_ply_played = sum(res.total_real_moves for res in game_results)
+    avg_length = total_ply_played / num_games
 
     print(f"\n{'=' * 30}")
     print(f"      BILAN DE L'ITERATION")
@@ -363,7 +364,7 @@ if __name__ == "__main__":
             max_buffer_size=750_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_20_13h45_iter180_unsupervised.pt",
+            checkpoint_path="checkpoints/2026_04_21_21h12_iter213_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2450,
             stockfish_nodes=200_000

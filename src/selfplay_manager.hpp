@@ -13,6 +13,7 @@ struct GameResult {
     std::vector<float> flat_policies; // Taille : [NbCoups * 4672]
     float final_outcome;
     int move_count; // Pour savoir comment découper le vecteur plat
+    int total_real_moves;
     int end_reason;
 };
 

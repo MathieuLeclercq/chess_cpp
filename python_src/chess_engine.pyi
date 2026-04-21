@@ -101,6 +101,9 @@ class GameResult:
     @property
     def state_tensors(self) -> numpy.typing.NDArray[numpy.float32]:
         ...
+    @property
+    def total_real_moves(self) -> int:
+        ...
 class GameState:
     """
     Members:

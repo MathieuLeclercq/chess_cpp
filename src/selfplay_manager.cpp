@@ -231,6 +231,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                 if (m_roots[i] == nullptr) {
                     GameResult res;
                     res.move_count = m_game_states[i].size();
+                    res.total_real_moves = m_boards[i].getMoveHistory().size();
                     res.flat_states.reserve(res.move_count * 119 * 64);
                     res.flat_policies.reserve(res.move_count * 4672);
 

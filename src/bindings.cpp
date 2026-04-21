@@ -159,6 +159,7 @@ PYBIND11_MODULE(chess_engine, m) {
             self
         );
             })
+        .def_readonly("total_real_moves", &GameResult::total_real_moves)
         .def_readonly("final_outcome", &GameResult::final_outcome)
         .def_readonly("end_reason", &GameResult::end_reason);
 
