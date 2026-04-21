@@ -12,8 +12,8 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
               r"\checkpoints_onnx/2026_04_20_14h34_iter208_unsupervised.onnx")
 DEFAULT_SIMULATIONS = 1000
-BATCH_SIZE = 100
-SNAPSHOT_INTERVAL = 0.2  # Intervalle d'échantillonnage de l'historique (en secondes)
+BATCH_SIZE = 20
+SNAPSHOT_INTERVAL = 0.1
 
 
 # ============================================================
@@ -203,9 +203,20 @@ class UCIEngine:
         elif movetime_ms is not None:
             self.target_time = (movetime_ms / 1000.0) * 0.95
         elif my_time is not None:
-            self.target_time = ((my_time / 25) + (my_inc * 0.7)) / 1000.0
-            self.target_time = max(0.05, self.target_time)
-            self.target_time = min(self.target_time, (my_time / 1000.0) * 0.8)
+            # 1. Move Overhead : matelas de 100ms de survie (latence)
+            safe_time = max(1, my_time - 100)
+
+            # 2. Diviseur agressif quand pas d'incrément
+            if my_inc == 0:
+                self.target_time = (safe_time / 40.0) / 1000.0
+            else:
+                self.target_time = ((safe_time / 25.0) + (my_inc * 0.7)) / 1000.0
+
+            # 3. Limites d'urgence
+            self.target_time = max(0.01,
+                                   self.target_time)
+            self.target_time = min(self.target_time,
+                                   (safe_time / 1000.0) * 0.8)
         else:
             self.target_time = 10.0
 
