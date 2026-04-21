@@ -10,7 +10,7 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 #                     CONFIGURATION EN DUR
 # ============================================================
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints_onnx/2026_04_18_20h33_selfplay_tmp.onnx")
+              r"\checkpoints_onnx/2026_04_20_14h34_iter208_unsupervised.onnx")
 DEFAULT_SIMULATIONS = 1000
 BATCH_SIZE = 100
 SNAPSHOT_INTERVAL = 0.2  # Intervalle d'échantillonnage de l'historique (en secondes)
@@ -269,7 +269,7 @@ class UCIEngine:
                     stats = self.mcts.get_analysis_results()
 
                     # coup forcé
-                    if len(stats) == 1 and not self.is_pondering:
+                    if len(stats) == 1 and not self.is_pondering and not self.is_infinite:
                         break
 
                     # Mise à jour de l'historique de tendance (uniquement hors ponder)

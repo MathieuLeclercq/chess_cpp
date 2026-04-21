@@ -1,9 +1,10 @@
-#include "selfplay_manager.hpp"
 #include <iostream>
 #include <random>
 #include <chrono>
 #include <iomanip>
 #include <omp.h>
+#include <algorithm>
+#include "selfplay_manager.hpp"
 #include <piece.hpp>
 
 SelfPlayManager::SelfPlayManager(
@@ -173,8 +174,24 @@ void SelfPlayManager::play_best_move(int game_idx) {
 }
 
 void SelfPlayManager::roll_next_move(int game_idx) {
+    // logique slow/fast moves pour accélérer la production de games.
+    // en général : 1/4 des coups sont slow
+    // quand 6 pièces ou moins : slow move + souvent
+    // ça permet d'accélérer la compréhension des finales
+    // (training supervisé sur des parties de GM :
+    // peu d'exemples de mats)
+
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-    m_is_slow_move[game_idx] = (dis(m_rng) < m_slow_ratio);
+    float random_val = dis(m_rng);
+
+    int piece_count = m_boards[game_idx].getNumberOfOccupiedSquares();
+
+    float effective_slow_ratio = (piece_count <= 6) ? 
+        std::max(m_slow_ratio, 0.60f) : // 60% (au moins) si finale
+        m_slow_ratio; // ratio normal sinon
+
+    m_is_slow_move[game_idx] = (random_val < effective_slow_ratio);
+
     m_sims_target[game_idx] = m_is_slow_move[game_idx] ? m_slow_sims : m_fast_sims;
     m_sims_completed[game_idx] = 0;
 }
