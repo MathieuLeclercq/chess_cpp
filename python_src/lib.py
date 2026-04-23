@@ -5,6 +5,7 @@ import warnings
 import hashlib
 import threading
 import glob
+import onnx
 import numpy as np
 
 from datetime import datetime
@@ -370,7 +371,7 @@ def append_to_disk_buffer(new_data, folder_path, max_buffer_size):
 
 def export_model_to_onnx(model, onnx_path, device):
     """
-    Export ONNX avec batch dynamique, FP32, pour inférence GPU batchée.
+    Export ONNX
     """
     model.eval()
     dummy_input = (torch.randn(1, 119, 8, 8, device=device),)
@@ -386,6 +387,7 @@ def export_model_to_onnx(model, onnx_path, device):
             do_constant_folding=True,
             input_names=['input'],
             output_names=['policy', 'value'],
+            external_data=False,
             dynamic_axes={
                 'input': {0: 'batch'},
                 'policy': {0: 'batch'},
