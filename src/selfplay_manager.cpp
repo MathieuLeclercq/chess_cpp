@@ -69,7 +69,7 @@ void SelfPlayManager::reset_game(int game_idx) {
     if (m_is_tactical[game_idx]) {
         // on force la tactique à trouver à être en slow move
         m_is_slow_move[game_idx] = true;
-        m_sims_target[game_idx] = m_slow_sims;
+        m_sims_target[game_idx] = TACTICAL_FIRST_MOVE_SIMS;
         m_sims_completed[game_idx] = 0;
     }
     else {

@@ -71,6 +71,7 @@ private:
     // pour entrainement tactique sur puzzles lichess
     static constexpr float NORMAL_EPSILON = 0.12f;
     static constexpr float TACTICAL_EPSILON = 0.30f;
+    static constexpr int TACTICAL_FIRST_MOVE_SIMS = 4000;
     std::vector<char> m_is_tactical;
     std::vector<std::string> m_tactical_fens;
 
