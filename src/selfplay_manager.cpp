@@ -47,8 +47,8 @@ void SelfPlayManager::reset_game(int game_idx) {
 
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
 
-    // --- INJECTION DE FEN (15% du temps) ---
-    if (!m_tactical_fens.empty() && dis(m_rng) < 0.15f) {
+    // --- INJECTION DE FEN (20% du temps) ---
+    if (!m_tactical_fens.empty() && dis(m_rng) < 0.2f) {
         std::uniform_int_distribution<size_t> idx_dis(0, m_tactical_fens.size() - 1);
         size_t random_idx = idx_dis(m_rng);
         m_boards[game_idx].loadFEN(m_tactical_fens[random_idx]);
