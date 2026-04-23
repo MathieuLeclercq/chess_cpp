@@ -65,7 +65,16 @@ void SelfPlayManager::reset_game(int game_idx) {
     m_game_policies[game_idx].clear();
 
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
-    roll_next_move(game_idx);
+
+    if (m_is_tactical[game_idx]) {
+        // on force la tactique à trouver à être en slow move
+        m_is_slow_move[game_idx] = true;
+        m_sims_target[game_idx] = m_slow_sims;
+        m_sims_completed[game_idx] = 0;
+    }
+    else {
+        roll_next_move(game_idx);
+    }
 
     float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
     m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
@@ -254,7 +263,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                 if (m_roots[i] == nullptr) {
                     GameResult res;
                     res.move_count = m_game_states[i].size();
-                    res.total_real_moves = m_boards[i].getMoveHistory().size();
+                    res.total_real_moves = m_boards[i].getMoveHistory().size() + m_boards[i].getInitialPlyOffset();
                     res.flat_states.reserve(res.move_count * 119 * 64);
                     res.flat_policies.reserve(res.move_count * 4672);
 

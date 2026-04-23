@@ -56,6 +56,7 @@ class Chessboard
 
     std::vector<Move> m_moveHistory;
     std::vector<std::array<Square, 64>> m_boardHistory;
+    int m_initial_ply_offset = 0;  // si on charge une partie en cours de route
     std::vector<StateSnapshot> m_snapshotHistory;
     uint64_t m_current_zobrist_hash = 0;
 
@@ -93,6 +94,7 @@ class Chessboard
         const std::vector<Move>& getMoveHistory() const;
         std::vector<std::array<Square, 64>>& getBoardHistory();
         const std::vector<std::array<Square, 64>>& getBoardHistory() const;
+        int getInitialPlyOffset() const;
 
         void checkEnPassant();
         void print() const;

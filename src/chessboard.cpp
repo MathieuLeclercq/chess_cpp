@@ -245,6 +245,11 @@ std::vector<std::array<Square, 64>>& Chessboard::getBoardHistory()
     return m_boardHistory;
 }
 
+int Chessboard::getInitialPlyOffset() const 
+{ 
+    return m_initial_ply_offset; 
+}
+
 int Chessboard::getHalfMoveClock() const
 {
     return m_half_move_clock;
@@ -597,6 +602,7 @@ void Chessboard::clear() {
     m_moveHistory.clear();
     m_boardHistory.clear();
     m_snapshotHistory.clear();
+    m_initial_ply_offset = 0;
 
     // 6. Réinitialisation du Hash
     m_current_zobrist_hash = 0;
@@ -757,6 +763,17 @@ void Chessboard::loadFEN(const std::string& fen) {
         }
         catch (...) {
             m_half_move_clock = 0; // Sécurité si la chaîne est invalide
+        }
+    }
+
+    // --- CHAMP 6 : Nombre de plies joués --  
+    if (!full_move_str.empty()) {
+        try {
+            int full_move = std::stoi(full_move_str);
+            m_initial_ply_offset = (full_move - 1) * 2 + (m_turn == BLACK ? 1 : 0);
+        }
+        catch (...) {
+            m_initial_ply_offset = 0;
         }
     }
 

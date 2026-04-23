@@ -364,7 +364,7 @@ if __name__ == "__main__":
             max_buffer_size=750_000,
             target_sampling_ratio=14.0,
             eval_stockfish_every=8,
-            checkpoint_path="checkpoints/2026_04_23_00h44_iter250_avant_train_tactic_lichess.pt",
+            checkpoint_path="checkpoints/2026_04_23_13h52_iter254_unsupervised.pt",
             stockfish_path=r"D:\logiciels\stockfish\stockfish.exe",
             stockfish_elo=2600,
             stockfish_nodes=200_000
