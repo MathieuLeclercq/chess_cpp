@@ -210,7 +210,7 @@ float MCTS::expand_node_single(MCTSNode* node, Chessboard& board) {
     return value;
 }
 
-void MCTS::add_dirichlet_noise(MCTSNode* root) {
+void MCTS::add_dirichlet_noise(MCTSNode* root, float epsilon) {
     if (root->children.empty()) return;
     std::gamma_distribution<float> gamma(0.3f, 1.0f);
 
@@ -222,7 +222,6 @@ void MCTS::add_dirichlet_noise(MCTSNode* root) {
     }
 
     int i = 0;
-    float epsilon = 0.12f; // 0.25 pour alphazero
     for (auto& pair : root->children) {
         float dirichlet = noise[i++] / sum_noise;
         pair.second->prior = (1.0f - epsilon) * pair.second->prior + epsilon * dirichlet;
@@ -239,7 +238,7 @@ std::vector<float> MCTS::mcts_search(Chessboard& board, int num_simulations, flo
     expand_node_single(root.get(), board);
 
     if (add_dirichlet) {
-        add_dirichlet_noise(root.get());
+        add_dirichlet_noise(root.get(), 0.12f);
     }
 
     for (int sim = 0; sim < num_simulations; sim++) {

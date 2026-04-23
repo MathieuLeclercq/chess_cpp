@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <omp.h>
 #include <algorithm>
+#include <fstream>
 #include "selfplay_manager.hpp"
 #include <piece.hpp>
 
@@ -32,6 +33,10 @@ SelfPlayManager::SelfPlayManager(
     m_batch_input.resize(num_concurrent_games * 119 * 64);
 
     m_shared_mcts = std::make_unique<MCTS>(m_evaluator, tt_size);
+
+    m_is_tactical.resize(num_concurrent_games, false);
+    load_tactical_fens("../training_data/tactics.txt");
+
     for (int i = 0; i < num_concurrent_games; ++i) {
         reset_game(i);
     }
@@ -39,7 +44,21 @@ SelfPlayManager::SelfPlayManager(
 
 void SelfPlayManager::reset_game(int game_idx) {
     m_boards[game_idx].clear();
-    m_boards[game_idx].setStartupPieces();
+
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+
+    // --- INJECTION DE FEN (15% du temps) ---
+    if (!m_tactical_fens.empty() && dis(m_rng) < 0.15f) {
+        std::uniform_int_distribution<size_t> idx_dis(0, m_tactical_fens.size() - 1);
+        size_t random_idx = idx_dis(m_rng);
+        m_boards[game_idx].loadFEN(m_tactical_fens[random_idx]);
+        m_is_tactical[game_idx] = true;
+    }
+    else {
+        m_boards[game_idx].setStartupPieces();
+        m_is_tactical[game_idx] = false;
+    }
+
     m_roots[game_idx] = std::make_unique<MCTSNode>(0.0f);
     m_sims_completed[game_idx] = 0;
     m_game_states[game_idx].clear();
@@ -47,7 +66,9 @@ void SelfPlayManager::reset_game(int game_idx) {
 
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
     roll_next_move(game_idx);
-    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+
+    float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+    m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
 }
 
 void SelfPlayManager::execute_gpu_batch() {
@@ -65,7 +86,8 @@ void SelfPlayManager::execute_gpu_batch() {
         m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
 
         if (m_waiting_leaves[i] == m_roots[game_idx].get()) {
-            m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+            float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+            m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
         }
 
         for (int k = 0; k < moves_played; ++k) {
@@ -169,7 +191,8 @@ void SelfPlayManager::play_best_move(int game_idx) {
     // Si la racine réutilisée avait déjà des enfants (rare mais possible), 
     // on applique le bruit de suite. Sinon, ça sera fait dans execute_gpu_batch.
     if (!m_roots[game_idx]->children.empty()) {
-        m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get());
+        float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+        m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
     }
 }
 
@@ -358,4 +381,15 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
 
     std::cout << std::endl;
     return m_finished_games;
+}
+
+void SelfPlayManager::load_tactical_fens(const std::string& filepath) {
+    std::ifstream file(filepath);
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty()) {
+            m_tactical_fens.push_back(line);
+        }
+    }
+    std::cout << "Charge " << m_tactical_fens.size() << " FENs tactiques en memoire." << std::endl;
 }

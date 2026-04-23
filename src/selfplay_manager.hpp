@@ -2,7 +2,7 @@
 #include <vector>
 #include <memory>
 #include <random>
-#include <omp.h>
+#include <string>
 #include "chessboard.hpp"
 #include "mcts.hpp"
 #include "onnx_evaluator.hpp"
@@ -68,6 +68,12 @@ private:
 
     std::mt19937 m_rng{ std::random_device{}() };
 
+    // pour entrainement tactique sur puzzles lichess
+    static constexpr float NORMAL_EPSILON = 0.12f;
+    static constexpr float TACTICAL_EPSILON = 0.30f;
+    std::vector<char> m_is_tactical;
+    std::vector<std::string> m_tactical_fens;
+
 
 public:
     SelfPlayManager(ONNXEvaluator* evaluator, int num_concurrent_games, 
@@ -80,4 +86,5 @@ private:
     void play_best_move(int game_idx);
     void roll_next_move(int game_idx);
     void execute_gpu_batch();
+    void load_tactical_fens(const std::string& filepath);
 };

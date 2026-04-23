@@ -9,6 +9,7 @@
 #include <utility>
 #include <cmath>
 #include <iostream>
+#include <ios>
 
 #include "chessboard.hpp"
 #include "piece.hpp"
@@ -49,16 +50,73 @@ int Chessboard::getNumberOfOccupiedSquares() const
     return count;
 }
 
-void Chessboard::print() const
-{
-    for (int i = 7; i > -1; i--)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            std::cout << m_board[i * 8 + j].getPiece().getValue() << " ";
+//void Chessboard::print() const
+//{
+//    for (int i = 7; i > -1; i--)
+//    {
+//        for (int j = 0; j < 8; j++)
+//        {
+//            std::cout << m_board[i * 8 + j].getPiece().getValue() << " ";
+//        }
+//        std::cout << std::endl;
+//    }
+//}
+
+void Chessboard::print() const {
+    std::cout << "\n  +---+---+---+---+---+---+---+---+\n";
+    for (int rank = 7; rank >= 0; --rank) {
+        std::cout << rank + 1 << " |"; // Affichage du numéro de ligne (1-8)
+
+        for (int file = 0; file < 8; ++file) {
+            Piece p = m_board[rank * 8 + file].getPiece();
+            char c = ' ';
+
+            if (p.getType() == NONE) {
+                c = '.';
+            }
+            else {
+                switch (p.getType()) {
+                case PAWN:   c = 'P'; break;
+                case KNIGHT: c = 'N'; break;
+                case BISHOP: c = 'B'; break;
+                case ROOK:   c = 'R'; break;
+                case QUEEN:  c = 'Q'; break;
+                case KING:   c = 'K'; break;
+                default:     c = '?'; break;
+                }
+                // Minuscules pour les noirs, majuscules pour les blancs
+                if (p.getColor() == BLACK) c = std::tolower(c);
+            }
+            std::cout << " " << c << " |";
         }
-        std::cout << std::endl;
+        std::cout << "\n  +---+---+---+---+---+---+---+---+\n";
     }
+    std::cout << "    a   b   c   d   e   f   g   h\n\n";
+
+    // Affichage des états internes invisibles sur l'échiquier
+    std::cout << "Trait (Turn)       : " << (m_turn == WHITE ? "Blanc (w)" : "Noir (b)") << "\n";
+
+    std::cout << "Droits de Roque    : ";
+    bool has_castling = false;
+    if (m_short_castle_white) { std::cout << "K"; has_castling = true; }
+    if (m_long_castle_white) { std::cout << "Q"; has_castling = true; }
+    if (m_short_castle_black) { std::cout << "k"; has_castling = true; }
+    if (m_long_castle_black) { std::cout << "q"; has_castling = true; }
+    if (!has_castling) std::cout << "-";
+    std::cout << "\n";
+
+    std::cout << "En Passant         : ";
+    if (m_en_passant) {
+        char ep_file_char = 'a' + m_en_passant_file;
+        std::cout << ep_file_char << "\n";
+    }
+    else {
+        std::cout << "-\n";
+    }
+
+    std::cout << "Regle des 50 coups : " << m_half_move_clock << " demi-coups\n";
+    std::cout << "Zobrist Hash       : " << std::hex << m_current_zobrist_hash << std::dec << "\n";
+    std::cout << "---------------------------------------\n";
 }
 
 void Chessboard::print(std::array<Square, 64> some_board) const
@@ -627,6 +685,7 @@ void Chessboard::setStartupPieces()
     m_boardHistory.push_back(m_board);
     computeInitialZobrist();
 }
+
 void Chessboard::loadFEN(const std::string& fen) {
     clear();
 
@@ -673,11 +732,10 @@ void Chessboard::loadFEN(const std::string& fen) {
         }
     }
 
-    // --- CHAMP 2 : Le trait ---
     m_turn = (turn_str == "w") ? WHITE : BLACK;
 
     // --- CHAMP 3 : Droits de roque ---
-    if (castling_str != "-") {
+    if (!castling_str.empty() && castling_str != "-") {
         for (char c : castling_str) {
             if (c == 'K') m_short_castle_white = true;
             if (c == 'Q') m_long_castle_white = true;
@@ -687,14 +745,19 @@ void Chessboard::loadFEN(const std::string& fen) {
     }
 
     // --- CHAMP 4 : En passant ---
-    if (en_passant_str != "-") {
+    if (!en_passant_str.empty() && en_passant_str != "-") {
         m_en_passant = true;
         m_en_passant_file = en_passant_str[0] - 'a';
     }
 
     // --- CHAMP 5 : Règle des 50 coups ---
     if (!half_move_str.empty()) {
-        m_half_move_clock = std::stoi(half_move_str);
+        try {
+            m_half_move_clock = std::stoi(half_move_str);
+        }
+        catch (...) {
+            m_half_move_clock = 0; // Sécurité si la chaîne est invalide
+        }
     }
 
     m_boardHistory.push_back(m_board);

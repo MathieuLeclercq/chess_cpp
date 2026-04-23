@@ -72,7 +72,7 @@ public:
     std::vector<float> mcts_search(Chessboard& board, int num_simulations, float c_puct, bool add_dirichlet);
     float expand_node_single(MCTSNode* node, Chessboard& board);
     bool apply_move_by_index(Chessboard& board, int idx);
-    void add_dirichlet_noise(MCTSNode* root);
+    void add_dirichlet_noise(MCTSNode* root, float epsilon);
 
     // recherche mcts asynchrone
     MCTSNode* advance_to_leaf(MCTSNode* root, Chessboard& board, float c_puct, int& moves_played);
