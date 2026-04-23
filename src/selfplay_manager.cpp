@@ -253,8 +253,7 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
             if (m_sims_completed[i] >= m_sims_target[i] && m_sims_target[i] > 0) {
                 play_best_move(i);
 
-                if (m_roots[i] != nullptr && m_boards[i].getMoveHistory().size() >= 200) {
-                    // on force la nulle : partie trop longue
+                if (m_roots[i] != nullptr && m_boards[i].getMoveHistory().size() >= MAX_PLIES_BEFORE_FORCED_DRAW) {
                     m_roots[i].reset();
                     m_sims_target[i] = 0;
                     m_sims_completed[i] = 0;
@@ -276,9 +275,9 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
                         res.final_outcome = (m_boards[i].getTurn() == WHITE) ? -1.0f : 1.0f;
                         res.end_reason = 0; // Checkmate
                     }
-                    else if (m_boards[i].getMoveHistory().size() >= 200) {
+                    else if (m_boards[i].getMoveHistory().size() >= MAX_PLIES_BEFORE_FORCED_DRAW) {
                         res.final_outcome = 0.0f;
-                        res.end_reason = 5; // Max Moves (200 coups)
+                        res.end_reason = 5; // Max Moves (300 coups)
                     }
                     else if (m_boards[i].checkThreefoldRepetition()) {
                         res.final_outcome = 0.0f;

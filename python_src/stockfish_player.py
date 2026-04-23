@@ -84,7 +84,7 @@ def eval_worker(args):
         san_moves.append(san)
         uci_moves.append(move_uci)
 
-        if len(san_moves) > 250:
+        if len(san_moves) > 300:
             break
 
     # Fermeture explicite et immédiate du moteur pour éviter les processus zombies

@@ -33,6 +33,13 @@ struct ThreadLocalBuffer {
 
 class SelfPlayManager {
 private:
+
+    // constantes de config
+    static constexpr float NORMAL_EPSILON = 0.12f;
+    static constexpr float TACTICAL_EPSILON = 0.30f;
+    static constexpr int TACTICAL_FIRST_MOVE_SIMS = 4000;
+    static constexpr int MAX_PLIES_BEFORE_FORCED_DRAW = 300;
+
     int m_num_concurrent_games;
     int m_slow_sims;
     int m_fast_sims;
@@ -69,9 +76,6 @@ private:
     std::mt19937 m_rng{ std::random_device{}() };
 
     // pour entrainement tactique sur puzzles lichess
-    static constexpr float NORMAL_EPSILON = 0.12f;
-    static constexpr float TACTICAL_EPSILON = 0.30f;
-    static constexpr int TACTICAL_FIRST_MOVE_SIMS = 4000;
     std::vector<char> m_is_tactical;
     std::vector<std::string> m_tactical_fens;
 
