@@ -9,11 +9,14 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 # ============================================================
 #                     CONFIGURATION EN DUR
 # ============================================================
+# MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
+#               r"\checkpoints_onnx/2026_04_23_13h52_iter254_avant_train_tactics.onnx")
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints_onnx/2026_04_23_13h52_iter254_avant_train_tactics.onnx")
-DEFAULT_SIMULATIONS = 1000
+              r"\checkpoints_onnx/2026_04_23_23h25_iter316_unsupervised.onnx")
+DEFAULT_SIMULATIONS = 1200
 BATCH_SIZE = 20
 SNAPSHOT_INTERVAL = 0.1
+NB_FAST_PLIES_OPENING = 10
 
 
 # ============================================================
@@ -36,6 +39,7 @@ class UCIEngine:
 
         # Historique pour le Root Shifting
         self.last_move_list = []
+        self.real_ply = 0
 
     @staticmethod
     def q_to_cp(q_value):
@@ -131,11 +135,25 @@ class UCIEngine:
 
         self.last_move_list = new_move_list
 
-    def _should_stop_early(self, history, elapsed):
+        if len(tokens) > 0 and tokens[0] == "startpos":
+            self.real_ply = len(new_move_list)
+        elif len(tokens) > 0 and tokens[0] == "fen":
+            try:
+                turn = tokens[2]
+                fullmove = int(tokens[6])
+                base_ply = (max(1, fullmove) - 1) * 2 + (1 if turn == 'b' else 0)
+                self.real_ply = base_ply + len(new_move_list)
+            except (ValueError, IndexError):
+                self.real_ply = len(new_move_list)
+
+    def _should_stop_early(self, history, elapsed, total_sims):
         """
         Décide si on peut jouer le coup plus vite.
         Retourne True si on doit stopper la recherche.
         """
+        if total_sims < 3000:
+            return False
+
         if len(history) < 5:
             return False
 
@@ -147,25 +165,27 @@ class UCIEngine:
 
         ratio = best_visits / second_visits
 
-        # Critère 1 : dominance écrasante (5x) + stabilité sur les 5 derniers snapshots
-        if ratio >= 5.0:
+        # Critère 1 : dominance écrasante + stabilité, MAIS on le force à
+        # consommer au moins 25% de son temps pour être sûr de lui.
+        if ratio >= 10.0 and elapsed >= self.target_time * 0.25:
             recent_bests = [h[1] for h in history[-5:]]
             if all(m == best_move for m in recent_bests):
                 return True
 
-        # Critère 2 : dominance modérée (3x) + temps déjà consommé (>= 50%) + stabilité
-        if ratio >= 3.0 and elapsed >= self.target_time * 0.5:
+        # Critère 2 : dominance modérée (3x) + temps déjà consommé (>= 70%) + stabilité
+        if ratio >= 3.0 and elapsed >= self.target_time * 0.7:
             recent_bests = [h[1] for h in history[-3:]]
             if all(m == best_move for m in recent_bests):
                 old_ratio = history[-5][2] / max(1, history[-5][3])
-                if ratio >= old_ratio * 0.9:  # ratio ne décroît pas significativement
+                if ratio >= old_ratio * 0.9:
                     return True
 
         return False
 
     @staticmethod
     def _should_extend_time(history):
-        """Si la position est incertaine (best_move change souvent), demande du temps supplémentaire."""
+        """Si la position est incertaine (best_move change souvent),
+        demande du temps supplémentaire."""
         if len(history) < 10:
             return False
 
@@ -206,17 +226,15 @@ class UCIEngine:
             # 1. Move Overhead : matelas de 100ms de survie (latence)
             safe_time = max(1, my_time - 100)
 
-            # 2. Diviseur agressif quand pas d'incrément
+            # 2. Diviseur agressif
             if my_inc == 0:
-                self.target_time = (safe_time / 40.0) / 1000.0
+                self.target_time = (safe_time / 25.0) / 1000.0
             else:
-                self.target_time = ((safe_time / 25.0) + (my_inc * 0.7)) / 1000.0
+                self.target_time = ((safe_time / 20.0) + (my_inc * 0.85)) / 1000.0
 
             # 3. Limites d'urgence
-            self.target_time = max(0.01,
-                                   self.target_time)
-            self.target_time = min(self.target_time,
-                                   (safe_time / 1000.0) * 0.8)
+            self.target_time = max(0.01, self.target_time)
+            self.target_time = min(self.target_time, (safe_time / 1000.0) * 0.8)
         else:
             self.target_time = 10.0
 
@@ -241,10 +259,9 @@ class UCIEngine:
         # --- 1. BOUCLE DE RECHERCHE ---
         while not self.stop_event.is_set():
 
-            # Recalcul dynamique de max_sims (permet à ponderhit de changer le mode)
             if self.is_infinite or self.is_pondering:
                 max_sims = float('inf')
-            elif len(self.last_move_list) < 10:
+            elif getattr(self, 'real_ply', 0) < NB_FAST_PLIES_OPENING:
                 max_sims = DEFAULT_SIMULATIONS
             else:
                 max_sims = 10_000_000
@@ -261,7 +278,8 @@ class UCIEngine:
                         break
 
                 # Early stop si dominance claire après 30% du temps
-                if elapsed >= self.target_time * 0.3 and self._should_stop_early(history, elapsed):
+                if elapsed >= self.target_time * 0.3 and self._should_stop_early(
+                        history, elapsed, total_sims):
                     break
 
             # 1b. Exécution des simulations
@@ -321,16 +339,17 @@ class UCIEngine:
                             n = move_stat.visits
                             p = move_stat.prior * 100.0
                             q = move_stat.q_value
-                            print(
-                                f"info string {uci_str} (0 ) N: {n} (+ 0) "
-                                f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})")
+                            print(f"info string "
+                                  f"Move: {uci_str:4} | "
+                                  f"Visits: {n:<6} | "
+                                  f"Prior: {p:>5.1f}% | "
+                                  f"Q-Value: {q:>6.3f}")
 
                         sys.stdout.flush()
 
             # 1c. Si on a atteint max_sims
             else:
                 if self.is_pondering:
-                    # En ponder, on attend la décision de la GUI (ponderhit ou stop).
                     time.sleep(0.01)
                 else:
                     break
