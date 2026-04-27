@@ -12,7 +12,7 @@ from lib import parse_uci_to_coords, coords_to_uci, decode_move_index, encode_mo
 # MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
 #               r"\checkpoints_onnx/2026_04_23_13h52_iter254_avant_train_tactics.onnx")
 MODEL_PATH = (r"C:\Users\M47h1\Documents\chess_cpp\python_src"
-              r"\checkpoints_onnx/2026_04_23_23h25_iter316_unsupervised.onnx")
+              r"\checkpoints/2026_04_26_18h18_iter340_unsupervised.onnx")
 DEFAULT_SIMULATIONS = 1200
 BATCH_SIZE = 20
 SNAPSHOT_INTERVAL = 0.1
@@ -339,11 +339,9 @@ class UCIEngine:
                             n = move_stat.visits
                             p = move_stat.prior * 100.0
                             q = move_stat.q_value
-                            print(f"info string "
-                                  f"Move: {uci_str:4} | "
-                                  f"Visits: {n:<6} | "
-                                  f"Prior: {p:>5.1f}% | "
-                                  f"Q-Value: {q:>6.3f}")
+                            print(
+                                f"info string {uci_str} (0 ) N: {n} (+ 0) "
+                                f"(P: {p:.2f}%) (Q: {q:.5f}) (V: {q:.5f})")
 
                         sys.stdout.flush()
 

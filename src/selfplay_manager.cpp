@@ -44,6 +44,7 @@ SelfPlayManager::SelfPlayManager(
 
 void SelfPlayManager::reset_game(int game_idx) {
     m_boards[game_idx].clear();
+    m_boards[game_idx].setAmnesiaMode(false);
 
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
 
@@ -226,6 +227,15 @@ void SelfPlayManager::roll_next_move(int game_idx) {
 
     m_sims_target[game_idx] = m_is_slow_move[game_idx] ? m_slow_sims : m_fast_sims;
     m_sims_completed[game_idx] = 0;
+
+    // equivalent dropout pour éviter le shortcut learning 
+    // avec l'apprentissage sur les FENs de puzzles (parties sans historique)
+    if (!m_is_tactical[game_idx] && dis(m_rng) < 0.05f) {
+        m_boards[game_idx].setAmnesiaMode(true);
+    }
+    else {
+        m_boards[game_idx].setAmnesiaMode(false);
+    }
 }
 
 std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play) {

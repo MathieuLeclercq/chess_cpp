@@ -692,6 +692,10 @@ void Chessboard::setStartupPieces()
     computeInitialZobrist();
 }
 
+void Chessboard::setAmnesiaMode(bool amnesia) { 
+    m_amnesia_mode = amnesia; 
+}
+
 void Chessboard::loadFEN(const std::string& fen) {
     clear();
 
@@ -1388,8 +1392,10 @@ void Chessboard::getAlphaZeroTensor(std::vector<float>& tensor) const
     }
     all_hashes.push_back(m_current_zobrist_hash);
 
+    int history_depth = m_amnesia_mode ? 1 : 8;
+
     // Remplissage de l'historique (112 premiers plans)
-    for (int t = 0; t < 8; t++)
+    for (int t = 0; t < history_depth; t++)
     {
         int history_idx = m_boardHistory.size() - 1 - t;
         if (history_idx < 0) break;

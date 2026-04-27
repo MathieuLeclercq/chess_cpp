@@ -3,10 +3,11 @@ import chess
 import random
 
 INPUT_CSV = "../training_data/lichess_db_puzzle.csv"
-OUTPUT_TXT = "../training_data/tactics.txt"
-TARGET_THEMES = ["pin", "discoveredAttack"]
+OUTPUT_TXT = "../training_data/mateIn1_1900_2400.txt"
+# TARGET_THEMES = ["pin", "discoveredAttack", "sacrifice", "skewer"]
+TARGET_THEMES = ["mateIn1"]
 MAX_FENS = 100000
-MAX_RATING = 1400  # Seuil pour rester sur de la tactique "évidente"
+RATING_RANGE = [1900, 3300]
 
 
 def extract_tactical_fens():
@@ -22,9 +23,9 @@ def extract_tactical_fens():
         for row in reader:
             # Index Lichess CSV : 1=FEN, 2=Moves, 3=Rating, 7=Themes
             rating = int(row[3])
-            themes = row[7]
+            themes = row[7]           
 
-            if rating <= MAX_RATING and any(theme in themes for theme in TARGET_THEMES):
+            if RATING_RANGE[0] <= rating <= RATING_RANGE[1] and any(theme in themes for theme in TARGET_THEMES):
                 valid_puzzles.append(row)
 
     print(f"Nombre de puzzles correspondants trouvés : {len(valid_puzzles)}")
@@ -42,8 +43,7 @@ def extract_tactical_fens():
 
             try:
                 board = chess.Board(fen)
-                # On joue la gaffe adverse
-                board.push(chess.Move.from_uci(moves[0]))
+                board.push(chess.Move.from_uci(moves[0]))  # On joue la gaffe adverse
 
                 outfile.write(board.fen() + "\n")
                 fens_saved += 1
@@ -51,8 +51,86 @@ def extract_tactical_fens():
                 continue
 
     print(
-        f"Extraction terminée : {fens_saved} FENs tactiques (Rating <= {MAX_RATING}) sauvegardés.")
+        f"Extraction terminée : {fens_saved} FENs tactiques (Rating dans {RATING_RANGE}) sauvegardés.")
 
 
 if __name__ == "__main__":
     extract_tactical_fens()
+
+"""
+- advancedPawn
+- advantage
+- anastasiaMate
+- arabianMate
+- attackingF2F7
+- attraction
+- backRankMate
+- balestraMate
+- bishopEndgame
+- blindSwineMate
+- bodenMate
+- capturingDefender
+- castling
+- clearance
+- collinear
+- collinearMove
+- cornerMate
+- crushing
+- defensiveMove
+- deflection
+- discoveredAttack
+- discoveredCheck
+- doubleBishopMate
+- doubleCheck
+- dovetailMate
+- enPassant
+- endgame
+- epauletteMate
+- equality
+- exposedKing
+- fork
+- hangingPiece
+- hookMate
+- interference
+- intermezzo
+- killBoxMate
+- kingsideAttack
+- knightEndgame
+- long
+- master
+- masterVsMaster
+- mate
+- mateIn1
+- mateIn2
+- mateIn3
+- mateIn4
+- mateIn5
+- middlegame
+- morphysMate
+- oneMove
+- opening
+- operaMate
+- pawnEndgame
+- pillsburysMate
+- pin
+- promotion
+- queenEndgame
+- queenRookEndgame
+- queensideAttack
+- quietMove
+- rookEndgame
+- sacrifice
+- short
+- skewer
+- smotheredMate
+- superGM
+- swallowstailMate
+- trappedPiece
+- triangleMate
+- underPromotion
+- veryLong
+- vukovicMate
+- xRayAttack
+- zugzwang
+
+"""

@@ -50,6 +50,7 @@ class Chessboard
     bool m_short_castle_black = true;
     bool m_long_castle_black = true;
     bool m_en_passant = false;
+    bool m_amnesia_mode = false;
 
     GameState m_current_state = ONGOING;
     Color m_turn = WHITE;
@@ -105,6 +106,7 @@ class Chessboard
         bool isInCheck() const;
         bool hasAnyLegalMove();
         bool checkInsufficientMaterial() const;
+        void setAmnesiaMode(bool amnesia);
 
         // setters
         void clear();
