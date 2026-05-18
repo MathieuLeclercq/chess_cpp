@@ -1,6 +1,12 @@
-# AlphaChess-Zero: Custom C++ Engine & AlphaZero-style RL
+# LapZero-Chess
 
-A complete Chess ecosystem built from scratch, featuring a high-performance C++ move-generation engine and a Reinforcement Learning pipeline based on the AlphaZero architecture. The model is trained on a single laptop and achieves an elo of around 2500.
+A custom chess engine built in C++ and Python.
+
+* AlphaZero-style (MCTS + Neural Network).
+* Designed for training on consumer-grade setups (single GPU).
+* Supervised pretraining (Lichess & Grandmaster datasets), Unsupervised self-play.
+* UCI compatible.
+* [Lichess Profile (rating: around 2200 in Rapid)](https://lichess.org/@/mboobot)
 
 ![Interface graphique AlphaChess-Zero](docs/screenshots/gui.png)
 
