@@ -32,7 +32,7 @@ Unlike many Python-based RL projects, this engine is built in **C++17** for maxi
 
 ### 🧠 AlphaZero Pipeline
 - **Zero-Knowledge Philosophy:** The engine provides no heuristic evaluation; the model learns purely from board geometry and game outcomes.
-- **MCTS (Monte Carlo Tree Search):** A purely sequential and optimized MCTS implementation in Python (using PyTorch) for decision-making during self-play and evaluation.
+- **MCTS (Monte Carlo Tree Search):** An optimized MCTS implementation in C++ for decision-making during self-play and evaluation.
 - **Model Architecture:** A deep Residual Convolutional Neural Network (ResNet) with Policy and Value heads.
 
 ### 📊 Evaluation & Tournament System
