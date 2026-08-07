@@ -210,11 +210,22 @@ en réalité à une option différente : garder les 8 plans en ne remplissant qu
 précédente, ce qui laisse les 6 plus anciennes vides et déplace le drapeau d'un cran sans
 le supprimer.
 
-### Reconstruction de la position précédente pour les FEN nues
+### Reconstruction de la position précédente pour les FEN nues (optionnel, basse priorité)
 
-Remplace le plan de prise en passant explicite qui figurait dans une version antérieure
-de cette entrée. L'information étant dérivable des deux positions conservées, le plan
-était redondant partout sauf sur une FEN nue, où la position précédente est vide.
+**Décidé le 2026-08-07 : hors périmètre du chantier de migration.** Ni le plan de prise en
+passant explicite ni cette reconstruction ne sont essentiels. L'information est dérivable
+des deux positions conservées, et même si le réseau la rate, le MCTS génère la prise en
+passant comme coup légal : elle est cherchée avec un mauvais prior, jamais manquée. Les
+prises en passant sont rares, et les positions d'analyse en FEN nue où l'une est
+disponible le sont encore plus.
+
+Conservé ici comme amélioration possible, pas comme prérequis.
+
+**Limite résiduelle à assumer.** Avec deux positions, toute FEN nue reste légèrement hors
+distribution, reconstruction ou pas : on ne peut reconstruire la position précédente que
+s'il existe une case de prise en passant, sans quoi on ne sait pas ce qui a bougé. Cela
+concerne les positions collées à la main dans une GUI, pas le jeu réel où l'interface
+envoie la liste des coups.
 
 Quand une FEN porte une case de prise en passant, la position précédente est **uniquement
 déterminée** : le pion adverse était deux rangées derrière, et rien d'autre n'a changé
