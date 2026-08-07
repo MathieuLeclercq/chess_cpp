@@ -1,5 +1,6 @@
 out/
 build/
+.venv/
 .vscode/
 .vs/
 python_src/.idea

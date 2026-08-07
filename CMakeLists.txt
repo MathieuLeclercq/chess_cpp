@@ -38,7 +38,8 @@ add_library(chess_core STATIC
     src/mcts.cpp 
     src/zobrist.cpp
     src/onnx_evaluator.cpp
-    src/selfplay_manager.cpp)
+    src/selfplay_manager.cpp
+    src/perft.cpp)
 
 # On indique au compilateur où chercher les headers locaux ET ceux de ONNX Runtime
 target_include_directories(chess_core PUBLIC src ${ONNXRUNTIME_INCLUDE_DIR})
@@ -51,6 +52,12 @@ target_link_libraries(chess_core PUBLIC ${ONNXRUNTIME_LIB} OpenMP::OpenMP_CXX)
 # ==========================================
 add_executable(chess_tests src/main.cpp)
 target_link_libraries(chess_tests PRIVATE chess_core)
+
+# ==========================================
+# 2 bis. Executable de validation perft
+# ==========================================
+add_executable(chess_perft src/perft_main.cpp)
+target_link_libraries(chess_perft PRIVATE chess_core)
 
 # ==========================================
 # 3. Configuration Python & Pybind11
