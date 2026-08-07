@@ -204,11 +204,38 @@ générateur utilisé en production.** Trois trous subsistent, décrits ci-desso
 
 `getLegalMoveIndices` fait `if (idx != -1) indices.push_back(idx)` (`chessboard.cpp:539`).
 Si `encodeMove` échouait sur un coup légal, ce coup disparaîtrait de la recherche sans
-aucun signal. Deux vérifications, réalisables dès la phase 1 car elles ne dépendent que de
-code existant :
+aucun signal.
+
+**Il n'existe aucun cas légitime où `encodeMove` renvoie -1 pour un coup légal.** Les
+trois chemins possibles sont : case de départ égale à la case d'arrivée (jamais générée),
+direction ni orthogonale ni diagonale sans être un saut de cavalier (géométriquement
+impossible), et échec de la recherche dans la table de cavalier (impossible, la table
+énumère les huit sauts). Le `-1` est donc un signal de bug, pas un cas de fonctionnement
+normal, et la garde actuelle le convertit en perte de données silencieuse.
+
+**Tester le -1 ne suffit cependant pas.** La branche des sous-promotions calcule
+`dir_idx = df + 1` puis `plane = 64 + dir_idx * 3 + p_idx` sans vérifier que `df`
+appartient à `{-1, 0, 1}` ni que `dr` vaut 1 (`chessboard.cpp:481`). Elle ne peut donc
+jamais renvoyer -1, même sur une entrée aberrante :
+
+- avec `df = 2`, `plane` vaudrait 73 à 75 et l'indice dépasserait 4671, provoquant un
+  accès hors limites dans le vecteur de policy ;
+- avec `df = -2`, `dir_idx` vaudrait -1 et `plane` tomberait entre 61 et 63, c'est-à-dire
+  dans la plage des plans de cavalier. Aucune erreur, aucun -1 : un indice valide qui
+  désigne un autre coup.
+
+Ces deux scénarios ne sont pas atteignables avec les coups réellement générés
+(`getNaiveLegalMoves` ne produit de promotion que sur une poussée, `df = 0`, ou une prise
+en diagonale, `df = ±1`). Ils dictent malgré tout la forme du contrôle.
+
+Vérifications retenues, réalisables dès la phase 1 car elles ne dépendent que de code
+existant :
 
 - `getLegalMoveIndices().size() == getAllLegalMoves().size()` (aucun coup perdu)
-- les indices d'une position sont deux à deux distincts (injectivité de `encodeMove`)
+- `0 <= idx <= 4671` pour chaque indice (aucun débordement)
+- indices d'une position deux à deux distincts (aucun aliasing entre deux coups)
+
+Le troisième est le plus important : c'est le seul qui attraperait le scénario du plan 61.
 
 ### Trou 2 : le décodage (phase 2)
 
@@ -358,8 +385,8 @@ Phase 1 :
 
 - `chess_perft deep` retourne 0 sur les six positions.
 - `chess_perft deep --strict` ne signale aucune divergence sur les trous 1 et 3
-  (`encodeMove` ne perd aucun coup, indices injectifs, `hasAnyLegalMove` cohérent avec
-  `getAllLegalMoves`).
+  (`encodeMove` ne perd aucun coup, indices dans `[0, 4671]`, indices injectifs,
+  `hasAnyLegalMove` cohérent avec `getAllLegalMoves`).
 - `chess_perft divide --check-fen` ne signale aucune divergence Zobrist sur `toFEN`.
 - Le fuzzer tourne sur au moins 100 000 positions sans divergence, en ayant visité au
   moins 1 000 roques et 1 000 promotions (compteurs affichés en fin d'exécution, pour
