@@ -1,6 +1,20 @@
 # Pipeline de puzzles avec historique réel : plan d'implémentation
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> ## État au 2026-08-07, fin de session
+>
+> **Tâches 1 à 5 terminées et committées** sur la branche `puzzle-pipeline`.
+> 31 tests verts (`uv run pytest python_src/tests`), perft non régressé
+> (`chess_perft bench --strict --check-fen` en SUCCES).
+>
+> **Reprendre à la tâche 6**, bloquée par une dépendance externe :
+> `training_data/lichess_db_puzzle.csv` est absent. Le télécharger depuis
+> <https://database.lichess.org/#puzzles> (environ 70 Mo compressés).
+>
+> Avant de lancer l'exécution complète, demander confirmation à Mathieu :
+> elle enverra environ 350 requêtes à l'API Lichess. Le `--dry-run` de
+> l'étape 1 n'en envoie aucune et peut être lancé sans confirmation.
 
 **Goal:** Fournir aux positions de puzzles injectées dans le self-play l'historique réel de la partie Lichess dont elles sont issues, afin qu'elles deviennent structurellement indiscernables des positions de partie.
 
@@ -67,7 +81,7 @@ cmake --build build --config Release --target chess_engine
 - Consumes: rien des tâches précédentes
 - Produces: `TACTICAL_THEMES: frozenset[str]`, `matches_themes(themes_field: str) -> bool`, `bucket_of(rating: int) -> int | None`, `split_of(puzzle_id: str) -> str` renvoyant `"bench"` ou `"train"`, `PuzzleRow` (dataclass : `puzzle_id, fen, moves, rating, themes, game_url`), `read_puzzle_csv(path) -> Iterator[PuzzleRow]`
 
-- [ ] **Step 1 : Ajouter pytest à pyproject.toml**
+- [x] **Step 1 : Ajouter pytest à pyproject.toml**
 
 Ajouter à la fin de `pyproject.toml` :
 
@@ -76,7 +90,7 @@ Ajouter à la fin de `pyproject.toml` :
 dev = ["pytest>=8.0"]
 ```
 
-- [ ] **Step 2 : Synchroniser et vérifier que pytest répond**
+- [x] **Step 2 : Synchroniser et vérifier que pytest répond**
 
 ```bash
 uv sync && uv run pytest --version
@@ -84,7 +98,7 @@ uv sync && uv run pytest --version
 
 Attendu : une version de pytest affichée, 8.0 ou supérieure.
 
-- [ ] **Step 3 : Écrire les tests avant le code**
+- [x] **Step 3 : Écrire les tests avant le code**
 
 Créer `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -154,7 +168,7 @@ def test_split_produces_both_sides_in_roughly_the_declared_ratio():
     assert 0.03 < bench / len(ids) < 0.07
 ```
 
-- [ ] **Step 4 : Lancer les tests et vérifier qu'ils échouent**
+- [x] **Step 4 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -162,7 +176,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : ÉCHEC à l'import, `ModuleNotFoundError: No module named 'build_puzzle_dataset'`.
 
-- [ ] **Step 5 : Écrire le module**
+- [x] **Step 5 : Écrire le module**
 
 Créer `python_src/build_puzzle_dataset.py` :
 
@@ -266,7 +280,7 @@ def read_puzzle_csv(path: Path) -> Iterator[PuzzleRow]:
             )
 ```
 
-- [ ] **Step 6 : Lancer les tests et vérifier qu'ils passent**
+- [x] **Step 6 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -274,7 +288,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : 7 tests PASSED.
 
-- [ ] **Step 7 : Commit**
+- [x] **Step 7 : Commit**
 
 ```bash
 git add pyproject.toml uv.lock python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py
@@ -309,7 +323,7 @@ EOF
 
 `fetcher` est injectable pour les tests : signature `fetcher(ids: list[str], token: str | None) -> str`, renvoyant les PGN concaténés. Par défaut, un appel réel à l'API.
 
-- [ ] **Step 1 : Écrire les tests avant le code**
+- [x] **Step 1 : Écrire les tests avant le code**
 
 Créer `python_src/tests/test_lichess_games.py` :
 
@@ -403,7 +417,7 @@ def test_missing_game_in_response_is_not_cached(tmp_path):
     assert lg.cached_pgn("bbb", tmp_path) is None
 ```
 
-- [ ] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
+- [x] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_lichess_games.py -v
@@ -411,7 +425,7 @@ uv run pytest python_src/tests/test_lichess_games.py -v
 
 Attendu : ÉCHEC à l'import, `ModuleNotFoundError: No module named 'lichess_games'`.
 
-- [ ] **Step 3 : Écrire le module**
+- [x] **Step 3 : Écrire le module**
 
 Créer `python_src/lichess_games.py` :
 
@@ -539,7 +553,7 @@ def fetch_games(game_ids: list[str],
             time.sleep(PAUSE_BETWEEN_REQUESTS_S)
 ```
 
-- [ ] **Step 4 : Lancer les tests et vérifier qu'ils passent**
+- [x] **Step 4 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_lichess_games.py -v
@@ -547,7 +561,7 @@ uv run pytest python_src/tests/test_lichess_games.py -v
 
 Attendu : 7 tests PASSED.
 
-- [ ] **Step 5 : Commit**
+- [x] **Step 5 : Commit**
 
 ```bash
 git add python_src/lichess_games.py python_src/tests/test_lichess_games.py
@@ -582,7 +596,7 @@ EOF
 
 La fonction renvoie un `MatchResult` en cas de succès, ou l'une des chaînes de `MatchError` en cas d'échec.
 
-- [ ] **Step 1 : Écrire les tests avant le code**
+- [x] **Step 1 : Écrire les tests avant le code**
 
 Ajouter à la fin de `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -687,7 +701,7 @@ def test_repetition_with_hint_picks_the_closest_ply():
     assert result.moves_uci == line
 ```
 
-- [ ] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
+- [x] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -695,7 +709,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : ÉCHEC à l'import, `ImportError: cannot import name 'MatchError'`.
 
-- [ ] **Step 3 : Écrire le code d'appariement**
+- [x] **Step 3 : Écrire le code d'appariement**
 
 Ajouter à `python_src/build_puzzle_dataset.py`, après `read_puzzle_csv`, et compléter les imports en tête du fichier avec `import io`, `import chess`, `import chess.pgn` :
 
@@ -774,7 +788,7 @@ def match_puzzle_in_game(pgn_text: str,
     return MatchResult(start_fen=start_fen, moves_uci=best)
 ```
 
-- [ ] **Step 4 : Lancer les tests et vérifier qu'ils passent**
+- [x] **Step 4 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -782,7 +796,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : 14 tests PASSED.
 
-- [ ] **Step 5 : Commit**
+- [x] **Step 5 : Commit**
 
 ```bash
 git add python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py
@@ -818,7 +832,7 @@ EOF
 - Consumes: tout ce qui précède
 - Produces: `format_line(row: PuzzleRow, match: MatchResult) -> str`, `main()` avec les options `--csv`, `--cache`, `--out-train`, `--out-bench`, `--train-target`, `--bench-per-bucket`, `--token`, `--dry-run`
 
-- [ ] **Step 1 : Écrire le test du formatage de ligne**
+- [x] **Step 1 : Écrire le test du formatage de ligne**
 
 Ajouter à `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -851,7 +865,7 @@ def test_format_line_has_five_fields_and_no_separator_inside():
     assert "\n" not in line
 ```
 
-- [ ] **Step 2 : Lancer le test et vérifier qu'il échoue**
+- [x] **Step 2 : Lancer le test et vérifier qu'il échoue**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py::test_format_line_has_five_fields_and_no_separator_inside -v
@@ -859,7 +873,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py::test_format_line_ha
 
 Attendu : ÉCHEC, `ImportError: cannot import name 'format_line'`.
 
-- [ ] **Step 3 : Écrire le formatage et le programme principal**
+- [x] **Step 3 : Écrire le formatage et le programme principal**
 
 Ajouter à `python_src/build_puzzle_dataset.py`, et compléter les imports avec `import argparse`, `import collections`, `import sys`, et `from lichess_games import fetch_games, game_id_from_url, ply_hint_from_url, cached_pgn` :
 
@@ -1008,7 +1022,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4 : Lancer toute la suite**
+- [x] **Step 4 : Lancer toute la suite**
 
 ```bash
 uv run pytest python_src/tests -v
@@ -1016,7 +1030,7 @@ uv run pytest python_src/tests -v
 
 Attendu : 15 tests PASSED.
 
-- [ ] **Step 5 : Vérifier la disjonction train / banc sur les fichiers produits**
+- [x] **Step 5 : Vérifier la disjonction train / banc sur les fichiers produits**
 
 Ajouter à `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -1039,7 +1053,7 @@ uv run pytest python_src/tests -v
 
 Attendu : 16 tests PASSED.
 
-- [ ] **Step 6 : Ignorer le cache de parties**
+- [x] **Step 6 : Ignorer le cache de parties**
 
 Ajouter à `.gitignore`, après la ligne `training_data/` :
 
@@ -1050,7 +1064,7 @@ python_src/tests/__pycache__
 
 Le cache de parties vit sous `training_data/`, déjà ignoré. Le fichier du banc va dans `data/`, qui n'est pas ignoré et doit être versionné.
 
-- [ ] **Step 7 : Vérifier la CLI sans réseau**
+- [x] **Step 7 : Vérifier la CLI sans réseau**
 
 ```bash
 cd python_src && uv run python build_puzzle_dataset.py --help
@@ -1064,7 +1078,7 @@ cd python_src && uv run python build_puzzle_dataset.py --csv /inexistant.csv
 
 Attendu : message `CSV introuvable`, code de sortie 2.
 
-- [ ] **Step 8 : Commit**
+- [x] **Step 8 : Commit**
 
 ```bash
 git add python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py .gitignore
@@ -1099,7 +1113,7 @@ EOF
 - Consumes: le format `<fen_initiale>|<coups_uci>|...` produit par la Task 4
 - Produces: `bool Chessboard::movePieceUCI(const std::string& uci)`, `struct TacticalPuzzle { std::string start_fen; std::vector<std::string> moves; }`
 
-- [ ] **Step 1 : Déclarer `movePieceUCI`**
+- [x] **Step 1 : Déclarer `movePieceUCI`**
 
 Dans `src/chessboard.hpp`, juste après la ligne `bool movePieceSAN(std::string san);` :
 
@@ -1109,7 +1123,7 @@ Dans `src/chessboard.hpp`, juste après la ligne `bool movePieceSAN(std::string 
         bool movePieceUCI(const std::string& uci);
 ```
 
-- [ ] **Step 2 : Implémenter `movePieceUCI`**
+- [x] **Step 2 : Implémenter `movePieceUCI`**
 
 Dans `src/chessboard.cpp`, juste après la fin de `movePieceSAN` :
 
@@ -1147,7 +1161,7 @@ bool Chessboard::movePieceUCI(const std::string& uci)
 }
 ```
 
-- [ ] **Step 3 : Remplacer le membre et le chargeur dans le manager**
+- [x] **Step 3 : Remplacer le membre et le chargeur dans le manager**
 
 Dans `src/selfplay_manager.hpp`, remplacer la ligne `std::vector<std::string> m_tactical_fens;` par :
 
@@ -1165,7 +1179,7 @@ et renommer la déclaration `void load_tactical_fens(const std::string& filepath
     void load_tactical_puzzles(const std::string& filepath);
 ```
 
-- [ ] **Step 4 : Implémenter le chargeur**
+- [x] **Step 4 : Implémenter le chargeur**
 
 Dans `src/selfplay_manager.cpp`, remplacer intégralement la fonction `SelfPlayManager::load_tactical_fens` par :
 
@@ -1210,7 +1224,7 @@ void SelfPlayManager::load_tactical_puzzles(const std::string& filepath) {
 
 Ajouter `#include <sstream>` en tête de `src/selfplay_manager.cpp`.
 
-- [ ] **Step 5 : Rejouer les coups dans `reset_game`**
+- [x] **Step 5 : Rejouer les coups dans `reset_game`**
 
 Dans `src/selfplay_manager.cpp`, dans `reset_game`, remplacer le bloc allant du commentaire `// --- INJECTION DE FEN (20% du temps) ---` jusqu'à la fin du `else` qui appelle `setStartupPieces()`, par :
 
@@ -1257,7 +1271,7 @@ Et dans le constructeur, remplacer l'appel `load_tactical_fens("../training_data
     load_tactical_puzzles("../training_data/puzzles_train.txt");
 ```
 
-- [ ] **Step 6 : Ramener l'amnésie à 1 % et redocumenter**
+- [x] **Step 6 : Ramener l'amnésie à 1 % et redocumenter**
 
 Dans `src/selfplay_manager.cpp`, dans `roll_next_move`, remplacer le bloc commençant par le commentaire `// equivalent dropout pour éviter le shortcut learning` et couvrant le `if`/`else` sur `setAmnesiaMode`, par :
 
@@ -1283,7 +1297,7 @@ Dans `src/selfplay_manager.cpp`, dans `roll_next_move`, remplacer le bloc commen
 
 Noter que la condition `!m_is_tactical[game_idx] &&` disparaît : l'amnésie n'a plus de raison d'épargner les positions tactiques, puisqu'elle n'est plus un correctif de confondant.
 
-- [ ] **Step 7 : Construire**
+- [x] **Step 7 : Construire**
 
 ```bash
 cmake --build build --config Release --target chess_engine
@@ -1291,7 +1305,7 @@ cmake --build build --config Release --target chess_engine
 
 Attendu : compilation sans erreur.
 
-- [ ] **Step 8 : Vérifier `movePieceUCI` contre `python-chess`**
+- [x] **Step 8 : Vérifier `movePieceUCI` contre `python-chess`**
 
 Créer `python_src/tests/test_move_piece_uci.py` :
 
@@ -1394,7 +1408,7 @@ def test_uci_rejects_malformed_and_illegal():
     assert not board.move_piece_uci("e2e5")  # illegal
 ```
 
-- [ ] **Step 9 : Exposer `move_piece_uci` dans les bindings et reconstruire**
+- [x] **Step 9 : Exposer `move_piece_uci` dans les bindings et reconstruire**
 
 Dans `src/bindings.cpp`, juste après `.def("move_piece_san", &Chessboard::movePieceSAN)` :
 
@@ -1409,7 +1423,7 @@ uv run pytest python_src/tests/test_move_piece_uci.py -v
 
 Attendu : 4 tests PASSED.
 
-- [ ] **Step 10 : Prouver que le contrôle détecte un décalage de ply**
+- [x] **Step 10 : Prouver que le contrôle détecte un décalage de ply**
 
 Un contrôle qui ne se déclenche jamais et un contrôle absent produisent la même sortie. Modifier temporairement le test pour retirer le dernier coup du rejeu :
 
@@ -1426,7 +1440,7 @@ Attendu : ÉCHEC sur la comparaison des ensembles de coups légaux.
 
 **Rétablir `for uci in line:`** et relancer pour confirmer le retour au vert.
 
-- [ ] **Step 11 : Vérifier que le perft n'a pas régressé**
+- [x] **Step 11 : Vérifier que le perft n'a pas régressé**
 
 `movePieceUCI` appelle `movePiece`, et le manager a changé. Le générateur de coups ne devrait pas être affecté, mais c'est exactement ce que le filet sert à confirmer.
 
@@ -1437,7 +1451,7 @@ cmake --build build --config Release --target chess_perft
 
 Attendu : `Resultat : SUCCES`, code de sortie 0.
 
-- [ ] **Step 12 : Commit**
+- [x] **Step 12 : Commit**
 
 ```bash
 git add src/chessboard.hpp src/chessboard.cpp src/selfplay_manager.hpp src/selfplay_manager.cpp src/bindings.cpp python_src/tests/test_move_piece_uci.py
