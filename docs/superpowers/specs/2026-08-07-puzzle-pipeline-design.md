@@ -194,8 +194,27 @@ l'entraînement mesurerait la mémorisation, pas la capacité tactique.
 - `reset_game` charge la position initiale puis rejoue les coups UCI, pour que
   `m_boardHistory` contienne les entrées attendues. Le chargement actuel par `loadFEN` n'en
   produit qu'une.
-- Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, tirage à 5 % dans `roll_next_move`)
-  n'avait pour but que de casser ce confondant. Il devient inutile et doit être retiré.
+### Mode amnésie : conservé, taux abaissé à 1 %
+
+Son but déclaré était de casser ce confondant, et ce but disparaît. Mais il a un second
+effet : il entraîne le réseau à fonctionner sans historique, et ce cas subsiste après la
+correction, celui de la FEN collée à la main dans une GUI sans liste de coups. C'est
+d'ailleurs ainsi que le confondant a été mesuré dans Nibbler.
+
+Le point décisif : une fois les puzzles porteurs d'un historique réel, l'amnésie **ne
+corrèle plus avec la tacticité**. Elle cesse d'être un confondant et devient de
+l'augmentation de données pure.
+
+Décision : conservé, taux ramené de 5 % à 1 % (`roll_next_move`, `selfplay_manager.cpp:233`).
+
+**Sa raison d'être doit être redocumentée dans le code.** Le commentaire actuel parle de
+« shortcut learning avec l'apprentissage sur les FENs de puzzles », ce qui devient faux. Le
+nouveau motif est la robustesse aux entrées sans historique. Sans cette mise à jour, un
+lecteur futur retrouvera un tirage qui supprime l'historique sans en comprendre la raison.
+
+Le taux de 1 % est une valeur de départ, non mesurée. Le banc pourra la valider : en
+évaluant les mêmes puzzles avec et sans historique, il mesure directement l'écart de
+performance entre les deux régimes. Si l'écart reste grand à 1 %, remonter le taux.
 
 C'est la seule partie du chantier qui touche le moteur. Le parcours de perft n'est pas
 concerné.

@@ -106,8 +106,11 @@ et tout puzzle dont aucun ply ne correspond est écarté.
 - Côté C++ : charger la position initiale puis rejouer les coups, pour que
   `m_boardHistory` contienne les 8 entrées attendues. Le chargement actuel par `loadFEN`
   n'en produit qu'une.
-- Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, tirage à 5 % dans `roll_next_move`)
-  devient inutile et doit être retiré.
+- Le mode amnésie est **conservé**, taux ramené de 5 % à 1 %. Son but déclaré disparaît,
+  mais il entraîne le réseau à fonctionner sans historique, cas qui subsiste pour les FEN
+  collées à la main dans une GUI. Une fois les puzzles porteurs d'un historique réel, il ne
+  corrèle plus avec la tacticité et devient de l'augmentation pure. Sa raison d'être doit
+  être redocumentée dans le code, le commentaire actuel devenant faux.
 
 Effet secondaire bienvenu : cela referme aussi le trou de prise en passant décrit
 ci-dessous, puisque les positions de puzzles auront une position précédente réelle.
