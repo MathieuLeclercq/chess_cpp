@@ -62,8 +62,12 @@ Plus mineur : `MCTS::get_root_q()` (`mcts.cpp:366`) lit l'arbre sans prendre le 
 
 ## 4. Confondant historique / tactique — DÉCIDÉ : réduction à 2 positions
 
-**Décision du 2026-08-07 : garder la position courante et la position précédente**, plus
-un plan de prise en passant explicite. **36 plans contre 119 aujourd'hui.**
+**Décision du 2026-08-07 : garder la position courante et la position précédente.**
+**35 plans contre 119 aujourd'hui.**
+
+Pas de plan de prise en passant : l'information est entièrement dérivable des deux
+positions conservées. Le seul cas où elle manquerait est une FEN nue, traité par
+reconstruction de la position précédente (voir plus bas).
 
 Note de vocabulaire, la source de confusion pendant la discussion : on compte le nombre
 total de positions dans la pile, pas le nombre de positions passées. L'état actuel est
@@ -83,15 +87,14 @@ confirmé empiriquement.
 | 12-13 | répétitions, position courante (rep==2, rep≥3) |
 | 14-25 | pièces, position précédente |
 | 26-27 | répétitions, position précédente |
-| 28 | prise en passant, case cible |
-| 29 | couleur au trait |
-| 30 | nombre de coups normalisé |
-| 31-34 | droits de roque (p1 K, p1 Q, p2 K, p2 Q) |
-| 35 | compteur des 50 coups normalisé |
+| 28 | couleur au trait |
+| 29 | nombre de coups normalisé |
+| 30-33 | droits de roque (p1 K, p1 Q, p2 K, p2 Q) |
+| 34 | compteur des 50 coups normalisé |
 
 Décision mineure laissée ouverte : garder les plans de répétition sur les deux positions
-(36 plans, choix fidèle au code actuel qui les calcule par instantané) ou seulement sur la
-courante (34 plans). Recommandation : garder les deux, 2 plans ne pèsent rien.
+(35 plans, choix fidèle au code actuel qui les calcule par instantané) ou seulement sur la
+courante (33 plans). Recommandation : garder les deux, 2 plans ne pèsent rien.
 
 ### Prérequis : une constante unique
 
@@ -132,15 +135,18 @@ Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, le tirage à 5 % dans
 ### Coût réel : bien inférieur à un réentraînement complet
 
 Un seul tenseur change de forme, `conv_input.weight`, de `[128, 119, 3, 3]` à
-`[128, 36, 3, 3]`. Décompte sur l'architecture actuelle :
+`[128, 35, 3, 3]`. Décompte sur l'architecture actuelle :
 
 | | Paramètres | Part du modèle |
 |---|---|---|
 | Modèle total | ~3,71 M | 100 % |
 | `conv_input` aujourd'hui | 137 088 | 3,7 % |
-| Canaux repris tels quels (35) | 40 320 | — |
-| Canaux t=2..7 jetés (84) | 96 768 | 2,6 % |
-| Nouveau canal en passant, initialisé à zéro | 1 152 | 0,03 % |
+| Canaux repris tels quels (35 sur 119) | 40 320 | — |
+| Canaux des 6 positions les plus anciennes, jetés (84) | 96 768 | 2,6 % |
+| Paramètres initialisés à neuf | **0** | 0 % |
+
+Conséquence de l'abandon du plan de prise en passant : **aucun poids n'est initialisé
+aléatoirement.** La chirurgie devient une pure sélection de canaux d'entrée.
 
 Les 10 blocs résiduels, la tête policy et la tête value se copient à l'identique.
 `transfer_weights.py` doit être étendu pour **trancher** le tenseur au lieu de l'ignorer
@@ -149,14 +155,13 @@ sur non-correspondance de forme.
 ### Données de récupération : le replay buffer existant
 
 Les shards stockent les états en `[N, 119, 8, 8]` avec les cibles policy et value déjà
-calculées. Il suffit de les trancher vers `[N, 36, 8, 8]` pour réutiliser les 750 000
-positions comme jeu de fine-tuning supervisé. Aucune partie à générer.
+calculées. Il suffit de les trancher vers `[N, 35, 8, 8]` pour réutiliser les 750 000
+positions comme jeu de fine-tuning supervisé. Aucune partie à générer, et rien à
+recalculer : les 35 canaux retenus sont un sous-ensemble exact des 119 existants.
 
-Le nouveau plan de prise en passant se calcule depuis les deux positions **conservées** :
-chercher un pion adverse présent dans la position précédente et absent dans la courante,
-avec la case deux rangées plus loin en sens inverse. Échoue pour les ~5 % de positions
-enregistrées en mode amnésie, où la position précédente est déjà vide ; les exclure du
-calcul plutôt que d'y écrire un zéro trompeur.
+Réserve : les ~5 % de positions enregistrées en mode amnésie ont leur position précédente
+vide. Elles restent utilisables mais représentent une entrée que la nouvelle
+représentation ne produira plus jamais. Les exclure du fine-tuning est plus propre.
 
 Le buffer est récupérable depuis l'ancien PC de Mathieu.
 
@@ -165,9 +170,9 @@ Le buffer est récupérable depuis l'ancien PC de Mathieu.
 L'autre candidat sérieux était de ne garder que la position courante, 22 plans. Les deux
 options suppriment le confondant, mais pas de la même façon.
 
-| | 1 position, 22 plans | 2 positions, 36 plans (retenu) |
+| | 1 position, 22 plans | 2 positions, 35 plans (retenu) |
 |---|---|---|
-| Complétude informationnelle | oui, avec plan de prise en passant | oui |
+| Complétude informationnelle | oui, mais exige un plan de prise en passant | oui, sans plan supplémentaire |
 | Indice « ce qui vient de bouger » | perdu | conservé |
 | Taille des tenseurs | référence | +60 % |
 | Modif du pipeline puzzles | aucune | extraction et chargement C++ |
@@ -204,6 +209,27 @@ fournit le coup de l'adversaire, ce que la doc Lichess garantit. L'argument s'ap
 en réalité à une option différente : garder les 8 plans en ne remplissant que la position
 précédente, ce qui laisse les 6 plus anciennes vides et déplace le drapeau d'un cran sans
 le supprimer.
+
+### Reconstruction de la position précédente pour les FEN nues
+
+Remplace le plan de prise en passant explicite qui figurait dans une version antérieure
+de cette entrée. L'information étant dérivable des deux positions conservées, le plan
+était redondant partout sauf sur une FEN nue, où la position précédente est vide.
+
+Quand une FEN porte une case de prise en passant, la position précédente est **uniquement
+déterminée** : le pion adverse était deux rangées derrière, et rien d'autre n'a changé
+puisqu'une poussée double ne capture rien. Dans l'orientation du tenseur, remettre le pion
+de `(f, 4)` vers `(f, 6)` et vider `(f, 5)` et `(f, 4)` reconstruit la vraie position, pas
+une approximation.
+
+À implémenter dans `loadFEN`, qui pousserait alors deux entrées dans `m_boardHistory` au
+lieu d'une. Couvre du même coup tous les cas de FEN nue, y compris `position fen`
+d'analyse sans liste de coups, et non seulement les puzzles.
+
+**Piège à ne pas rater :** `m_boardHistory.size()` sert à calculer `total_moves_val` dans
+le tenseur (`chessboard.cpp:1462`) et le numéro de coup complet dans `toFEN`. Ajouter une
+entrée synthétique décalerait les deux de un. Compenser sur `m_initial_ply_offset`, ou
+marquer l'entrée comme synthétique. C'est le seul coût réel de cette approche.
 
 ### Trou existant que la décision corrige au passage
 
