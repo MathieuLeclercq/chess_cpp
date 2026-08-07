@@ -60,41 +60,122 @@ aléatoire ou un bestmove illégal en partie. Correctif : `self.stop_search()` e
 
 Plus mineur : `MCTS::get_root_q()` (`mcts.cpp:366`) lit l'arbre sans prendre le mutex.
 
-## 4. Confondant historique / tactique
+## 4. Confondant historique / tactique — DÉCIDÉ : suppression des plans d'historique
 
-Les positions de puzzles n'ont pas d'historique, les positions de partie en ont. La
-présence d'historique est donc **corrélée au label** « position tranchante », et le
-réseau peut lire les 96 plans d'historique comme un drapeau plutôt que d'apprendre la
-tactique. Le mode amnésie à 5 % casse la corrélation parfaite mais pas la corrélation,
-et surtout les leçons tactiques restent stockées dans une région de l'espace d'entrée
-qui n'existe jamais en partie.
+**Décision du 2026-08-07 : passer à T=1 avec un plan de prise en passant explicite.**
+Représentation cible : 12 plans de pièces + 2 plans de répétition + 1 plan de prise en
+passant + 7 plans constants = 22 plans, contre 119 aujourd'hui.
 
-À mesurer d'abord : évaluer une position de puzzle avec puis sans historique, et
-comparer la probabilité que la policy donne au coup gagnant. Si elle s'effondre, le
-raccourci est confirmé et chiffré.
+Effet mesuré par Mathieu dans Nibbler avant la décision : sur une position de puzzle
+présentée sans historique, le prior de recherche du coup tactique est nettement plus
+haut, donc le coup est trouvé. Avec historique, il ne l'est pas. Le raccourci est
+confirmé empiriquement.
 
-Options, de la moins à la plus ambitieuse :
+### Coût réel : bien inférieur à un réentraînement complet
 
-1. Jeter les 8 premiers plies des parties issues de puzzles. Trois lignes. Tout ce qui
-   entre dans le dataset est en distribution, mais on perd la recherche à 4000
-   simulations sur la position de puzzle elle-même.
-2. Fabriquer les positions tactiques depuis le corpus PGN existant, en marquant avec
-   Stockfish les positions où le meilleur coup écrase le deuxième. On obtient des
-   positions tranchantes **avec leur historique réel**. Le confondant disparaît par
-   construction, sans toucher à l'architecture. Sert aussi de jeu d'évaluation propre
-   pour le banc de puzzles.
-3. Supprimer les plans d'historique (96 des 119). Leur justification dans AlphaZero
-   était surtout la détection des répétitions, or deux plans de répétition dédiés
-   existent déjà, calculés depuis les hash Zobrist. Gains simultanés : confondant
-   impossible, tenseurs 8 fois plus petits, construction du tenseur 8 fois moins chère.
-   **Piège :** la représentation actuelle n'a aucun plan de prise en passant,
-   l'information est déduite en comparant t=0 et t=1. Il faudrait donc ajouter un plan
-   explicite. Coût réel : un réentraînement ou une chirurgie sur la première
-   convolution.
+Un seul tenseur change de forme, `conv_input.weight`, de `[128, 119, 3, 3]` à
+`[128, 22, 3, 3]`. Décompte sur l'architecture actuelle :
 
-Écarté : l'historique synthétique par analyse retrograde, et la variante qui répète la
-position courante dans les huit créneaux. Les deux créent une troisième distribution
-(« historique fabriqué ») et remplacent un confondant par un autre, moins visible.
+| | Paramètres | Part du modèle |
+|---|---|---|
+| Modèle total | ~3,71 M | 100 % |
+| `conv_input` | 137 088 | 3,7 % |
+| Canaux t=1..7 jetés | 111 744 | 3,0 % |
+| Nouveau canal en passant, initialisé à zéro | 1 152 | 0,03 % |
+
+Les 10 blocs résiduels, la tête policy et la tête value se copient à l'identique.
+`transfer_weights.py` doit être étendu pour **trancher** le tenseur au lieu de l'ignorer
+sur non-correspondance de forme.
+
+### Données de récupération : le replay buffer existant
+
+Les shards stockent les états en `[N, 119, 8, 8]` avec les cibles policy et value déjà
+calculées. Il suffit de les trancher vers `[N, 22, 8, 8]` pour réutiliser les 750 000
+positions comme jeu de fine-tuning supervisé. Aucune partie à générer.
+
+La prise en passant est récupérable depuis les tenseurs stockés avant de jeter t=1 :
+chercher un pion adverse présent en t=1 et absent en t=0, avec la case deux rangées plus
+loin en sens inverse. Échoue pour les ~5 % de positions en mode amnésie, où t=1 est déjà
+vide.
+
+Le buffer est récupérable depuis l'ancien PC de Mathieu.
+
+### Pourquoi pas T=2 en filet de sécurité
+
+Garder deux pas de temps préserverait la déduction de la prise en passant pour 14 plans
+seulement, mais laisserait le confondant à moitié vivant : sur une position de puzzle,
+t=1 serait vide, donc le drapeau existe encore, simplement plus faible. On paierait le
+réentraînement sans supprimer la cause.
+
+L'argument vaut aussi pour l'idée de reconstruire un historique de taille 1 depuis les
+puzzles. C'est faisable, la doc Lichess précise que la FEN du CSV est la position
+**avant** le coup de l'adversaire et que `Moves[0]` est ce coup, et
+`extract_lichess_puzzle.py` le joue déjà. Mais avec une pile de 8, remplir t=0 et t=1
+laisse t=2 à t=7 vides : le drapeau se déplace de t=1 vers t=2, il ne disparaît pas.
+
+### Trou existant que la décision corrige au passage
+
+`getAlphaZeroTensor` n'a aucun plan de prise en passant : l'information n'existe que par
+comparaison de t=0 et t=1. Pour une position chargée par `loadFEN`, `m_boardHistory` ne
+contient qu'une entrée, donc t=1 reste vide. **Sur toutes les positions de puzzles, une
+prise en passant disponible est donc aujourd'hui invisible pour le réseau**, alors que le
+moteur la connaît et la génère dans les coups légaux.
+
+Corollaire utile : `python-chess` écrit déjà la case de prise en passant dans le champ 4
+des FEN générées par `extract_lichess_puzzle.py`. Avec un plan explicite, le
+`tactics.txt` existant porte donc toute l'information nécessaire, sans modifier
+l'extraction.
+
+### Risques
+
+- Les statistiques courantes du BatchNorm suivant `conv_input` deviennent fausses, la
+  distribution de sortie de cette couche changeant. Le fine-tuning les réadapte, mais
+  attendre un pic de loss et une perte d'Elo temporaire.
+- Le réseau utilisait réellement ces canaux ; la magnitude de la perturbation n'est pas
+  prévisible sur le papier, seulement mesurable après la chirurgie.
+- À décider : garder ou non les plans `total_moves` et `no_progress`. Ce sont les deux
+  que le bug `astype(np.uint8)` mettait à zéro dans le dataset supervisé (voir §9), donc
+  leur valeur réelle n'a jamais été éprouvée.
+
+### Ordre d'exécution
+
+Le banc de puzzles vient **avant**, c'est l'instrument avant/après de ce changement, et
+il doit gérer les deux représentations. Sans lui, impossible de savoir si la suppression
+de l'historique a réellement transféré la tactique.
+
+### Options envisagées puis écartées
+
+1. **Jeter les 8 premiers plies des parties issues de puzzles.** Trois lignes dans
+   `selfplay_manager`. Tout ce qui entre dans le dataset serait en distribution, mais on
+   perdrait la recherche à 4000 simulations sur la position de puzzle elle-même, qui est
+   tout l'intérêt de l'injection.
+2. **Fabriquer les positions tactiques depuis le corpus PGN existant**, en marquant avec
+   Stockfish celles où le meilleur coup écrase le deuxième, pour obtenir des positions
+   tranchantes avec leur historique réel. Résout le confondant sans toucher à
+   l'architecture, mais demande un pipeline de préparation complet et laisse les 96 plans
+   en place, donc n'apporte aucun des gains annexes (taille des tenseurs, coût de
+   construction, taille de la première convolution).
+3. **Historique synthétique par analyse retrograde**, ou variante plus simple répétant la
+   position courante dans les huit créneaux. Les deux créent une troisième distribution,
+   « historique fabriqué », et remplacent un confondant par un autre, moins visible. La
+   variante répétée interfère en plus avec les plans de répétition.
+
+### Pourquoi c'est un confondant et non un décalage de distribution
+
+La distinction a guidé la décision. Un décalage de distribution se corrige en
+élargissant la distribution, ce que fait le mode amnésie. Mais ici la **présence
+d'historique est corrélée au label** : historique absent implique presque toujours
+« position tranchante », historique présent implique « position ordinaire ». Le réseau
+n'a donc pas besoin de comprendre la tactique, il lui suffit de lire les 96 plans comme
+un drapeau.
+
+Le mode amnésie à 5 % casse la corrélation parfaite mais pas la corrélation, et surtout
+les leçons tactiques restent stockées dans une région de l'espace d'entrée que la partie
+réelle ne visite jamais. C'est ça qui bloque le transfert, et c'est pourquoi entraîner
+plus longtemps ne suffirait pas.
+
+Deux façons de tuer un confondant : égaliser la covariable entre les groupes (options 1
+et 2), ou supprimer la covariable (option retenue).
 
 ## 5. Alléger la représentation du plateau
 
