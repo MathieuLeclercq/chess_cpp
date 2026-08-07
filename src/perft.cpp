@@ -12,13 +12,39 @@ void report_violation(PerftReport& report, const std::string& message) {
     }
 }
 
-// Les contrôles stricts sont implémentés en tâche 3.
 void run_strict_checks(Chessboard& board,
                        const std::vector<Move>& moves,
                        PerftReport& report) {
-    (void)board;
-    (void)moves;
-    (void)report;
+    // Trou 3 : hasAnyLegalMove duplique la boucle interne de
+    // getLegalMovesForSquare. On confronte la copie à son original.
+    const bool has_any = board.hasAnyLegalMove();
+    if (has_any != !moves.empty()) {
+        report_violation(report,
+            "hasAnyLegalMove=" + std::string(has_any ? "true" : "false")
+            + " mais getAllLegalMoves en renvoie " + std::to_string(moves.size()));
+    }
+
+    // Trou 1 : la couche d'encodage.
+    const std::vector<int> indices = board.getLegalMoveIndices();
+
+    if (indices.size() != moves.size()) {
+        report_violation(report,
+            "encodeMove : " + std::to_string(indices.size()) + " indice(s) pour "
+            + std::to_string(moves.size()) + " coup(s) legaux");
+    }
+
+    std::unordered_set<int> seen;
+    seen.reserve(indices.size() * 2);
+    for (int index : indices) {
+        if (index < 0 || index > 4671) {
+            report_violation(report,
+                "indice hors bornes [0, 4671] : " + std::to_string(index));
+        }
+        if (!seen.insert(index).second) {
+            report_violation(report,
+                "indice duplique, deux coups encodes pareil : " + std::to_string(index));
+        }
+    }
 }
 
 // Le contrôle FEN est implémenté en tâche 4.
