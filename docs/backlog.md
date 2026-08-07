@@ -60,251 +60,131 @@ aléatoire ou un bestmove illégal en partie. Correctif : `self.stop_search()` e
 
 Plus mineur : `MCTS::get_root_q()` (`mcts.cpp:366`) lit l'arbre sans prendre le mutex.
 
-## 4. Confondant historique / tactique — DÉCIDÉ : réduction à 2 positions
+## 4. Confondant historique / tactique — DÉCIDÉ : corriger les données, pas l'architecture
 
-**Décision du 2026-08-07 : garder la position courante et la position précédente.**
-**35 plans contre 119 aujourd'hui.**
+**Décision du 2026-08-07, après révision : on garde les 119 plans.** Le confondant se
+corrige à la source, en fournissant aux positions de puzzles leur historique réel.
 
-Pas de plan de prise en passant : l'information est entièrement dérivable des deux
-positions conservées. Le seul cas où elle manquerait est une FEN nue, traité par
-reconstruction de la position précédente (voir plus bas).
+### Le problème
 
-Note de vocabulaire, la source de confusion pendant la discussion : on compte le nombre
-total de positions dans la pile, pas le nombre de positions passées. L'état actuel est
-donc « courante + 7 précédentes », et la cible « courante + 1 précédente ». Le dernier
-coup joué est encodé par la différence entre les deux.
+Les positions de puzzles n'ont pas d'historique, les positions de partie en ont. La
+présence d'historique est donc **corrélée au label** « position tranchante », et le réseau
+peut lire les 96 plans d'historique comme un drapeau plutôt que d'apprendre la tactique.
 
-Effet mesuré par Mathieu dans Nibbler avant la décision : sur une position de puzzle
-présentée sans historique, le prior de recherche du coup tactique est nettement plus
-haut, donc le coup est trouvé. Avec historique, il ne l'est pas. Le raccourci est
-confirmé empiriquement.
+Effet mesuré par Mathieu dans Nibbler : sur une position de puzzle présentée sans
+historique, le prior de recherche du coup tactique est nettement plus haut, donc le coup
+est trouvé. Avec historique, il ne l'est pas. Le raccourci est confirmé empiriquement.
 
-### Layout cible
+Le mode amnésie à 5 % cassait la corrélation parfaite mais pas la corrélation, et surtout
+les leçons tactiques restaient stockées dans une région de l'espace d'entrée que la partie
+réelle ne visite jamais. C'est ça qui bloquait le transfert, et c'est pourquoi entraîner
+plus longtemps n'aurait pas suffi.
 
-| Plans | Contenu |
-|---|---|
-| 0-11 | pièces, position courante (P1 pion→roi 0-5, P2 6-11) |
-| 12-13 | répétitions, position courante (rep==2, rep≥3) |
-| 14-25 | pièces, position précédente |
-| 26-27 | répétitions, position précédente |
-| 28 | couleur au trait |
-| 29 | nombre de coups normalisé |
-| 30-33 | droits de roque (p1 K, p1 Q, p2 K, p2 Q) |
-| 34 | compteur des 50 coups normalisé |
+### La correction retenue
 
-Décision mineure laissée ouverte : garder les plans de répétition sur les deux positions
-(35 plans, choix fidèle au code actuel qui les calcule par instantané) ou seulement sur la
-courante (33 plans). Recommandation : garder les deux, 2 plans ne pèsent rien.
+Le problème n'était pas que les puzzles soient des positions inhabituelles, c'était qu'ils
+soient **structurellement identifiables**. Une position de puzzle avec 8 plies réels et
+une position de partie avec 8 plies réels ne présentent aucune différence de structure,
+donc aucun drapeau à lire.
 
-### Prérequis : une constante unique
+Les puzzles Lichess viennent de vraies parties et le CSV porte le champ `GameUrl`. L'API
+d'export permet donc de récupérer la séquence de coups menant à chaque position.
 
-`119` apparaît dans **19 occurrences fonctionnelles réparties sur 8 fichiers**
-(`bindings.cpp`, `chessboard.cpp`, `mcts.cpp`, `onnx_evaluator.cpp`,
-`selfplay_manager.cpp/hpp`, `export_batch_onnx.py`, `lib.py`, `model.py`), sans aucune
-définition partagée.
+Faisabilité vérifiée le 2026-08-07 : `POST /api/games/export/_ids` accepte **300 IDs par
+requête**, corps en texte brut séparé par des virgules, réponse en flux PGN ou ndjson.
+100 000 puzzles représentent donc 334 requêtes, soit quelques minutes en respectant la
+consigne d'une requête à la fois.
 
-Une migration partielle ne produirait pas d'erreur de compilation mais un désaccord
-silencieux entre `expected_elements` dans `onnx_evaluator.cpp:46` et la taille réelle du
-buffer, donc ONNX Runtime lisant de la mémoire arbitraire. **Introduire la constante
-unique avant de migrer**, et l'exposer par les bindings pour que `model.py` et le
-constructeur de tenseur C++ ne puissent pas diverger.
+Robustesse : **ne pas se fier au numéro de ply du `GameUrl`.** Rejouer les coups de la
+partie jusqu'à ce que la position corresponde à la FEN du puzzle. Le procédé s'auto-valide
+et tout puzzle dont aucun ply ne correspond est écarté.
 
-### Travail induit côté puzzles
+### Travail induit
 
-`extract_lichess_puzzle.py` écrit aujourd'hui la FEN **d'après** le coup de l'adversaire :
+- `extract_lichess_puzzle.py` : conserver le `GameUrl`, récupérer les parties par lots de
+  300, et écrire pour chaque puzzle la séquence de coups plutôt qu'une FEN nue.
+- Côté C++ : charger la position initiale puis rejouer les coups, pour que
+  `m_boardHistory` contienne les 8 entrées attendues. Le chargement actuel par `loadFEN`
+  n'en produit qu'une.
+- Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, tirage à 5 % dans `roll_next_move`)
+  devient inutile et doit être retiré.
 
-```python
-board.push(chess.Move.from_uci(moves[0]))   # on joue la gaffe
-outfile.write(board.fen() + "\n")
-```
+Effet secondaire bienvenu : cela referme aussi le trou de prise en passant décrit
+ci-dessous, puisque les positions de puzzles auront une position précédente réelle.
 
-Chargée telle quelle par `loadFEN`, cette position a `m_boardHistory` de taille 1, donc
-la position précédente serait vide et le confondant survivrait. Il faut écrire la FEN
-d'**avant** plus le coup, et côté C++ charger puis jouer le coup pour que la pile ait
-deux entrées réelles.
+### Résidu honnête
 
-C'est le prix d'entrée de ce choix, et c'est aussi ce qui fait que la propriété repose sur
-le pipeline plutôt que sur la structure du tenseur (voir la comparaison plus bas).
+Même avec un historique réel, il subsiste une différence de **style** entre un historique
+issu d'une partie humaine et un historique de self-play. Le réseau pourrait en principe
+l'exploiter. C'est un signal statistique faible et non un drapeau structurel, et il
+s'appliquerait aussi à la position elle-même : supprimer l'historique ne le corrigerait
+pas. Ne différencie donc pas les deux solutions.
 
-### Devient du code mort
-
-Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, le tirage à 5 % dans
-`roll_next_move`) n'avait pour but que de casser ce confondant. Il devient inutile et doit
-être retiré.
-
-### Coût réel : bien inférieur à un réentraînement complet
-
-Un seul tenseur change de forme, `conv_input.weight`, de `[128, 119, 3, 3]` à
-`[128, 35, 3, 3]`. Décompte sur l'architecture actuelle :
-
-| | Paramètres | Part du modèle |
-|---|---|---|
-| Modèle total | ~3,71 M | 100 % |
-| `conv_input` aujourd'hui | 137 088 | 3,7 % |
-| Canaux repris tels quels (35 sur 119) | 40 320 | — |
-| Canaux des 6 positions les plus anciennes, jetés (84) | 96 768 | 2,6 % |
-| Paramètres initialisés à neuf | **0** | 0 % |
-
-Conséquence de l'abandon du plan de prise en passant : **aucun poids n'est initialisé
-aléatoirement.** La chirurgie devient une pure sélection de canaux d'entrée.
-
-Les 10 blocs résiduels, la tête policy et la tête value se copient à l'identique.
-`transfer_weights.py` doit être étendu pour **trancher** le tenseur au lieu de l'ignorer
-sur non-correspondance de forme.
-
-### Données de récupération : le replay buffer existant
-
-Les shards stockent les états en `[N, 119, 8, 8]` avec les cibles policy et value déjà
-calculées. Il suffit de les trancher vers `[N, 35, 8, 8]` pour réutiliser les 750 000
-positions comme jeu de fine-tuning supervisé. Aucune partie à générer, et rien à
-recalculer : les 35 canaux retenus sont un sous-ensemble exact des 119 existants.
-
-Réserve : les ~5 % de positions enregistrées en mode amnésie ont leur position précédente
-vide. Elles restent utilisables mais représentent une entrée que la nouvelle
-représentation ne produira plus jamais. Les exclure du fine-tuning est plus propre.
-
-Le buffer est récupérable depuis l'ancien PC de Mathieu.
-
-### 2 positions contre 1 seule : l'alternative écartée
-
-L'autre candidat sérieux était de ne garder que la position courante, 22 plans. Les deux
-options suppriment le confondant, mais pas de la même façon.
-
-| | 1 position, 22 plans | 2 positions, 35 plans (retenu) |
-|---|---|---|
-| Complétude informationnelle | oui, mais exige un plan de prise en passant | oui, sans plan supplémentaire |
-| Indice « ce qui vient de bouger » | perdu | conservé |
-| Taille des tenseurs | référence | +60 % |
-| Modif du pipeline puzzles | aucune | extraction et chargement C++ |
-| Confondant | **impossible** | évité, par convention de pipeline |
-
-Les échecs sont markoviens : position, droits de roque, case de prise en passant,
-compteurs de répétition et compteur des 50 coups déterminent entièrement l'état. Le
-dernier coup n'ajoute donc **aucune** information sur la légalité ni sur l'issue, au mieux
-un indice d'attention, « voilà ce qui vient de changer ».
-
-L'argument en faveur d'une seule position était la dernière ligne du tableau : le drapeau
-y devient non représentable, donc aucun bug de pipeline ne peut le réintroduire. Avec deux
-positions il est absent parce que l'extraction fait ce qu'il faut, et une future source de
-positions sans historique le ramènerait en silence. C'est précisément le mode de
-défaillance qui a produit le problème initial : personne n'avait décidé que les puzzles
-seraient reconnaissables, cela a émergé d'un détail de pipeline.
-
-**Arbitrage retenu par Mathieu : deux positions.** Il juge plausible que connaître le
-dernier coup de l'adversaire aide le réseau, et accepte en échange que la propriété
-anti-confondant repose sur le pipeline. Conséquence à assumer : le chargement des
-positions tactiques doit rester correct, et toute future source de positions sans
-historique est un risque de régression silencieuse. À documenter à côté du code de
-chargement, pas seulement ici.
-
-La valeur réelle de l'indice « ce qui vient de bouger » reste inconnue et mesurable : une
-fois le banc de puzzles construit, deux chirurgies et deux fine-tunings trancheraient.
-Coût GPU non négligeable, à mettre en regard du gain espéré.
-
-### Note de rectification
-
-Une version antérieure de cette entrée écartait l'option à deux positions au motif que la
-position précédente serait vide sur un puzzle. C'était faux dès lors que l'extraction
-fournit le coup de l'adversaire, ce que la doc Lichess garantit. L'argument s'appliquait
-en réalité à une option différente : garder les 8 plans en ne remplissant que la position
-précédente, ce qui laisse les 6 plus anciennes vides et déplace le drapeau d'un cran sans
-le supprimer.
-
-### Reconstruction de la position précédente pour les FEN nues (optionnel, basse priorité)
-
-**Décidé le 2026-08-07 : hors périmètre du chantier de migration.** Ni le plan de prise en
-passant explicite ni cette reconstruction ne sont essentiels. L'information est dérivable
-des deux positions conservées, et même si le réseau la rate, le MCTS génère la prise en
-passant comme coup légal : elle est cherchée avec un mauvais prior, jamais manquée. Les
-prises en passant sont rares, et les positions d'analyse en FEN nue où l'une est
-disponible le sont encore plus.
-
-Conservé ici comme amélioration possible, pas comme prérequis.
-
-**Limite résiduelle à assumer.** Avec deux positions, toute FEN nue reste légèrement hors
-distribution, reconstruction ou pas : on ne peut reconstruire la position précédente que
-s'il existe une case de prise en passant, sans quoi on ne sait pas ce qui a bougé. Cela
-concerne les positions collées à la main dans une GUI, pas le jeu réel où l'interface
-envoie la liste des coups.
-
-Quand une FEN porte une case de prise en passant, la position précédente est **uniquement
-déterminée** : le pion adverse était deux rangées derrière, et rien d'autre n'a changé
-puisqu'une poussée double ne capture rien. Dans l'orientation du tenseur, remettre le pion
-de `(f, 4)` vers `(f, 6)` et vider `(f, 5)` et `(f, 4)` reconstruit la vraie position, pas
-une approximation.
-
-À implémenter dans `loadFEN`, qui pousserait alors deux entrées dans `m_boardHistory` au
-lieu d'une. Couvre du même coup tous les cas de FEN nue, y compris `position fen`
-d'analyse sans liste de coups, et non seulement les puzzles.
-
-**Piège à ne pas rater :** `m_boardHistory.size()` sert à calculer `total_moves_val` dans
-le tenseur (`chessboard.cpp:1462`) et le numéro de coup complet dans `toFEN`. Ajouter une
-entrée synthétique décalerait les deux de un. Compenser sur `m_initial_ply_offset`, ou
-marquer l'entrée comme synthétique. C'est le seul coût réel de cette approche.
-
-### Trou existant que la décision corrige au passage
+### Trou de prise en passant, refermé au passage
 
 `getAlphaZeroTensor` n'a aucun plan de prise en passant : l'information n'existe que par
-comparaison de t=0 et t=1. Pour une position chargée par `loadFEN`, `m_boardHistory` ne
-contient qu'une entrée, donc t=1 reste vide. **Sur toutes les positions de puzzles, une
-prise en passant disponible est donc aujourd'hui invisible pour le réseau**, alors que le
-moteur la connaît et la génère dans les coups légaux.
+comparaison de deux positions consécutives. Pour une position chargée par `loadFEN`,
+`m_boardHistory` ne contient qu'une entrée, donc **sur toutes les positions de puzzles une
+prise en passant disponible est aujourd'hui invisible pour le réseau**, alors que le moteur
+la connaît et la génère dans les coups légaux.
 
-Corollaire utile : `python-chess` écrit déjà la case de prise en passant dans le champ 4
-des FEN générées par `extract_lichess_puzzle.py`. Avec un plan explicite, le
-`tactics.txt` existant porte donc toute l'information nécessaire, sans modifier
-l'extraction.
+À noter, le papier AlphaZero ne comporte pas non plus de plan de prise en passant : les
+119 plans actuels correspondent exactement à sa spécification. Le trou est hérité, pas
+introduit.
 
-### Risques
-
-- Les statistiques courantes du BatchNorm suivant `conv_input` deviennent fausses, la
-  distribution de sortie de cette couche changeant. Le fine-tuning les réadapte, mais
-  attendre un pic de loss et une perte d'Elo temporaire.
-- Le réseau utilisait réellement ces canaux ; la magnitude de la perturbation n'est pas
-  prévisible sur le papier, seulement mesurable après la chirurgie.
-- À décider : garder ou non les plans `total_moves` et `no_progress`. Ce sont les deux
-  que le bug `astype(np.uint8)` mettait à zéro dans le dataset supervisé (voir §9), donc
-  leur valeur réelle n'a jamais été éprouvée.
-
-### Ordre d'exécution
-
-Le banc de puzzles vient **avant**, c'est l'instrument avant/après de ce changement, et
-il doit gérer les deux représentations. Sans lui, impossible de savoir si la suppression
-de l'historique a réellement transféré la tactique.
-
-### Options envisagées puis écartées
-
-1. **Jeter les 8 premiers plies des parties issues de puzzles.** Trois lignes dans
-   `selfplay_manager`. Tout ce qui entre dans le dataset serait en distribution, mais on
-   perdrait la recherche à 4000 simulations sur la position de puzzle elle-même, qui est
-   tout l'intérêt de l'injection.
-2. **Fabriquer les positions tactiques depuis le corpus PGN existant**, en marquant avec
-   Stockfish celles où le meilleur coup écrase le deuxième, pour obtenir des positions
-   tranchantes avec leur historique réel. Résout le confondant sans toucher à
-   l'architecture, mais demande un pipeline de préparation complet et laisse les 96 plans
-   en place, donc n'apporte aucun des gains annexes (taille des tenseurs, coût de
-   construction, taille de la première convolution).
-3. **Historique synthétique par analyse retrograde**, ou variante plus simple répétant la
-   position courante dans les huit créneaux. Les deux créent une troisième distribution,
-   « historique fabriqué », et remplacent un confondant par un autre, moins visible. La
-   variante répétée interfère en plus avec les plans de répétition.
+Rejouer les coups referme le cas des puzzles. Restent les FEN nues collées à la main dans
+une GUI, cas mineur et hors périmètre.
 
 ### Pourquoi c'est un confondant et non un décalage de distribution
 
-La distinction a guidé la décision. Un décalage de distribution se corrige en
-élargissant la distribution, ce que fait le mode amnésie. Mais ici la **présence
-d'historique est corrélée au label** : historique absent implique presque toujours
-« position tranchante », historique présent implique « position ordinaire ». Le réseau
-n'a donc pas besoin de comprendre la tactique, il lui suffit de lire les 96 plans comme
-un drapeau.
+La distinction a guidé toute l'analyse. Un décalage de distribution se corrige en
+élargissant la distribution, ce que faisait le mode amnésie. Mais ici la présence
+d'historique est corrélée au label, donc le réseau n'a pas besoin de comprendre la
+tactique : il lui suffit de lire les 96 plans comme un drapeau.
 
-Le mode amnésie à 5 % casse la corrélation parfaite mais pas la corrélation, et surtout
-les leçons tactiques restent stockées dans une région de l'espace d'entrée que la partie
-réelle ne visite jamais. C'est ça qui bloque le transfert, et c'est pourquoi entraîner
-plus longtemps ne suffirait pas.
+Deux façons de tuer un confondant : égaliser la covariable entre les groupes, ou supprimer
+la covariable. La correction retenue égalise (les deux groupes ont désormais un historique
+réel). Les variantes à 1 ou 2 positions supprimaient.
 
-Deux façons de tuer un confondant : égaliser la covariable entre les groupes (options 1
-et 2), ou supprimer la covariable (option retenue).
+### Options écartées
+
+1. **Réduction à 2 positions (35 plans) ou 1 position (22 plans).** Abandonnées **pour ce
+   motif** : le confondant est réglé sans elles. Elles restaient justifiées par des gains
+   annexes réels et sans rapport, conservés en réserve plus bas.
+2. **Jeter les 8 premiers plies des parties issues de puzzles.** Trois lignes, mais on
+   perdrait la recherche à 4000 simulations sur la position de puzzle elle-même, qui est
+   tout l'intérêt de l'injection.
+3. **Fabriquer les positions tactiques depuis le corpus PGN via Stockfish.** Donnerait un
+   historique réel par construction et sans réseau, mais **perdrait le rating Lichess**,
+   calibré sur des millions de tentatives humaines. Rédhibitoire pour un banc stratifié par
+   difficulté. Reste une piste valable pour enrichir les données d'entraînement.
+4. **Historique synthétique par analyse retrograde**, ou variante répétant la position
+   courante dans les huit créneaux. Créent une troisième distribution, « historique
+   fabriqué », et remplacent un confondant par un autre, moins visible.
+
+### En réserve : réduction du nombre de plans comme optimisation
+
+Sans lien avec le confondant, donc à décider séparément. Gains : tenseurs 3 à 5 fois plus
+petits (replay buffer, RAM, copies), construction du tenseur d'autant moins chère,
+première convolution réduite. Coût : un fine-tuning avec pic de loss et perte d'Elo
+temporaire. Mesurable avec le banc de puzzles.
+
+Éléments d'analyse à conserver si ce chantier revient :
+
+- `119` apparaît dans **19 occurrences fonctionnelles sur 8 fichiers** (`bindings.cpp`,
+  `chessboard.cpp`, `mcts.cpp`, `onnx_evaluator.cpp`, `selfplay_manager.cpp/hpp`,
+  `export_batch_onnx.py`, `lib.py`, `model.py`), sans définition partagée. Une migration
+  partielle ne casserait pas la compilation mais ferait lire de la mémoire arbitraire à
+  ONNX Runtime via `expected_elements` (`onnx_evaluator.cpp:46`). **Introduire une
+  constante unique exposée par les bindings avant toute migration.**
+- Seul `conv_input.weight` change de forme, donc environ 96 % des poids se copieraient à
+  l'identique. `transfer_weights.py` devrait trancher le tenseur au lieu de l'ignorer sur
+  non-correspondance de forme.
+- Le replay buffer existant serait réutilisable par simple sélection de canaux, sans
+  régénérer une seule partie.
+- Les plans `total_moves` et `no_progress` sont ceux que le bug `astype(np.uint8)` mettait
+  à zéro dans le dataset supervisé (voir §9). Leur valeur réelle n'a jamais été éprouvée,
+  et ils seraient les premiers candidats à la suppression.
 
 ## 5. Alléger la représentation du plateau
 
