@@ -101,6 +101,8 @@ PYBIND11_MODULE(chess_engine, m) {
                 return result;
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
+        .def("get_all_legal_moves", &Chessboard::getAllLegalMoves)
+        .def("to_fen", &Chessboard::toFEN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)
         .def("get_board_history", static_cast<const std::vector<std::array<Square, 64>>&(Chessboard::*)() const>(&Chessboard::getBoardHistory))
         .def("get_last_move_data", [](const Chessboard& cb)
