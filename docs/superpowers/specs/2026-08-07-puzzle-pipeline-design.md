@@ -1,7 +1,7 @@
 # Pipeline de puzzles avec historique réel
 
 Date : 2026-08-07
-Statut : design en attente de validation
+Statut : design validé le 2026-08-07
 
 ## Problème
 
@@ -19,7 +19,8 @@ Conséquence : l'amélioration tactique obtenue par l'injection de puzzles **ne 
 pas en partie réelle**, où l'historique est toujours présent.
 
 Voir `docs/backlog.md` §4 pour l'historique complet de la décision, y compris les options
-écartées (réduction du nombre de plans, mode amnésie, historique synthétique).
+écartées (réduction du nombre de plans, historique synthétique, fabrication de puzzles
+maison). Le mode amnésie, lui, est conservé mais requalifié, voir plus bas.
 
 ## Objectif
 
