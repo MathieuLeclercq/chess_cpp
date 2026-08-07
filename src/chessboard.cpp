@@ -785,6 +785,79 @@ void Chessboard::loadFEN(const std::string& fen) {
     computeInitialZobrist();
 }
 
+std::string Chessboard::toFEN() const {
+    std::string fen;
+
+    // --- CHAMP 1 : Placement des pièces, de la rangée 8 vers la rangée 1 ---
+    for (int rank = 7; rank >= 0; --rank) {
+        int empty_run = 0;
+        for (int file = 0; file < 8; ++file) {
+            const Piece& p = m_board[rank * 8 + file].getPiece();
+            if (p.getType() == NONE) {
+                ++empty_run;
+                continue;
+            }
+            if (empty_run > 0) {
+                fen += std::to_string(empty_run);
+                empty_run = 0;
+            }
+            char c = '?';
+            switch (p.getType()) {
+            case PAWN:   c = 'p'; break;
+            case KNIGHT: c = 'n'; break;
+            case BISHOP: c = 'b'; break;
+            case ROOK:   c = 'r'; break;
+            case QUEEN:  c = 'q'; break;
+            case KING:   c = 'k'; break;
+            default: break;
+            }
+            fen += (p.getColor() == WHITE)
+                ? static_cast<char>(std::toupper(static_cast<unsigned char>(c)))
+                : c;
+        }
+        if (empty_run > 0) fen += std::to_string(empty_run);
+        if (rank > 0) fen += '/';
+    }
+
+    // --- CHAMP 2 : Trait ---
+    fen += (m_turn == WHITE) ? " w " : " b ";
+
+    // --- CHAMP 3 : Droits de roque ---
+    std::string castling;
+    if (m_short_castle_white) castling += 'K';
+    if (m_long_castle_white)  castling += 'Q';
+    if (m_short_castle_black) castling += 'k';
+    if (m_long_castle_black)  castling += 'q';
+    fen += castling.empty() ? "-" : castling;
+
+    // --- CHAMP 4 : Case en passant ---
+    // La FEN attend la case TRAVERSEE par le pion, pas sa case d'arrivée.
+    // Si les Blancs ont le trait, les Noirs viennent de pousser de 7 vers 5,
+    // la case traversée est donc sur la rangée 6. Symétriquement rangée 3.
+    if (m_en_passant && m_en_passant_file >= 0 && m_en_passant_file < 8) {
+        fen += ' ';
+        fen += static_cast<char>('a' + m_en_passant_file);
+        fen += (m_turn == WHITE) ? '6' : '3';
+    }
+    else {
+        fen += " -";
+    }
+
+    // --- CHAMP 5 : Compteur de la règle des 50 coups ---
+    fen += ' ';
+    fen += std::to_string(m_half_move_clock);
+
+    // --- CHAMP 6 : Numéro de coup complet ---
+    const int plies_played = m_boardHistory.empty()
+        ? 0
+        : static_cast<int>(m_boardHistory.size()) - 1;
+    const int total_ply = m_initial_ply_offset + plies_played;
+    fen += ' ';
+    fen += std::to_string(total_ply / 2 + 1);
+
+    return fen;
+}
+
 void Chessboard::setKiwipete() {
 
     ///

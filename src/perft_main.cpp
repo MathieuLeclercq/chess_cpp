@@ -65,8 +65,9 @@ int cmd_divide(const std::string& fen, int depth, const PerftOptions& opts) {
     Chessboard board;
     load_position(board, fen);
 
+    PerftReport report;
     const auto start = std::chrono::steady_clock::now();
-    const auto entries = perft_divide(board, depth, opts);
+    const auto entries = perft_divide(board, depth, opts, &report);
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
@@ -76,14 +77,19 @@ int cmd_divide(const std::string& fen, int depth, const PerftOptions& opts) {
         total += entry.second;
     }
 
-    std::cout << "\nCoups racine : " << entries.size() << "\n";
+    std::cout << "\n";
+    print_messages(report);
+    if (report.violations > 0) {
+        std::cout << "Violations   : " << report.violations << "\n";
+    }
+    std::cout << "Coups racine : " << entries.size() << "\n";
     std::cout << "Total        : " << total << "\n";
     std::cout << "Temps        : " << std::fixed << std::setprecision(2) << seconds << " s\n";
     if (seconds > 0.0) {
         std::cout << "Vitesse      : "
                   << static_cast<uint64_t>(total / seconds) << " noeuds/s\n";
     }
-    return 0;
+    return report.violations > 0 ? 1 : 0;
 }
 
 // Execute chaque position de reference jusqu'a max_depth (bornee par les

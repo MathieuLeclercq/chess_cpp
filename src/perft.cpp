@@ -47,10 +47,15 @@ void run_strict_checks(Chessboard& board,
     }
 }
 
-// Le contrôle FEN est implémenté en tâche 4.
 void run_fen_check(Chessboard& board, PerftReport& report) {
-    (void)board;
-    (void)report;
+    const std::string fen = board.toFEN();
+
+    Chessboard probe;
+    probe.loadFEN(fen);
+
+    if (probe.getZobristHash() != board.getZobristHash()) {
+        report_violation(report, "toFEN/loadFEN incoherent, hash different : " + fen);
+    }
 }
 
 uint64_t perft_rec(Chessboard& board, int depth,
@@ -109,14 +114,22 @@ PerftReport perft(Chessboard& board, int depth, const PerftOptions& opts) {
 }
 
 std::vector<std::pair<std::string, uint64_t>> perft_divide(
-    Chessboard& board, int depth, const PerftOptions& opts) {
+    Chessboard& board, int depth, const PerftOptions& opts,
+    PerftReport* report) {
 
     std::vector<std::pair<std::string, uint64_t>> result;
     if (depth <= 0) return result;
 
-    PerftReport scratch;
+    PerftReport fallback;
+    PerftReport& sink = report ? *report : fallback;
+
     std::vector<Move> moves = board.getAllLegalMoves();
     result.reserve(moves.size());
+
+    // La position racine doit etre controlee elle aussi : perft_rec ne voit
+    // que ses descendants.
+    if (opts.strict)    run_strict_checks(board, moves, sink);
+    if (opts.check_fen) run_fen_check(board, sink);
 
     for (const Move& move : moves) {
         const int orig_f = move.getOrigSquare().getFile();
@@ -125,11 +138,13 @@ std::vector<std::pair<std::string, uint64_t>> perft_divide(
         const int dest_r = move.getDestSquare().getRank();
 
         if (!board.movePiece(orig_f, orig_r, dest_f, dest_r, move.getPromotion(), false)) {
+            report_violation(sink,
+                "movePiece a refuse un coup genere : " + move_to_uci(move));
             result.emplace_back(move_to_uci(move), 0);
             continue;
         }
 
-        result.emplace_back(move_to_uci(move), perft_rec(board, depth - 1, opts, scratch));
+        result.emplace_back(move_to_uci(move), perft_rec(board, depth - 1, opts, sink));
         board.undoMove();
     }
     return result;

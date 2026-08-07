@@ -30,7 +30,10 @@ PerftReport perft(Chessboard& board, int depth, const PerftOptions& opts = {});
 
 // Compte les feuilles par coup racine. Le premier membre de chaque paire
 // est le coup en notation UCI (ex: "e2e4", "a7a8q").
+// Si report est fourni, les violations detectees pendant le parcours y sont
+// accumulees. Sans lui, elles seraient perdues.
 std::vector<std::pair<std::string, uint64_t>> perft_divide(
-    Chessboard& board, int depth, const PerftOptions& opts = {});
+    Chessboard& board, int depth, const PerftOptions& opts = {},
+    PerftReport* report = nullptr);
 
 std::string move_to_uci(const Move& move);
