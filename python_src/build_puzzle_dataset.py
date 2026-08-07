@@ -9,15 +9,25 @@ Deux sorties disjointes :
 Voir docs/superpowers/specs/2026-08-07-puzzle-pipeline-design.md
 """
 
+import argparse
+import collections
 import csv
 import hashlib
 import io
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
 import chess
 import chess.pgn
+
+from lichess_games import (
+    cached_pgn,
+    fetch_games,
+    game_id_from_url,
+    ply_hint_from_url,
+)
 
 # Motifs tactiques uniquement. Sont exclus les libelles de phase, de longueur,
 # d'issue et de provenance, qui ne decrivent pas un motif.
@@ -53,8 +63,12 @@ class PuzzleRow:
 def matches_themes(themes_field: str) -> bool:
     """Correspondance par jeton exact, pas par sous-chaine.
 
-    L'ancienne extraction faisait `theme in themes_field`, ce qui aurait fait
-    matcher 'mate' avec 'smotheredMate' des lors qu'on elargit la liste.
+    L'ancienne extraction faisait `theme in themes_field`, qui ignore les
+    frontieres de mots. Avec la liste retenue ce n'est pas un bug actif :
+    aucun jeton n'est sous-chaine d'un autre theme Lichess, donc les deux
+    methodes concordent sur des donnees reelles. La fragilite est latente et se
+    declencherait si un nom de theme court etait ajoute. Un test synthetique
+    verrouille la propriete.
     """
     return bool(TACTICAL_THEMES.intersection(themes_field.split()))
 
@@ -173,3 +187,147 @@ def match_puzzle_in_game(pgn_text: str,
 
     best = min(candidates, key=lambda c: abs(len(c) - ply_hint))
     return MatchResult(start_fen=start_fen, moves_uci=best)
+
+
+def format_line(row: PuzzleRow, match: MatchResult) -> str:
+    """Une ligne du fichier de sortie.
+
+    Le premier coup du champ Moves du CSV est la gaffe de l'adversaire, deja
+    incluse dans les coups rejoues. La solution commence donc au deuxieme.
+    """
+    return "|".join((
+        match.start_fen,
+        " ".join(match.moves_uci),
+        " ".join(row.moves[1:]),
+        str(row.rating),
+        row.themes,
+    ))
+
+
+def _read_token(path: Path) -> str | None:
+    if path.exists():
+        token = path.read_text(encoding="utf-8").strip()
+        return token or None
+    return None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--csv", type=Path,
+                        default=Path("../training_data/lichess_db_puzzle.csv"))
+    parser.add_argument("--cache", type=Path,
+                        default=Path("../training_data/lichess_games_cache"))
+    parser.add_argument("--out-train", type=Path,
+                        default=Path("../training_data/puzzles_train.txt"))
+    parser.add_argument("--out-bench", type=Path,
+                        default=Path("../data/puzzles_bench.txt"))
+    parser.add_argument("--train-target", type=int, default=100_000)
+    parser.add_argument("--bench-per-bucket", type=int, default=1250)
+    parser.add_argument("--token", type=Path,
+                        default=Path("../lichess_token.txt"))
+    parser.add_argument("--dry-run", action="store_true",
+                        help="filtre et rapporte sans rien telecharger")
+    args = parser.parse_args()
+
+    if not args.csv.exists():
+        print(f"CSV introuvable : {args.csv}", file=sys.stderr)
+        print("Telecharger depuis https://database.lichess.org/#puzzles",
+              file=sys.stderr)
+        return 2
+
+    # --- 1. Selection ---
+    train: list[PuzzleRow] = []
+    bench: dict[int, list[PuzzleRow]] = collections.defaultdict(list)
+
+    def bench_is_full() -> bool:
+        return all(len(bench[i]) >= args.bench_per_bucket
+                   for i in range(len(BENCH_BUCKETS)))
+
+    print("Lecture et filtrage du CSV...")
+    for row in read_puzzle_csv(args.csv):
+        if not game_id_from_url(row.game_url):
+            continue
+        if split_of(row.puzzle_id) == "bench":
+            index = bucket_of(row.rating)
+            if index is not None and len(bench[index]) < args.bench_per_bucket:
+                bench[index].append(row)
+        elif len(train) < args.train_target:
+            if TRAIN_RATING_MIN <= row.rating <= TRAIN_RATING_MAX:
+                train.append(row)
+
+        # Le CSV compte plusieurs millions de lignes : inutile de le lire en
+        # entier quand les deux quotas sont atteints.
+        if len(train) >= args.train_target and bench_is_full():
+            break
+
+    selected = train + [r for rows in bench.values() for r in rows]
+    print(f"  {len(train)} pour l'entrainement, "
+          f"{sum(len(v) for v in bench.values())} pour le banc")
+    for index, (low, high) in enumerate(BENCH_BUCKETS):
+        print(f"  tranche {low}-{high} : {len(bench[index])}")
+
+    if args.dry_run:
+        print("--dry-run : arret avant telechargement.")
+        return 0
+
+    # --- 2. Telechargement ---
+    game_ids = list(dict.fromkeys(
+        game_id_from_url(r.game_url) for r in selected))
+    print(f"Recuperation de {len(game_ids)} parties distinctes "
+          f"pour {len(selected)} puzzles...")
+    fetch_games(game_ids, args.cache, token=_read_token(args.token))
+
+    # --- 3. Appariement et ecriture ---
+    counters: collections.Counter = collections.Counter()
+    history_lengths: list[int] = []
+
+    def emit(rows: list[PuzzleRow], out_path: Path) -> int:
+        written = 0
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as handle:
+            for row in rows:
+                pgn = cached_pgn(game_id_from_url(row.game_url), args.cache)
+                if pgn is None:
+                    counters[MatchError.GAME_MISSING] += 1
+                    continue
+                result = match_puzzle_in_game(
+                    pgn, row.fen, ply_hint_from_url(row.game_url))
+                if isinstance(result, str):
+                    counters[result] += 1
+                    continue
+                handle.write(format_line(row, result) + "\n")
+                history_lengths.append(len(result.moves_uci))
+                written += 1
+        return written
+
+    written_train = emit(train, args.out_train)
+    written_bench = emit(
+        [r for rows in bench.values() for r in rows], args.out_bench)
+
+    # --- 4. Rapport ---
+    total = len(selected)
+    rejected = sum(counters.values())
+    short = sum(1 for n in history_lengths if n < 8)
+
+    print(f"\n{'=' * 34}\n      RAPPORT DU PIPELINE\n{'=' * 34}")
+    print(f"  Puzzles selectionnes   : {total}")
+    print(f"  Ecrits (entrainement)  : {written_train}")
+    print(f"  Ecrits (banc)          : {written_bench}")
+    print(f"  Ecartes                : {rejected} "
+          f"({100.0 * rejected / max(1, total):.2f} %)")
+    for cause, count in sorted(counters.items()):
+        print(f"    {cause:<14} : {count}")
+    if history_lengths:
+        print(f"  Historique < 8 plies   : {short} "
+              f"({100.0 * short / len(history_lengths):.2f} %)")
+    print("=" * 34)
+
+    if rejected > 0.05 * max(1, total):
+        print("\nPLUS DE 5 POUR CENT D'ECARTES. L'hypothese sur le format des "
+              "donnees est a revoir avant d'aller plus loin.", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

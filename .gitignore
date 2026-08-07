@@ -11,6 +11,8 @@ python_src/replay_buffer
 python_src/checkpoints_onnx
 docs/PGN/all
 training_data/
+python_src/tests/__pycache__
+.pytest_cache/
 lichess_bot/
 
 lichess_token.txt
