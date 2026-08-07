@@ -62,7 +62,10 @@ class Chessboard
     uint64_t m_current_zobrist_hash = 0;
 
 
-    bool isCastlePossible(int orig_file, int orig_rank, int file, int rank);
+    // Vérifie uniquement que le roi ne traverse pas de case contrôlée.
+    // Les droits de roque, les cases vides et la présence de la tour
+    // sont vérifiés en amont par getNaiveLegalMoves().
+    bool isCastleSafe(int orig_file, int orig_rank, int file, int rank);
     bool isMoveSafe(int orig_f, int orig_r, int dest_f, int dest_r, bool is_en_passant, bool is_king_move);
     void evaluateGameState();
     void computeInitialZobrist();

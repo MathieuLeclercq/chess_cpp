@@ -387,7 +387,7 @@ void Chessboard::getLegalMovesForSquare(int file, int rank, std::vector<Move>& r
             continue;
 
         if (is_king_move && std::abs(file - dest_file) == 2) {
-            if (!isCastlePossible(file, rank, dest_file, dest_rank))
+            if (!isCastleSafe(file, rank, dest_file, dest_rank))
                 continue;
         }
 
@@ -443,7 +443,7 @@ bool Chessboard::hasAnyLegalMove() {
                 int dest_rank = move.getDestSquare().getRank();
 
                 if (is_king_move && std::abs(i - dest_file) == 2) {
-                    if (!isCastlePossible(i, j, dest_file, dest_rank))
+                    if (!isCastleSafe(i, j, dest_file, dest_rank))
                         continue;
                 }
 
@@ -924,7 +924,7 @@ void Chessboard::applyPromotion(Square& second_square, PieceType force_promotion
     }
 }
 
-bool Chessboard::isCastlePossible(int orig_file, int orig_rank, int file, int rank)
+bool Chessboard::isCastleSafe(int orig_file, int orig_rank, int file, int rank)
 {
     bool short_castle = (file == 6);
     bool long_castle = (file == 2);
