@@ -206,11 +206,122 @@ def run(target_positions, seed):
     return 0
 
 
+def engine_perft(board, depth):
+    """Perft de reference cote moteur C++, pilote depuis Python.
+
+    Lent, mais la bisection ne l'appelle qu'a faible profondeur et seulement
+    sur la branche fautive.
+    """
+    if depth == 0:
+        return 1
+    total = 0
+    for move in sorted(engine_moves(board)):
+        of, orr, df, dr, promo = move
+        board.move_piece(of, orr, df, dr, CHAR_TO_PROMO[promo], False)
+        total += engine_perft(board, depth - 1)
+        board.undo_move()
+    return total
+
+
+def engine_divide(board, depth):
+    """Sous-totaux par coup racine, cote moteur."""
+    result = {}
+    for move in sorted(engine_moves(board)):
+        of, orr, df, dr, promo = move
+        board.move_piece(of, orr, df, dr, CHAR_TO_PROMO[promo], False)
+        result[describe(move)] = engine_perft(board, depth - 1)
+        board.undo_move()
+    return result
+
+
+def reference_perft(ref, depth):
+    if depth == 0:
+        return 1
+    total = 0
+    for move in ref.legal_moves:
+        ref.push(move)
+        total += reference_perft(ref, depth - 1)
+        ref.pop()
+    return total
+
+
+def reference_divide(fen, depth):
+    """Sous-totaux par coup racine, cote python-chess."""
+    ref = chess.Board(fen)
+    result = {}
+    for move in ref.legal_moves:
+        ref.push(move)
+        result[move.uci()] = reference_perft(ref, depth - 1)
+        ref.pop()
+    return result
+
+
+def bisect(fen, depth):
+    """Descend jusqu'a la position et au coup exacts ou les deux moteurs divergent."""
+    board = chess_engine.Chessboard()
+    board.load_fen(fen)
+    path = []
+
+    while depth > 0:
+        current_fen = board.to_fen()
+        print(f"\nProfondeur {depth} : {current_fen}")
+
+        mine = engine_moves(board)
+        theirs = reference_moves(current_fen)
+        if mine != theirs:
+            print("\n*** DIVERGENCE SUR LA LISTE DE COUPS ***")
+            print(f"FEN     : {current_fen}")
+            print(f"Chemin  : {' '.join(path) if path else '(racine)'}")
+            print(f"En trop : {sorted(describe(m) for m in mine - theirs)}")
+            print(f"Manquant: {sorted(describe(m) for m in theirs - mine)}")
+            return 1
+
+        if depth == 1:
+            print("\nListes identiques a la profondeur 1, aucune divergence trouvee.")
+            return 0
+
+        mine_div = engine_divide(board, depth)
+        theirs_div = reference_divide(current_fen, depth)
+
+        culprit = None
+        for uci, count in sorted(mine_div.items()):
+            if theirs_div.get(uci) != count:
+                culprit = uci
+                print(f"  coup fautif : {uci}, "
+                      f"moteur {count}, reference {theirs_div.get(uci)}")
+                break
+
+        if culprit is None:
+            print(f"\nAucun ecart : les deux moteurs concordent sur les "
+                  f"{len(mine_div)} coups racine a la profondeur {depth}.")
+            if not path:
+                print("La position de depart est saine.")
+            else:
+                print("La divergence signalee plus haut n'est pas reproduite ici.")
+            return 0
+
+        of = ord(culprit[0]) - ord("a")
+        orr = int(culprit[1]) - 1
+        df = ord(culprit[2]) - ord("a")
+        dr = int(culprit[3]) - 1
+        promo = culprit[4] if len(culprit) == 5 else ""
+        board.move_piece(of, orr, df, dr, CHAR_TO_PROMO[promo], False)
+        path.append(culprit)
+        depth -= 1
+
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--positions", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--bisect", nargs=2, metavar=("FEN", "DEPTH"),
+                        help="localise la divergence sous cette position")
     args = parser.parse_args()
+
+    if args.bisect:
+        sys.exit(bisect(args.bisect[0], int(args.bisect[1])))
     sys.exit(run(args.positions, args.seed))
 
 
