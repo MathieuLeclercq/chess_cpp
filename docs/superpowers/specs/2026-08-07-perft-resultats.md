@@ -119,12 +119,20 @@ affichait aucune : toute violation détectée via `divide` était perdue
 silencieusement. Trouvé par l'étape de preuve de déclenchement, pas par
 relecture. Corrigé au commit `3a415bc`.
 
-**Dans la configuration du projet (non corrigé, hors périmètre).**
-`pybind11-stubgen` est requis par l'étape post-build de `CMakeLists.txt` mais
-absent de `python_src/requirements.txt`. La génération des stubs a aussi besoin
-de `numpy` pour résoudre les annotations de type de `GameResult`. Un
-`pip install -r requirements.txt` sur un environnement neuf ne suffit donc pas à
-construire le projet.
+**Dans la configuration du projet.** Un audit des imports a révélé deux
+dépendances réellement absentes de `python_src/requirements.txt` : `onnx`
+(importé par `lib.py`) et `whr` (importé par `tournament_elo.py`). Par ailleurs
+`torch~=2.4.0` n'a aucune wheel pour Python 3.13, alors que `CMakeLists.txt`
+exige `find_package(Python3 3.13 ...)` : les deux fichiers de configuration
+étaient mutuellement incompatibles. Traité séparément par le passage à uv
+(`pyproject.toml` + `uv.lock`, torch 2.13.0+cu126).
+
+Rectification d'une version antérieure de ce rapport : elle affirmait que
+`pybind11-stubgen` et `numpy` manquaient à `requirements.txt`. C'était faux, ils
+y figuraient tous les deux. L'erreur venait d'un `Select-String -SimpleMatch`
+appliqué à un motif à alternance, qui cherchait la chaîne littérale
+`stubgen|pybind`. Ce qui manquait était dans un venv créé à la main sans
+installer le fichier de dépendances.
 
 Deux constats de propreté du dépôt, également hors périmètre :
 `chess_engine.pdb` (45 Mo), `chess_engine.cp313-win_amd64.pyd` et
