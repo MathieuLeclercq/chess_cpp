@@ -5,9 +5,8 @@ A custom chess engine built in C++ and Python.
 * AlphaZero-style (MCTS + Neural Network).
 * Designed for training on consumer-grade setups (single GPU).
 * Supervised pretraining (Lichess & Grandmaster datasets), Unsupervised self-play.
-* Move generator validated by a full perft suite (610M nodes, zero mismatches).
 * UCI compatible.
-* [Lichess Profile (rating: 2217 in Rapid)](https://lichess.org/@/mboobot)
+* [Lichess Profile (rating: around 2200 in Rapid)](https://lichess.org/@/mboobot)
 
 ![Interface graphique AlphaChess-Zero](docs/screenshots/gui.png)
 
@@ -25,10 +24,10 @@ While the core architecture heavily relies on DeepMind's 2017 paper, several ada
 
 - **Supervised Initialization:** Instead of starting from purely random weights (Zero-knowledge), the Policy and Value networks were pre-trained on a dataset of Grandmaster and high-level Lichess games. This massively accelerates the initial grasp of chess fundamentals.
 - **Optimizer:** The original implementation used SGD with Momentum and manual step decay. This project uses **AdamW**, which provides decoupled weight decay and faster, more stable convergence for this scale.
-- **Compute-Aware Self-Play (Fast/Slow Moves):** To maximize hardware efficiency, self-play games mix "fast" moves (100 MCTS simulations) and "slow" moves (700 simulations). This generates more terminal game states to train the Value head faster, while maintaining enough deep MCTS searches to provide high-quality targets for the Policy head. The slow-move ratio is raised in endgames (6 pieces or fewer), where Grandmaster datasets provide few mating examples.
+- **Compute-Aware Self-Play (Fast/Slow Moves):** To maximize hardware efficiency, self-play games mix "fast" moves (100 MCTS simulations) and "slow" moves (700 simulations). This generates more terminal game states to train the Value head faster, while maintaining enough deep MCTS searches to provide high-quality targets for the Policy head.
 - **First Play Urgency (FPU):** In DeepMind's paper, unvisited MCTS nodes are initialized with a Q-value of 0. In this engine, inheriting [LeelaChessZero](https://github.com/LeelaChessZero/lc0)'s approach, unvisited nodes inherit their parent's value. This reduces catastrophic blunders during early exploration.
-- **Tactical FEN Injection:** 20% of self-play games start from a Lichess puzzle position instead of the initial position, with a deeper first search and stronger root noise, to expose the network to sharp tactics it would rarely reach on its own.
-- **History Dropout ("amnesia mode"):** Puzzle positions carry no move history, full games do. To stop the network from using the presence of history planes as a shortcut signal, the 8-ply history stack is randomly collapsed to a single position on 5% of moves.
+- **Tactical FEN Injection:** 20% of self-play games start from a Lichess puzzle position, with a deeper first search and stronger root noise.
+- **History Dropout ("amnesia mode"):** The 8-ply history stack is collapsed to a single position on 5% of moves, so the network cannot use the presence of history planes as a shortcut signal.
 - **Network Size & Pipeline:** The ResNet is scaled down (10 blocks, 128 filters vs 20 blocks, 256 filters) to fit local VRAM constraints, with Squeeze-and-Excitation blocks added. The training loop is synchronous (Self-Play -> Train -> Evaluate) rather than fully asynchronous across thousands of TPUs.
 
 ## 🛠 Core Features
@@ -36,13 +35,12 @@ While the core architecture heavily relies on DeepMind's 2017 paper, several ada
 ### ⚡ High-Performance C++ Engine
 Unlike many Python-based RL projects, this engine is built in **C++17** for maximum efficiency:
 - **Custom Move Generator:** No external chess libraries used. Every rule (castling, en passant, promotion) is implemented from scratch.
-- **Validated:** The generator passes perft on the six standard reference positions, 610,195,852 nodes with zero mismatches. See [Testing](#-testing).
-- **Speed:** Roughly **1.8M nodes/second** in perft (Intel Core Ultra 7 255H, single thread), where each node includes full legal move generation, move execution with incremental Zobrist update, and unmake.
+- **Speed:** Roughly **1.8M nodes/second** in perft, single-threaded, each node including legal move generation, move execution and unmake.
 - **Pybind11 Integration:** The core logic is exposed to Python as a highly optimized module (`chess_engine`), allowing the RL loop to interact with the C++ state without overhead.
 
 ### 🧠 AlphaZero Pipeline
 - **Zero-Knowledge Philosophy:** The engine provides no heuristic evaluation; the model learns purely from board geometry and game outcomes.
-- **Batched MCTS:** Self-play runs many concurrent games in C++ and groups their leaf evaluations into a single GPU batch, keeping the GPU saturated without needing virtual loss.
+- **Batched MCTS:** Self-play runs many concurrent games in C++ and groups their leaf evaluations into a single GPU batch.
 - **Model Architecture:** A deep Residual Convolutional Neural Network (ResNet) with Squeeze-and-Excitation blocks, Policy and Value heads.
 
 ### 📊 Evaluation & Tournament System
@@ -80,38 +78,27 @@ Unlike many Python-based RL projects, this engine is built in **C++17** for maxi
 
 ## 🧪 Testing
 
-The move generator has a dedicated validation suite. The C++ layer is the source of truth and depends on nothing outside the standard library; reference node counts are hardcoded from the [Chess Programming Wiki](https://www.chessprogramming.org/Perft_Results).
+`chess_perft` validates the move generator against the six standard perft positions
+of the [Chess Programming Wiki](https://www.chessprogramming.org/Perft_Results),
+with reference counts hardcoded so the suite needs no external library.
 
 ```bash
-# Fast tier: 6 reference positions, depths 1-3, plus internal consistency checks
-./build/Release/chess_perft.exe bench --strict --check-fen
-
-# Full tier: up to depth 6, ~610M nodes, around 6 minutes
-./build/Release/chess_perft.exe deep --strict
-
-# Per-root-move breakdown, for locating a mismatch
-./build/Release/chess_perft.exe divide startpos 5
+./build/Release/chess_perft.exe bench --strict --check-fen   # depths 1-3, instant
+./build/Release/chess_perft.exe deep  --strict               # up to depth 6, ~6 min
+./build/Release/chess_perft.exe divide startpos 5            # per-root-move breakdown
 ```
 
-`--strict` additionally verifies that `encodeMove` loses no legal move, that policy
-indices stay within `[0, 4671]` and are pairwise distinct, and that
-`hasAnyLegalMove` agrees with `getAllLegalMoves`. `--check-fen` verifies that
-`loadFEN(toFEN(b))` reproduces the same Zobrist hash as `b`.
+`--strict` also checks that `encodeMove` loses no legal move and produces unique
+in-range policy indices, and that `hasAnyLegalMove` agrees with `getAllLegalMoves`.
+`--check-fen` checks that `loadFEN(toFEN(b))` gives back the same Zobrist hash.
 
-A separate differential fuzzer plays random legal games and compares the legal
-move set against `python-chess` at every ply. It is a **diagnostic tool only**:
-it never gates validation, so the engine's independence from external chess
-libraries holds for its test suite too.
+`dev_tools/fuzz_movegen.py` is a diagnostic companion, outside the validation path:
+it plays random legal games, compares the legal move set against `python-chess` at
+every ply, and can bisect to the position where a perft count diverges.
 
 ```bash
-# 200k positions, biased towards castling and promotions
-python python_src/dev_tools/fuzz_movegen.py
-
-# Locate where a perft mismatch originates
 python python_src/dev_tools/fuzz_movegen.py --bisect "<fen>" 5
 ```
-
-Latest results: [docs/superpowers/specs/2026-08-07-perft-resultats.md](docs/superpowers/specs/2026-08-07-perft-resultats.md).
 
 ## 📈 Performance & Technical Notes
 
@@ -187,7 +174,5 @@ to point to your specific interpreter:
 
 ## 🔮 Future Work & Roadmap
 
-- **Slimmer Board Representation:** `Square` stores its own file and rank (redundant with its index) and `Piece` carries an unused material value, making a board 1280 bytes. Since `movePiece` pushes a full board copy into history on every move, this costs roughly 4.6 GB/s of memcpy during search. Packing the board and keeping only the 8 history positions the input tensor actually needs is the largest available CPU win.
-- **Transposition Table Rework:** Each entry reserves room for 128 moves (1040 bytes), so the default table costs gigabytes for ~35 useful moves per position. The key is also incomplete: it omits the move history, the fifty-move counter and the amnesia flag, all of which feed the network input, so a cache hit can return a value computed under a different context.
-- **Bitboard Representation:** Refactoring the internal board state to use bitboards. Now that a perft suite exists, this refactor can be validated rather than merely hoped for.
 - **Transformer Architecture:** Exploring Attention mechanisms to replace or augment the current ResNet topology, following recent architectural shifts in modern engines like Leela Chess Zero.
+- **Bitboard Representation:** Refactoring the internal board state in C++ to use bitboards. Bitwise operations would further optimize move generation speed.
