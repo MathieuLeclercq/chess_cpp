@@ -11,9 +11,13 @@ Voir docs/superpowers/specs/2026-08-07-puzzle-pipeline-design.md
 
 import csv
 import hashlib
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
+
+import chess
+import chess.pgn
 
 # Motifs tactiques uniquement. Sont exclus les libelles de phase, de longueur,
 # d'issue et de provenance, qui ne decrivent pas un motif.
@@ -95,3 +99,77 @@ def read_puzzle_csv(path: Path) -> Iterator[PuzzleRow]:
                 themes=themes,
                 game_url=row.get("GameUrl", ""),
             )
+
+
+class MatchError:
+    """Causes d'echec d'appariement, comptabilisees dans le rapport."""
+    NO_MATCH = "no_match"
+    AMBIGUOUS = "ambiguous"
+    GAME_MISSING = "game_missing"
+    UNREADABLE = "unreadable"
+
+
+@dataclass(frozen=True)
+class MatchResult:
+    start_fen: str
+    moves_uci: list[str]
+
+
+def position_key(board: chess.Board) -> str:
+    """Trois premiers champs de la FEN : placement, trait, droits de roque.
+
+    Sont exclus les compteurs, dont les conventions peuvent differer entre le
+    CSV et le PGN reconstitue, ET la case en passant, pour la meme raison :
+    Lichess ne la renseigne que si une capture est possible, python-chess a sa
+    propre regle, et une divergence provoquerait un rejet a tort sur exactement
+    les positions les plus interessantes.
+    """
+    return " ".join(board.fen().split()[:3])
+
+
+def match_puzzle_in_game(pgn_text: str,
+                         puzzle_fen: str,
+                         ply_hint: int | None):
+    """Rejoue la partie et localise le ply atteignant la position du puzzle.
+
+    On ne se fie pas au numero de ply de la GameUrl : il ne sert qu'a lever une
+    ambiguite. Le rejeu transforme une hypothese sur le format des donnees en
+    verification effective.
+
+    Renvoie un MatchResult, ou une constante de MatchError.
+    """
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        return MatchError.UNREADABLE
+
+    try:
+        board = game.board()
+    except ValueError:
+        return MatchError.UNREADABLE
+
+    start_fen = board.fen()
+    target = " ".join(puzzle_fen.split()[:3])
+
+    moves: list[str] = []
+    candidates: list[list[str]] = []
+
+    if position_key(board) == target:
+        candidates.append([])
+
+    for move in game.mainline_moves():
+        board.push(move)
+        moves.append(move.uci())
+        if position_key(board) == target:
+            candidates.append(list(moves))
+
+    if not candidates:
+        return MatchError.NO_MATCH
+
+    if len(candidates) == 1:
+        return MatchResult(start_fen=start_fen, moves_uci=candidates[0])
+
+    if ply_hint is None:
+        return MatchError.AMBIGUOUS
+
+    best = min(candidates, key=lambda c: abs(len(c) - ply_hint))
+    return MatchResult(start_fen=start_fen, moves_uci=best)
