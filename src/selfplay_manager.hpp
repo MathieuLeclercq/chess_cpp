@@ -77,7 +77,11 @@ private:
 
     // pour entrainement tactique sur puzzles lichess
     std::vector<char> m_is_tactical;
-    std::vector<std::string> m_tactical_fens;
+    struct TacticalPuzzle {
+        std::string start_fen;
+        std::vector<std::string> moves; // UCI, jusqu'à la position du puzzle incluse
+    };
+    std::vector<TacticalPuzzle> m_tactical_puzzles;
 
 
 public:
@@ -91,5 +95,5 @@ private:
     void play_best_move(int game_idx);
     void roll_next_move(int game_idx);
     void execute_gpu_batch();
-    void load_tactical_fens(const std::string& filepath);
+    void load_tactical_puzzles(const std::string& filepath);
 };

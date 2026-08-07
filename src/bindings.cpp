@@ -101,6 +101,7 @@ PYBIND11_MODULE(chess_engine, m) {
                 return result;
             })
         .def("move_piece_san", &Chessboard::movePieceSAN)
+        .def("move_piece_uci", &Chessboard::movePieceUCI)
         .def("get_all_legal_moves", &Chessboard::getAllLegalMoves)
         .def("to_fen", &Chessboard::toFEN)
         .def("get_legal_move_indices", &Chessboard::getLegalMoveIndices)

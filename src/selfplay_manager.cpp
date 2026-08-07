@@ -5,6 +5,7 @@
 #include <omp.h>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include "selfplay_manager.hpp"
 #include <piece.hpp>
 
@@ -35,7 +36,7 @@ SelfPlayManager::SelfPlayManager(
     m_shared_mcts = std::make_unique<MCTS>(m_evaluator, tt_size);
 
     m_is_tactical.resize(num_concurrent_games, false);
-    load_tactical_fens("../training_data/tactics.txt");
+    load_tactical_puzzles("../training_data/puzzles_train.txt");
 
     for (int i = 0; i < num_concurrent_games; ++i) {
         reset_game(i);
@@ -48,12 +49,35 @@ void SelfPlayManager::reset_game(int game_idx) {
 
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
 
-    // --- INJECTION DE FEN (20% du temps) ---
-    if (!m_tactical_fens.empty() && dis(m_rng) < 0.2f) {
-        std::uniform_int_distribution<size_t> idx_dis(0, m_tactical_fens.size() - 1);
-        size_t random_idx = idx_dis(m_rng);
-        m_boards[game_idx].loadFEN(m_tactical_fens[random_idx]);
-        m_is_tactical[game_idx] = true;
+    // --- INJECTION DE PUZZLE (20% du temps) ---
+    if (!m_tactical_puzzles.empty() && dis(m_rng) < 0.2f) {
+        std::uniform_int_distribution<size_t> idx_dis(0, m_tactical_puzzles.size() - 1);
+        const TacticalPuzzle& puzzle = m_tactical_puzzles[idx_dis(m_rng)];
+
+        m_boards[game_idx].loadFEN(puzzle.start_fen);
+
+        // On rejoue les coups réels de la partie pour que m_boardHistory
+        // contienne un historique authentique. Sans ça, la position serait
+        // structurellement identifiable comme un puzzle par le réseau, et
+        // l'apprentissage tactique ne se transférerait pas en partie.
+        bool replay_ok = true;
+        for (const std::string& move : puzzle.moves) {
+            if (!m_boards[game_idx].movePieceUCI(move)) {
+                replay_ok = false;
+                break;
+            }
+        }
+
+        if (replay_ok) {
+            m_is_tactical[game_idx] = true;
+        }
+        else {
+            // Rejeu impossible : on retombe sur une partie normale plutôt que
+            // de partir d'une position corrompue.
+            m_boards[game_idx].clear();
+            m_boards[game_idx].setStartupPieces();
+            m_is_tactical[game_idx] = false;
+        }
     }
     else {
         m_boards[game_idx].setStartupPieces();
@@ -228,9 +252,18 @@ void SelfPlayManager::roll_next_move(int game_idx) {
     m_sims_target[game_idx] = m_is_slow_move[game_idx] ? m_slow_sims : m_fast_sims;
     m_sims_completed[game_idx] = 0;
 
-    // equivalent dropout pour éviter le shortcut learning 
-    // avec l'apprentissage sur les FENs de puzzles (parties sans historique)
-    if (!m_is_tactical[game_idx] && dis(m_rng) < 0.05f) {
+    // Augmentation de données : on retire parfois l'historique pour que le
+    // réseau sache fonctionner sans lui.
+    //
+    // Ce n'est PLUS un correctif de confondant : depuis que les positions de
+    // puzzles portent l'historique réel de leur partie d'origine, l'absence
+    // d'historique ne corrèle plus avec la tacticité. Le motif restant est la
+    // robustesse aux entrées sans historique, cas de la FEN collée à la main
+    // dans une GUI.
+    //
+    // Taux non mesuré. Le banc de puzzles pourra le valider en évaluant les
+    // mêmes positions avec et sans historique.
+    if (dis(m_rng) < 0.01f) {
         m_boards[game_idx].setAmnesiaMode(true);
     }
     else {
@@ -401,13 +434,39 @@ std::vector<GameResult> SelfPlayManager::generate_games(int total_games_to_play)
     return m_finished_games;
 }
 
-void SelfPlayManager::load_tactical_fens(const std::string& filepath) {
+void SelfPlayManager::load_tactical_puzzles(const std::string& filepath) {
     std::ifstream file(filepath);
     std::string line;
+    int malformed = 0;
+
+    // Format : <fen_initiale>|<coups_uci>|<solution>|<rating>|<themes>
+    // Seuls les deux premiers champs nous concernent.
     while (std::getline(file, line)) {
-        if (!line.empty()) {
-            m_tactical_fens.push_back(line);
-        }
+        if (line.empty()) continue;
+
+        const size_t first = line.find('|');
+        if (first == std::string::npos) { malformed++; continue; }
+        const size_t second = line.find('|', first + 1);
+
+        TacticalPuzzle puzzle;
+        puzzle.start_fen = line.substr(0, first);
+
+        const std::string moves_field = (second == std::string::npos)
+            ? line.substr(first + 1)
+            : line.substr(first + 1, second - first - 1);
+
+        std::istringstream iss(moves_field);
+        std::string move;
+        while (iss >> move) puzzle.moves.push_back(move);
+
+        if (puzzle.start_fen.empty()) { malformed++; continue; }
+        m_tactical_puzzles.push_back(std::move(puzzle));
     }
-    std::cout << "Charge " << m_tactical_fens.size() << " FENs tactiques en memoire." << std::endl;
+
+    std::cout << "Charge " << m_tactical_puzzles.size()
+              << " puzzles tactiques avec historique." << std::endl;
+    if (malformed > 0) {
+        std::cout << "  " << malformed << " ligne(s) mal formee(s) ignoree(s)."
+                  << std::endl;
+    }
 }

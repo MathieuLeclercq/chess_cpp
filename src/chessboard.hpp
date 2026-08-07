@@ -121,6 +121,9 @@ class Chessboard
                        PieceType promotion = NONE, bool check_game_end = true);
         bool movePiece(std::string orig_square, std::string square);
         bool movePieceSAN(std::string san);
+        // Applique un coup en notation UCI ("e2e4", "a7a8q").
+        // Renvoie false si la chaîne est mal formée ou le coup illégal.
+        bool movePieceUCI(const std::string& uci);
         void undoMove();
         void updateHistory(const Move& move);
         void updateCastleFlags();

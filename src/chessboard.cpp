@@ -1414,6 +1414,38 @@ bool Chessboard::movePieceSAN(std::string san)
     }
 }
 
+bool Chessboard::movePieceUCI(const std::string& uci)
+{
+    if (uci.size() < 4 || uci.size() > 5) return false;
+
+    const int orig_file = uci[0] - 'a';
+    const int orig_rank = uci[1] - '1';
+    const int dest_file = uci[2] - 'a';
+    const int dest_rank = uci[3] - '1';
+
+    if (orig_file < 0 || orig_file > 7 || orig_rank < 0 || orig_rank > 7 ||
+        dest_file < 0 || dest_file > 7 || dest_rank < 0 || dest_rank > 7)
+        return false;
+
+    PieceType promotion = NONE;
+    if (uci.size() == 5) {
+        switch (std::tolower(static_cast<unsigned char>(uci[4]))) {
+        case 'q': promotion = QUEEN;  break;
+        case 'r': promotion = ROOK;   break;
+        case 'b': promotion = BISHOP; break;
+        case 'n': promotion = KNIGHT; break;
+        default: return false;
+        }
+    }
+    else if (m_board[orig_rank * 8 + orig_file].getPiece().getType() == PAWN
+             && (dest_rank == 0 || dest_rank == 7)) {
+        // Convention AlphaZero : promotion en dame par défaut.
+        promotion = QUEEN;
+    }
+
+    return movePiece(orig_file, orig_rank, dest_file, dest_rank, promotion, false);
+}
+
 void Chessboard::undoMove()
 {
     if (m_moveHistory.empty()) return;
