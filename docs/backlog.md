@@ -60,27 +60,86 @@ aléatoire ou un bestmove illégal en partie. Correctif : `self.stop_search()` e
 
 Plus mineur : `MCTS::get_root_q()` (`mcts.cpp:366`) lit l'arbre sans prendre le mutex.
 
-## 4. Confondant historique / tactique — DÉCIDÉ : suppression des plans d'historique
+## 4. Confondant historique / tactique — DÉCIDÉ : réduction à 2 positions
 
-**Décision du 2026-08-07 : passer à T=1 avec un plan de prise en passant explicite.**
-Représentation cible : 12 plans de pièces + 2 plans de répétition + 1 plan de prise en
-passant + 7 plans constants = 22 plans, contre 119 aujourd'hui.
+**Décision du 2026-08-07 : garder la position courante et la position précédente**, plus
+un plan de prise en passant explicite. **36 plans contre 119 aujourd'hui.**
+
+Note de vocabulaire, la source de confusion pendant la discussion : on compte le nombre
+total de positions dans la pile, pas le nombre de positions passées. L'état actuel est
+donc « courante + 7 précédentes », et la cible « courante + 1 précédente ». Le dernier
+coup joué est encodé par la différence entre les deux.
 
 Effet mesuré par Mathieu dans Nibbler avant la décision : sur une position de puzzle
 présentée sans historique, le prior de recherche du coup tactique est nettement plus
 haut, donc le coup est trouvé. Avec historique, il ne l'est pas. Le raccourci est
 confirmé empiriquement.
 
+### Layout cible
+
+| Plans | Contenu |
+|---|---|
+| 0-11 | pièces, position courante (P1 pion→roi 0-5, P2 6-11) |
+| 12-13 | répétitions, position courante (rep==2, rep≥3) |
+| 14-25 | pièces, position précédente |
+| 26-27 | répétitions, position précédente |
+| 28 | prise en passant, case cible |
+| 29 | couleur au trait |
+| 30 | nombre de coups normalisé |
+| 31-34 | droits de roque (p1 K, p1 Q, p2 K, p2 Q) |
+| 35 | compteur des 50 coups normalisé |
+
+Décision mineure laissée ouverte : garder les plans de répétition sur les deux positions
+(36 plans, choix fidèle au code actuel qui les calcule par instantané) ou seulement sur la
+courante (34 plans). Recommandation : garder les deux, 2 plans ne pèsent rien.
+
+### Prérequis : une constante unique
+
+`119` apparaît dans **19 occurrences fonctionnelles réparties sur 8 fichiers**
+(`bindings.cpp`, `chessboard.cpp`, `mcts.cpp`, `onnx_evaluator.cpp`,
+`selfplay_manager.cpp/hpp`, `export_batch_onnx.py`, `lib.py`, `model.py`), sans aucune
+définition partagée.
+
+Une migration partielle ne produirait pas d'erreur de compilation mais un désaccord
+silencieux entre `expected_elements` dans `onnx_evaluator.cpp:46` et la taille réelle du
+buffer, donc ONNX Runtime lisant de la mémoire arbitraire. **Introduire la constante
+unique avant de migrer**, et l'exposer par les bindings pour que `model.py` et le
+constructeur de tenseur C++ ne puissent pas diverger.
+
+### Travail induit côté puzzles
+
+`extract_lichess_puzzle.py` écrit aujourd'hui la FEN **d'après** le coup de l'adversaire :
+
+```python
+board.push(chess.Move.from_uci(moves[0]))   # on joue la gaffe
+outfile.write(board.fen() + "\n")
+```
+
+Chargée telle quelle par `loadFEN`, cette position a `m_boardHistory` de taille 1, donc
+la position précédente serait vide et le confondant survivrait. Il faut écrire la FEN
+d'**avant** plus le coup, et côté C++ charger puis jouer le coup pour que la pile ait
+deux entrées réelles.
+
+C'est le prix d'entrée de ce choix, et c'est aussi ce qui fait que la propriété repose sur
+le pipeline plutôt que sur la structure du tenseur (voir la comparaison plus bas).
+
+### Devient du code mort
+
+Le mode amnésie (`setAmnesiaMode`, `m_amnesia_mode`, le tirage à 5 % dans
+`roll_next_move`) n'avait pour but que de casser ce confondant. Il devient inutile et doit
+être retiré.
+
 ### Coût réel : bien inférieur à un réentraînement complet
 
 Un seul tenseur change de forme, `conv_input.weight`, de `[128, 119, 3, 3]` à
-`[128, 22, 3, 3]`. Décompte sur l'architecture actuelle :
+`[128, 36, 3, 3]`. Décompte sur l'architecture actuelle :
 
 | | Paramètres | Part du modèle |
 |---|---|---|
 | Modèle total | ~3,71 M | 100 % |
-| `conv_input` | 137 088 | 3,7 % |
-| Canaux t=1..7 jetés | 111 744 | 3,0 % |
+| `conv_input` aujourd'hui | 137 088 | 3,7 % |
+| Canaux repris tels quels (35) | 40 320 | — |
+| Canaux t=2..7 jetés (84) | 96 768 | 2,6 % |
 | Nouveau canal en passant, initialisé à zéro | 1 152 | 0,03 % |
 
 Les 10 blocs résiduels, la tête policy et la tête value se copient à l'identique.
@@ -90,54 +149,61 @@ sur non-correspondance de forme.
 ### Données de récupération : le replay buffer existant
 
 Les shards stockent les états en `[N, 119, 8, 8]` avec les cibles policy et value déjà
-calculées. Il suffit de les trancher vers `[N, 22, 8, 8]` pour réutiliser les 750 000
+calculées. Il suffit de les trancher vers `[N, 36, 8, 8]` pour réutiliser les 750 000
 positions comme jeu de fine-tuning supervisé. Aucune partie à générer.
 
-La prise en passant est récupérable depuis les tenseurs stockés avant de jeter t=1 :
-chercher un pion adverse présent en t=1 et absent en t=0, avec la case deux rangées plus
-loin en sens inverse. Échoue pour les ~5 % de positions en mode amnésie, où t=1 est déjà
-vide.
+Le nouveau plan de prise en passant se calcule depuis les deux positions **conservées** :
+chercher un pion adverse présent dans la position précédente et absent dans la courante,
+avec la case deux rangées plus loin en sens inverse. Échoue pour les ~5 % de positions
+enregistrées en mode amnésie, où la position précédente est déjà vide ; les exclure du
+calcul plutôt que d'y écrire un zéro trompeur.
 
 Le buffer est récupérable depuis l'ancien PC de Mathieu.
 
-### T=1 contre T=2 : la vraie comparaison
+### 2 positions contre 1 seule : l'alternative écartée
 
-Rectification d'une version antérieure de cette entrée, qui écartait T=2 au motif que
-t=1 serait vide sur une position de puzzle. C'est faux dès lors que l'extraction fournit
-le coup de l'adversaire : la doc Lichess précise que la FEN du CSV est la position
-**avant** ce coup et que `Moves[0]` est ce coup. En écrivant la FEN d'avant plus le coup,
-et en le rejouant côté C++, t=1 est rempli légitimement pour les puzzles comme pour les
-parties. **T=2 est donc bien exempt de confondant.**
+L'autre candidat sérieux était de ne garder que la position courante, 22 plans. Les deux
+options suppriment le confondant, mais pas de la même façon.
 
-L'argument invalide s'applique en réalité à une option différente : garder les 8 plans en
-ne remplissant que t=1, ce qui laisse t=2 à t=7 vides et déplace le drapeau de t=1 vers
-t=2 sans le supprimer.
-
-Comparaison réelle :
-
-| | T=1, 22 plans | T=2, 36 plans |
+| | 1 position, 22 plans | 2 positions, 36 plans (retenu) |
 |---|---|---|
 | Complétude informationnelle | oui, avec plan de prise en passant | oui |
 | Indice « ce qui vient de bouger » | perdu | conservé |
 | Taille des tenseurs | référence | +60 % |
 | Modif du pipeline puzzles | aucune | extraction et chargement C++ |
-| Confondant | **impossible** | évité, par convention |
+| Confondant | **impossible** | évité, par convention de pipeline |
 
 Les échecs sont markoviens : position, droits de roque, case de prise en passant,
 compteurs de répétition et compteur des 50 coups déterminent entièrement l'état. Le
-dernier coup n'ajoute aucune information sur la légalité ni sur l'issue, au mieux un
-indice d'attention.
+dernier coup n'ajoute donc **aucune** information sur la légalité ni sur l'issue, au mieux
+un indice d'attention, « voilà ce qui vient de changer ».
 
-Le motif retenu pour T=1 est la dernière ligne du tableau, pas l'avant-dernière : avec
-T=1 le drapeau n'est pas représentable, donc aucun bug de pipeline ne peut le
-réintroduire. Avec T=2 il est absent parce que l'extraction fait ce qu'il faut, et une
-future source de positions sans historique le ramènerait en silence. C'est précisément
-le mode de défaillance qui a produit le problème initial : personne n'avait décidé que
-les puzzles seraient reconnaissables, cela a émergé d'un détail de pipeline.
+L'argument en faveur d'une seule position était la dernière ligne du tableau : le drapeau
+y devient non représentable, donc aucun bug de pipeline ne peut le réintroduire. Avec deux
+positions il est absent parce que l'extraction fait ce qu'il faut, et une future source de
+positions sans historique le ramènerait en silence. C'est précisément le mode de
+défaillance qui a produit le problème initial : personne n'avait décidé que les puzzles
+seraient reconnaissables, cela a émergé d'un détail de pipeline.
 
-La valeur de l'indice « ce qui vient de bouger » reste inconnue et mesurable : une fois
-le banc de puzzles construit, deux chirurgies et deux fine-tunings trancheraient. Coût
-GPU non négligeable, à mettre en regard du gain espéré.
+**Arbitrage retenu par Mathieu : deux positions.** Il juge plausible que connaître le
+dernier coup de l'adversaire aide le réseau, et accepte en échange que la propriété
+anti-confondant repose sur le pipeline. Conséquence à assumer : le chargement des
+positions tactiques doit rester correct, et toute future source de positions sans
+historique est un risque de régression silencieuse. À documenter à côté du code de
+chargement, pas seulement ici.
+
+La valeur réelle de l'indice « ce qui vient de bouger » reste inconnue et mesurable : une
+fois le banc de puzzles construit, deux chirurgies et deux fine-tunings trancheraient.
+Coût GPU non négligeable, à mettre en regard du gain espéré.
+
+### Note de rectification
+
+Une version antérieure de cette entrée écartait l'option à deux positions au motif que la
+position précédente serait vide sur un puzzle. C'était faux dès lors que l'extraction
+fournit le coup de l'adversaire, ce que la doc Lichess garantit. L'argument s'appliquait
+en réalité à une option différente : garder les 8 plans en ne remplissant que la position
+précédente, ce qui laisse les 6 plus anciennes vides et déplace le drapeau d'un cran sans
+le supprimer.
 
 ### Trou existant que la décision corrige au passage
 
