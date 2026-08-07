@@ -100,18 +100,44 @@ vide.
 
 Le buffer est récupérable depuis l'ancien PC de Mathieu.
 
-### Pourquoi pas T=2 en filet de sécurité
+### T=1 contre T=2 : la vraie comparaison
 
-Garder deux pas de temps préserverait la déduction de la prise en passant pour 14 plans
-seulement, mais laisserait le confondant à moitié vivant : sur une position de puzzle,
-t=1 serait vide, donc le drapeau existe encore, simplement plus faible. On paierait le
-réentraînement sans supprimer la cause.
+Rectification d'une version antérieure de cette entrée, qui écartait T=2 au motif que
+t=1 serait vide sur une position de puzzle. C'est faux dès lors que l'extraction fournit
+le coup de l'adversaire : la doc Lichess précise que la FEN du CSV est la position
+**avant** ce coup et que `Moves[0]` est ce coup. En écrivant la FEN d'avant plus le coup,
+et en le rejouant côté C++, t=1 est rempli légitimement pour les puzzles comme pour les
+parties. **T=2 est donc bien exempt de confondant.**
 
-L'argument vaut aussi pour l'idée de reconstruire un historique de taille 1 depuis les
-puzzles. C'est faisable, la doc Lichess précise que la FEN du CSV est la position
-**avant** le coup de l'adversaire et que `Moves[0]` est ce coup, et
-`extract_lichess_puzzle.py` le joue déjà. Mais avec une pile de 8, remplir t=0 et t=1
-laisse t=2 à t=7 vides : le drapeau se déplace de t=1 vers t=2, il ne disparaît pas.
+L'argument invalide s'applique en réalité à une option différente : garder les 8 plans en
+ne remplissant que t=1, ce qui laisse t=2 à t=7 vides et déplace le drapeau de t=1 vers
+t=2 sans le supprimer.
+
+Comparaison réelle :
+
+| | T=1, 22 plans | T=2, 36 plans |
+|---|---|---|
+| Complétude informationnelle | oui, avec plan de prise en passant | oui |
+| Indice « ce qui vient de bouger » | perdu | conservé |
+| Taille des tenseurs | référence | +60 % |
+| Modif du pipeline puzzles | aucune | extraction et chargement C++ |
+| Confondant | **impossible** | évité, par convention |
+
+Les échecs sont markoviens : position, droits de roque, case de prise en passant,
+compteurs de répétition et compteur des 50 coups déterminent entièrement l'état. Le
+dernier coup n'ajoute aucune information sur la légalité ni sur l'issue, au mieux un
+indice d'attention.
+
+Le motif retenu pour T=1 est la dernière ligne du tableau, pas l'avant-dernière : avec
+T=1 le drapeau n'est pas représentable, donc aucun bug de pipeline ne peut le
+réintroduire. Avec T=2 il est absent parce que l'extraction fait ce qu'il faut, et une
+future source de positions sans historique le ramènerait en silence. C'est précisément
+le mode de défaillance qui a produit le problème initial : personne n'avait décidé que
+les puzzles seraient reconnaissables, cela a émergé d'un détail de pipeline.
+
+La valeur de l'indice « ce qui vient de bouger » reste inconnue et mesurable : une fois
+le banc de puzzles construit, deux chirurgies et deux fine-tunings trancheraient. Coût
+GPU non négligeable, à mettre en regard du gain espéré.
 
 ### Trou existant que la décision corrige au passage
 
