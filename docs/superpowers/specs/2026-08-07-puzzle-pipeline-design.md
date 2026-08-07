@@ -118,13 +118,17 @@ Les mats nommés (`backRankMate`, `smotheredMate`, etc.) sont des sous-ensembles
 ### Correspondance exacte, pas par sous-chaîne
 
 `extract_lichess_puzzle.py` fait aujourd'hui `any(theme in themes for theme in
-TARGET_THEMES)`, où `themes` est la chaîne brute. C'est une correspondance de sous-chaîne.
-Sans conséquence avec le seul filtre `mateIn1`, mais faux dès qu'on élargit : `mate`
-matcherait `smotheredMate` et tous les mats nommés, `pin` matcherait `pinning` s'il
-existait.
+TARGET_THEMES)`, où `themes` est la chaîne brute : une correspondance de sous-chaîne, qui
+ignore les frontières de mots.
 
-Le nouveau pipeline découpe la liste de thèmes sur les espaces et compare des jetons
-exacts.
+Précision, vérifiée à l'implémentation : **ce n'est pas un bug actif.** Avec la liste de
+thèmes retenue, aucun jeton n'est sous-chaîne d'un autre thème Lichess, donc sur des
+données réelles les deux méthodes donnent le même résultat. La fragilité est latente : elle
+se déclencherait si un nom de thème court était ajouté à la liste.
+
+Le nouveau pipeline découpe néanmoins la liste sur les espaces et compare des jetons
+exacts, et un test synthétique verrouille la propriété pour qu'elle reste vraie si la liste
+s'allonge.
 
 ### Plages de rating
 

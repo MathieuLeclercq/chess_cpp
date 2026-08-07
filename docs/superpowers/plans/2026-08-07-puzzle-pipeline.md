@@ -281,10 +281,11 @@ git add pyproject.toml uv.lock python_src/build_puzzle_dataset.py python_src/tes
 git commit -F - <<'EOF'
 Ajoute le filtrage CSV et la repartition par hachage des puzzles
 
-Filtrage par jeton exact sur les themes, ce qui corrige le defaut de
-l'ancienne extraction : `theme in themes_field` faisait une
-correspondance de sous-chaine, sans consequence avec le seul filtre
-mateIn1 mais faux des qu'on elargit la liste.
+Filtrage par jeton exact sur les themes. L'ancienne extraction faisait
+`theme in themes_field`, une correspondance de sous-chaine. Ce n'est pas
+un bug actif : aucun jeton retenu n'est sous-chaine d'un autre theme
+Lichess, donc les deux methodes concordent sur les donnees reelles. La
+fragilite est latente et un test synthetique la verrouille.
 
 Repartition train / banc par hachage du PuzzleId, jamais par tirage :
 la repartition reste identique si un CSV plus recent est telecharge,
