@@ -2,19 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-> ## État au 2026-08-07, fin de session
+> ## État au 2026-08-08 : plan terminé
 >
-> **Tâches 1 à 5 terminées et committées** sur la branche `puzzle-pipeline`.
-> 31 tests verts (`uv run pytest python_src/tests`), perft non régressé
-> (`chess_perft bench --strict --check-fen` en SUCCES).
+> **Les six tâches sont faites et committées** sur la branche `puzzle-pipeline`.
+> Résultats dans `docs/superpowers/specs/2026-08-07-puzzle-pipeline-resultats.md` :
+> 100 000 puzzles d'entraînement et 5 000 pour le banc, **0 % de rejet**, 0,01 %
+> avec moins de 8 plies d'historique.
 >
-> **Reprendre à la tâche 6**, bloquée par une dépendance externe :
-> `training_data/lichess_db_puzzle.csv` est absent. Le télécharger depuis
-> <https://database.lichess.org/#puzzles> (environ 70 Mo compressés).
->
-> Avant de lancer l'exécution complète, demander confirmation à Mathieu :
-> elle enverra environ 350 requêtes à l'API Lichess. Le `--dry-run` de
-> l'étape 1 n'en envoie aucune et peut être lancé sans confirmation.
+> Suite : le cycle du banc de puzzles, qui consommera `data/puzzles_bench.txt`.
 
 **Goal:** Fournir aux positions de puzzles injectées dans le self-play l'historique réel de la partie Lichess dont elles sont issues, afin qu'elles deviennent structurellement indiscernables des positions de partie.
 
@@ -55,16 +50,16 @@ cmake --build build --config Release --target chess_engine
 
 ## Structure des fichiers
 
-| Fichier | Responsabilité |
-|---|---|
-| `pyproject.toml` (modifié) | ajout du groupe de dépendances `dev` avec pytest |
-| `python_src/lichess_games.py` (créé) | couche réseau : extraction d'IDs, lots de 300, cache disque, jeton, recul sur 429 |
-| `python_src/build_puzzle_dataset.py` (créé) | filtrage CSV, appariement de position, répartition, écriture, rapport |
-| `python_src/tests/test_lichess_games.py` (créé) | tests de la couche réseau, avec récupérateur injecté |
-| `python_src/tests/test_build_puzzle_dataset.py` (créé) | tests du filtrage, du hachage et de l'appariement |
-| `src/chessboard.hpp` / `.cpp` (modifiés) | ajout de `movePieceUCI` |
-| `src/selfplay_manager.hpp` / `.cpp` (modifiés) | chargement du nouveau format, rejeu des coups, amnésie à 1 % |
-| `data/puzzles_bench.txt` (créé par exécution) | jeu du banc, committé |
+| Fichier                                                    | Responsabilité                                                                    |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pyproject.toml` (modifié)                              | ajout du groupe de dépendances`dev` avec pytest                                 |
+| `python_src/lichess_games.py` (créé)                   | couche réseau : extraction d'IDs, lots de 300, cache disque, jeton, recul sur 429 |
+| `python_src/build_puzzle_dataset.py` (créé)            | filtrage CSV, appariement de position, répartition, écriture, rapport            |
+| `python_src/tests/test_lichess_games.py` (créé)        | tests de la couche réseau, avec récupérateur injecté                           |
+| `python_src/tests/test_build_puzzle_dataset.py` (créé) | tests du filtrage, du hachage et de l'appariement                                  |
+| `src/chessboard.hpp` / `.cpp` (modifiés)              | ajout de`movePieceUCI`                                                           |
+| `src/selfplay_manager.hpp` / `.cpp` (modifiés)        | chargement du nouveau format, rejeu des coups, amnésie à 1 %                     |
+| `data/puzzles_bench.txt` (créé par exécution)         | jeu du banc, committé                                                             |
 
 `extract_lichess_puzzle.py` n'est pas modifié : le nouveau pipeline le remplace. Il reste en place le temps de vérifier que le nouveau produit bien mieux, et sera supprimé dans un cycle ultérieur.
 
@@ -73,15 +68,17 @@ cmake --build build --config Release --target chess_engine
 ### Task 1 : Filtrage du CSV et répartition par hachage
 
 **Files:**
+
 - Create: `python_src/build_puzzle_dataset.py`
 - Create: `python_src/tests/test_build_puzzle_dataset.py`
 - Modify: `pyproject.toml`
 
 **Interfaces:**
+
 - Consumes: rien des tâches précédentes
 - Produces: `TACTICAL_THEMES: frozenset[str]`, `matches_themes(themes_field: str) -> bool`, `bucket_of(rating: int) -> int | None`, `split_of(puzzle_id: str) -> str` renvoyant `"bench"` ou `"train"`, `PuzzleRow` (dataclass : `puzzle_id, fen, moves, rating, themes, game_url`), `read_puzzle_csv(path) -> Iterator[PuzzleRow]`
 
-- [x] **Step 1 : Ajouter pytest à pyproject.toml**
+- [X] **Step 1 : Ajouter pytest à pyproject.toml**
 
 Ajouter à la fin de `pyproject.toml` :
 
@@ -90,7 +87,7 @@ Ajouter à la fin de `pyproject.toml` :
 dev = ["pytest>=8.0"]
 ```
 
-- [x] **Step 2 : Synchroniser et vérifier que pytest répond**
+- [X] **Step 2 : Synchroniser et vérifier que pytest répond**
 
 ```bash
 uv sync && uv run pytest --version
@@ -98,7 +95,7 @@ uv sync && uv run pytest --version
 
 Attendu : une version de pytest affichée, 8.0 ou supérieure.
 
-- [x] **Step 3 : Écrire les tests avant le code**
+- [X] **Step 3 : Écrire les tests avant le code**
 
 Créer `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -168,7 +165,7 @@ def test_split_produces_both_sides_in_roughly_the_declared_ratio():
     assert 0.03 < bench / len(ids) < 0.07
 ```
 
-- [x] **Step 4 : Lancer les tests et vérifier qu'ils échouent**
+- [X] **Step 4 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -176,7 +173,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : ÉCHEC à l'import, `ModuleNotFoundError: No module named 'build_puzzle_dataset'`.
 
-- [x] **Step 5 : Écrire le module**
+- [X] **Step 5 : Écrire le module**
 
 Créer `python_src/build_puzzle_dataset.py` :
 
@@ -280,7 +277,7 @@ def read_puzzle_csv(path: Path) -> Iterator[PuzzleRow]:
             )
 ```
 
-- [x] **Step 6 : Lancer les tests et vérifier qu'ils passent**
+- [X] **Step 6 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -288,7 +285,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : 7 tests PASSED.
 
-- [x] **Step 7 : Commit**
+- [X] **Step 7 : Commit**
 
 ```bash
 git add pyproject.toml uv.lock python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py
@@ -314,16 +311,18 @@ EOF
 ### Task 2 : Couche de téléchargement avec cache et reprise
 
 **Files:**
+
 - Create: `python_src/lichess_games.py`
 - Create: `python_src/tests/test_lichess_games.py`
 
 **Interfaces:**
+
 - Consumes: rien
 - Produces: `MAX_IDS_PER_REQUEST = 300`, `game_id_from_url(url: str) -> str | None`, `ply_hint_from_url(url: str) -> int | None`, `batched(items: list, size: int) -> Iterator[list]`, `fetch_games(game_ids: list[str], cache_dir: Path, token: str | None = None, fetcher=None) -> None`, `cached_pgn(game_id: str, cache_dir: Path) -> str | None`
 
 `fetcher` est injectable pour les tests : signature `fetcher(ids: list[str], token: str | None) -> str`, renvoyant les PGN concaténés. Par défaut, un appel réel à l'API.
 
-- [x] **Step 1 : Écrire les tests avant le code**
+- [X] **Step 1 : Écrire les tests avant le code**
 
 Créer `python_src/tests/test_lichess_games.py` :
 
@@ -417,7 +416,7 @@ def test_missing_game_in_response_is_not_cached(tmp_path):
     assert lg.cached_pgn("bbb", tmp_path) is None
 ```
 
-- [x] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
+- [X] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_lichess_games.py -v
@@ -425,7 +424,7 @@ uv run pytest python_src/tests/test_lichess_games.py -v
 
 Attendu : ÉCHEC à l'import, `ModuleNotFoundError: No module named 'lichess_games'`.
 
-- [x] **Step 3 : Écrire le module**
+- [X] **Step 3 : Écrire le module**
 
 Créer `python_src/lichess_games.py` :
 
@@ -553,7 +552,7 @@ def fetch_games(game_ids: list[str],
             time.sleep(PAUSE_BETWEEN_REQUESTS_S)
 ```
 
-- [x] **Step 4 : Lancer les tests et vérifier qu'ils passent**
+- [X] **Step 4 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_lichess_games.py -v
@@ -561,7 +560,7 @@ uv run pytest python_src/tests/test_lichess_games.py -v
 
 Attendu : 7 tests PASSED.
 
-- [x] **Step 5 : Commit**
+- [X] **Step 5 : Commit**
 
 ```bash
 git add python_src/lichess_games.py python_src/tests/test_lichess_games.py
@@ -587,16 +586,18 @@ EOF
 ### Task 3 : Appariement de position par rejeu
 
 **Files:**
+
 - Modify: `python_src/build_puzzle_dataset.py`
 - Modify: `python_src/tests/test_build_puzzle_dataset.py`
 
 **Interfaces:**
+
 - Consumes: `PuzzleRow` de la Task 1, `ply_hint_from_url` de la Task 2
 - Produces: `position_key(board) -> str` (trois premiers champs de la FEN), `MatchResult` (dataclass : `start_fen: str`, `moves_uci: list[str]`), `MatchError` (classe de constantes : `NO_MATCH = "no_match"`, `AMBIGUOUS = "ambiguous"`, `GAME_MISSING = "game_missing"`, `UNREADABLE = "unreadable"`), `match_puzzle_in_game(pgn_text: str, puzzle_fen: str, ply_hint: int | None) -> MatchResult | str`
 
 La fonction renvoie un `MatchResult` en cas de succès, ou l'une des chaînes de `MatchError` en cas d'échec.
 
-- [x] **Step 1 : Écrire les tests avant le code**
+- [X] **Step 1 : Écrire les tests avant le code**
 
 Ajouter à la fin de `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -701,7 +702,7 @@ def test_repetition_with_hint_picks_the_closest_ply():
     assert result.moves_uci == line
 ```
 
-- [x] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
+- [X] **Step 2 : Lancer les tests et vérifier qu'ils échouent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -709,7 +710,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : ÉCHEC à l'import, `ImportError: cannot import name 'MatchError'`.
 
-- [x] **Step 3 : Écrire le code d'appariement**
+- [X] **Step 3 : Écrire le code d'appariement**
 
 Ajouter à `python_src/build_puzzle_dataset.py`, après `read_puzzle_csv`, et compléter les imports en tête du fichier avec `import io`, `import chess`, `import chess.pgn` :
 
@@ -788,7 +789,7 @@ def match_puzzle_in_game(pgn_text: str,
     return MatchResult(start_fen=start_fen, moves_uci=best)
 ```
 
-- [x] **Step 4 : Lancer les tests et vérifier qu'ils passent**
+- [X] **Step 4 : Lancer les tests et vérifier qu'ils passent**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
@@ -796,7 +797,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py -v
 
 Attendu : 14 tests PASSED.
 
-- [x] **Step 5 : Commit**
+- [X] **Step 5 : Commit**
 
 ```bash
 git add python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py
@@ -824,15 +825,17 @@ EOF
 ### Task 4 : Assemblage, écriture des fichiers et rapport
 
 **Files:**
+
 - Modify: `python_src/build_puzzle_dataset.py`
 - Modify: `python_src/tests/test_build_puzzle_dataset.py`
 - Modify: `.gitignore`
 
 **Interfaces:**
+
 - Consumes: tout ce qui précède
 - Produces: `format_line(row: PuzzleRow, match: MatchResult) -> str`, `main()` avec les options `--csv`, `--cache`, `--out-train`, `--out-bench`, `--train-target`, `--bench-per-bucket`, `--token`, `--dry-run`
 
-- [x] **Step 1 : Écrire le test du formatage de ligne**
+- [X] **Step 1 : Écrire le test du formatage de ligne**
 
 Ajouter à `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -865,7 +868,7 @@ def test_format_line_has_five_fields_and_no_separator_inside():
     assert "\n" not in line
 ```
 
-- [x] **Step 2 : Lancer le test et vérifier qu'il échoue**
+- [X] **Step 2 : Lancer le test et vérifier qu'il échoue**
 
 ```bash
 uv run pytest python_src/tests/test_build_puzzle_dataset.py::test_format_line_has_five_fields_and_no_separator_inside -v
@@ -873,7 +876,7 @@ uv run pytest python_src/tests/test_build_puzzle_dataset.py::test_format_line_ha
 
 Attendu : ÉCHEC, `ImportError: cannot import name 'format_line'`.
 
-- [x] **Step 3 : Écrire le formatage et le programme principal**
+- [X] **Step 3 : Écrire le formatage et le programme principal**
 
 Ajouter à `python_src/build_puzzle_dataset.py`, et compléter les imports avec `import argparse`, `import collections`, `import sys`, et `from lichess_games import fetch_games, game_id_from_url, ply_hint_from_url, cached_pgn` :
 
@@ -1022,7 +1025,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [x] **Step 4 : Lancer toute la suite**
+- [X] **Step 4 : Lancer toute la suite**
 
 ```bash
 uv run pytest python_src/tests -v
@@ -1030,7 +1033,7 @@ uv run pytest python_src/tests -v
 
 Attendu : 15 tests PASSED.
 
-- [x] **Step 5 : Vérifier la disjonction train / banc sur les fichiers produits**
+- [X] **Step 5 : Vérifier la disjonction train / banc sur les fichiers produits**
 
 Ajouter à `python_src/tests/test_build_puzzle_dataset.py` :
 
@@ -1053,7 +1056,7 @@ uv run pytest python_src/tests -v
 
 Attendu : 16 tests PASSED.
 
-- [x] **Step 6 : Ignorer le cache de parties**
+- [X] **Step 6 : Ignorer le cache de parties**
 
 Ajouter à `.gitignore`, après la ligne `training_data/` :
 
@@ -1064,7 +1067,7 @@ python_src/tests/__pycache__
 
 Le cache de parties vit sous `training_data/`, déjà ignoré. Le fichier du banc va dans `data/`, qui n'est pas ignoré et doit être versionné.
 
-- [x] **Step 7 : Vérifier la CLI sans réseau**
+- [X] **Step 7 : Vérifier la CLI sans réseau**
 
 ```bash
 cd python_src && uv run python build_puzzle_dataset.py --help
@@ -1078,7 +1081,7 @@ cd python_src && uv run python build_puzzle_dataset.py --csv /inexistant.csv
 
 Attendu : message `CSV introuvable`, code de sortie 2.
 
-- [x] **Step 8 : Commit**
+- [X] **Step 8 : Commit**
 
 ```bash
 git add python_src/build_puzzle_dataset.py python_src/tests/test_build_puzzle_dataset.py .gitignore
@@ -1104,16 +1107,18 @@ EOF
 ### Task 5 : Chargement du nouveau format et rejeu côté C++
 
 **Files:**
+
 - Modify: `src/chessboard.hpp` (déclaration, après `movePieceSAN`)
 - Modify: `src/chessboard.cpp` (implémentation, après `movePieceSAN`)
 - Modify: `src/selfplay_manager.hpp` (membre `m_tactical_fens` et déclaration `load_tactical_fens`)
 - Modify: `src/selfplay_manager.cpp` (constructeur, `reset_game`, `roll_next_move`, `load_tactical_fens`)
 
 **Interfaces:**
+
 - Consumes: le format `<fen_initiale>|<coups_uci>|...` produit par la Task 4
 - Produces: `bool Chessboard::movePieceUCI(const std::string& uci)`, `struct TacticalPuzzle { std::string start_fen; std::vector<std::string> moves; }`
 
-- [x] **Step 1 : Déclarer `movePieceUCI`**
+- [X] **Step 1 : Déclarer `movePieceUCI`**
 
 Dans `src/chessboard.hpp`, juste après la ligne `bool movePieceSAN(std::string san);` :
 
@@ -1123,7 +1128,7 @@ Dans `src/chessboard.hpp`, juste après la ligne `bool movePieceSAN(std::string 
         bool movePieceUCI(const std::string& uci);
 ```
 
-- [x] **Step 2 : Implémenter `movePieceUCI`**
+- [X] **Step 2 : Implémenter `movePieceUCI`**
 
 Dans `src/chessboard.cpp`, juste après la fin de `movePieceSAN` :
 
@@ -1161,7 +1166,7 @@ bool Chessboard::movePieceUCI(const std::string& uci)
 }
 ```
 
-- [x] **Step 3 : Remplacer le membre et le chargeur dans le manager**
+- [X] **Step 3 : Remplacer le membre et le chargeur dans le manager**
 
 Dans `src/selfplay_manager.hpp`, remplacer la ligne `std::vector<std::string> m_tactical_fens;` par :
 
@@ -1179,7 +1184,7 @@ et renommer la déclaration `void load_tactical_fens(const std::string& filepath
     void load_tactical_puzzles(const std::string& filepath);
 ```
 
-- [x] **Step 4 : Implémenter le chargeur**
+- [X] **Step 4 : Implémenter le chargeur**
 
 Dans `src/selfplay_manager.cpp`, remplacer intégralement la fonction `SelfPlayManager::load_tactical_fens` par :
 
@@ -1224,7 +1229,7 @@ void SelfPlayManager::load_tactical_puzzles(const std::string& filepath) {
 
 Ajouter `#include <sstream>` en tête de `src/selfplay_manager.cpp`.
 
-- [x] **Step 5 : Rejouer les coups dans `reset_game`**
+- [X] **Step 5 : Rejouer les coups dans `reset_game`**
 
 Dans `src/selfplay_manager.cpp`, dans `reset_game`, remplacer le bloc allant du commentaire `// --- INJECTION DE FEN (20% du temps) ---` jusqu'à la fin du `else` qui appelle `setStartupPieces()`, par :
 
@@ -1271,7 +1276,7 @@ Et dans le constructeur, remplacer l'appel `load_tactical_fens("../training_data
     load_tactical_puzzles("../training_data/puzzles_train.txt");
 ```
 
-- [x] **Step 6 : Ramener l'amnésie à 1 % et redocumenter**
+- [X] **Step 6 : Ramener l'amnésie à 1 % et redocumenter**
 
 Dans `src/selfplay_manager.cpp`, dans `roll_next_move`, remplacer le bloc commençant par le commentaire `// equivalent dropout pour éviter le shortcut learning` et couvrant le `if`/`else` sur `setAmnesiaMode`, par :
 
@@ -1297,7 +1302,7 @@ Dans `src/selfplay_manager.cpp`, dans `roll_next_move`, remplacer le bloc commen
 
 Noter que la condition `!m_is_tactical[game_idx] &&` disparaît : l'amnésie n'a plus de raison d'épargner les positions tactiques, puisqu'elle n'est plus un correctif de confondant.
 
-- [x] **Step 7 : Construire**
+- [X] **Step 7 : Construire**
 
 ```bash
 cmake --build build --config Release --target chess_engine
@@ -1305,7 +1310,7 @@ cmake --build build --config Release --target chess_engine
 
 Attendu : compilation sans erreur.
 
-- [x] **Step 8 : Vérifier `movePieceUCI` contre `python-chess`**
+- [X] **Step 8 : Vérifier `movePieceUCI` contre `python-chess`**
 
 Créer `python_src/tests/test_move_piece_uci.py` :
 
@@ -1408,7 +1413,7 @@ def test_uci_rejects_malformed_and_illegal():
     assert not board.move_piece_uci("e2e5")  # illegal
 ```
 
-- [x] **Step 9 : Exposer `move_piece_uci` dans les bindings et reconstruire**
+- [X] **Step 9 : Exposer `move_piece_uci` dans les bindings et reconstruire**
 
 Dans `src/bindings.cpp`, juste après `.def("move_piece_san", &Chessboard::movePieceSAN)` :
 
@@ -1423,7 +1428,7 @@ uv run pytest python_src/tests/test_move_piece_uci.py -v
 
 Attendu : 4 tests PASSED.
 
-- [x] **Step 10 : Prouver que le contrôle détecte un décalage de ply**
+- [X] **Step 10 : Prouver que le contrôle détecte un décalage de ply**
 
 Un contrôle qui ne se déclenche jamais et un contrôle absent produisent la même sortie. Modifier temporairement le test pour retirer le dernier coup du rejeu :
 
@@ -1440,7 +1445,7 @@ Attendu : ÉCHEC sur la comparaison des ensembles de coups légaux.
 
 **Rétablir `for uci in line:`** et relancer pour confirmer le retour au vert.
 
-- [x] **Step 11 : Vérifier que le perft n'a pas régressé**
+- [X] **Step 11 : Vérifier que le perft n'a pas régressé**
 
 `movePieceUCI` appelle `movePiece`, et le manager a changé. Le générateur de coups ne devrait pas être affecté, mais c'est exactement ce que le filet sert à confirmer.
 
@@ -1451,7 +1456,7 @@ cmake --build build --config Release --target chess_perft
 
 Attendu : `Resultat : SUCCES`, code de sortie 0.
 
-- [x] **Step 12 : Commit**
+- [X] **Step 12 : Commit**
 
 ```bash
 git add src/chessboard.hpp src/chessboard.cpp src/selfplay_manager.hpp src/selfplay_manager.cpp src/bindings.cpp python_src/tests/test_move_piece_uci.py
@@ -1488,16 +1493,18 @@ EOF
 ### Task 6 : Exécution réelle et rapport
 
 **Files:**
+
 - Create: `data/puzzles_bench.txt` (produit par l'exécution, committé)
 - Create: `docs/superpowers/specs/2026-08-07-puzzle-pipeline-resultats.md`
 
 **Interfaces:**
+
 - Consumes: tout ce qui précède
 - Produces: le rapport qui conditionne la suite
 
-- [ ] **Step 1 : Vérifier le filtrage sans rien télécharger**
+- [x] **Step 1 : Vérifier le filtrage sans rien télécharger**
 
-Le CSV doit être présent dans `training_data/`. S'il manque, le télécharger depuis <https://database.lichess.org/#puzzles>.
+Le CSV doit être présent dans `training_data/`. S'il manque, le télécharger depuis [https://database.lichess.org/#puzzles](https://database.lichess.org/#puzzles).
 
 ```bash
 cd python_src && uv run python build_puzzle_dataset.py --dry-run
@@ -1505,7 +1512,7 @@ cd python_src && uv run python build_puzzle_dataset.py --dry-run
 
 Attendu : les comptes par tranche, et 100 000 puzzles d'entraînement sélectionnés. Si une tranche du banc est sous 1250, la plage de rating correspondante manque de puzzles passant le filtre de thèmes : le noter et continuer.
 
-- [ ] **Step 2 : Lancer le pipeline complet**
+- [x] **Step 2 : Lancer le pipeline complet**
 
 ```bash
 cd python_src && uv run python build_puzzle_dataset.py
@@ -1517,7 +1524,7 @@ Attendu : code de sortie 0, et un rapport avec moins de 5 % d'écartés.
 
 Si le taux dépasse 5 %, **ne pas continuer** : le programme sort en erreur et l'hypothèse sur le format des données est à revoir. Regarder la répartition des causes, `no_match` et `ambiguous` en particulier.
 
-- [ ] **Step 3 : Vérifier la disjonction sur les fichiers réels**
+- [x] **Step 3 : Vérifier la disjonction sur les fichiers réels**
 
 ```bash
 cd python_src && uv run python -c "
@@ -1533,7 +1540,7 @@ print(f'train {t} lignes, bench {b} lignes')
 
 Attendu : environ 100 000 et 5 000. La disjonction est garantie par construction (hachage), et déjà couverte par un test unitaire.
 
-- [ ] **Step 4 : Vérifier qu'une partie entière tourne avec les nouveaux puzzles**
+- [x] **Step 4 : Vérifier qu'une partie entière tourne avec les nouveaux puzzles**
 
 ```bash
 cd python_src && uv run python -c "
@@ -1553,7 +1560,7 @@ print(f'{ok}/200 rejoues sans erreur')
 
 Attendu : `200/200`. Tout écart signifie que le pipeline a écrit des coups que le moteur refuse, donc un désaccord entre `python-chess` et le générateur de coups, ce qui serait un résultat majeur à investiguer avec `dev_tools/fuzz_movegen.py --bisect`.
 
-- [ ] **Step 5 : Rédiger le rapport**
+- [x] **Step 5 : Rédiger le rapport**
 
 Créer `docs/superpowers/specs/2026-08-07-puzzle-pipeline-resultats.md` en remplaçant chaque valeur entre chevrons par la mesure réelle :
 
@@ -1605,7 +1612,7 @@ débuts de partie, donc de positions rarement tactiques.
 cycle du banc de puzzles. Noter ici toute anomalie à traiter avant.>
 ```
 
-- [ ] **Step 6 : Commit**
+- [x] **Step 6 : Commit**
 
 ```bash
 git add data/puzzles_bench.txt docs/superpowers/specs/2026-08-07-puzzle-pipeline-resultats.md
@@ -1622,7 +1629,7 @@ de rejeu.
 EOF
 ```
 
-- [ ] **Step 7 : Faire le point**
+- [x] **Step 7 : Faire le point**
 
 Présenter le rapport. Deux suites possibles :
 
