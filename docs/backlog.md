@@ -15,6 +15,17 @@ Contrainte de conception : **les puzzles doivent être présentés avec un histo
 Un banc sur FEN nues mesurerait la performance gonflée par le raccourci décrit plus bas,
 pas la force réelle.
 
+Les données sont prêtes : `data/puzzles_bench.txt`, 5000 puzzles avec leur historique réel,
+committé et disjoint de l'entraînement par construction. Voir
+`superpowers/specs/2026-08-07-puzzle-pipeline-resultats.md`.
+
+**Notes de conception détaillées : `superpowers/specs/2026-08-08-puzzle-bench-notes.md`.**
+Onze subtilités identifiées, dont la contamination des mesures par la table de
+transposition (indexée sur le seul Zobrist, donc un hit d'un puzzle précédent peut renvoyer
+une value calculée sous un autre historique : il faut un `MCTS` neuf par puzzle), et le fait
+que le coût de la mesure est dominé par le batch de 1, donc que le banc deviendra 10 à 40
+fois plus rapide après l'entrée §1.
+
 ## 1. Batcher la recherche côté UCI
 
 Le plus gros écart du projet. Il existe deux points d'entrée vers le GPU :
@@ -31,6 +42,13 @@ self-play. Il manque le virtual loss pour que plusieurs descentes simultanées d
 même arbre ne convergent pas vers la même feuille.
 
 Gain attendu : un ordre de grandeur sur le nombre de simulations à temps constant.
+
+**Notes de conception détaillées : `superpowers/specs/2026-08-08-uci-batching-notes.md`.**
+Elles contiennent la dérivation du signe du virtual loss sur ce code précis, la structure de
+la boucle, et six pièges vérifiés dans le code, dont le plus sérieux : `select_leaf` fait de
+l'expansion paresseuse depuis la TT et continue à descendre, donc une feuille collectée peut
+recevoir des enfants pendant la même collecte et `expand_and_backup` en créerait un second
+jeu. Il faut un drapeau `is_pending` sur `MCTSNode`.
 
 ## 2. Corriger la clé de la table de transposition
 
