@@ -68,6 +68,204 @@ def test_parse_bench_line_rejects_a_wrong_field_count():
         parse_bench_line(0, "un|deux|trois\n")
 
 
+import chess_engine
+from bench_metrics import (
+    DonneesInvalides,
+    charger_position,
+    measure_puzzle,
+    uci_to_index,
+)
+
+DEPART = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def _puzzle(coups, solution, fen=DEPART, rating=1500, themes="fork short"):
+    return BenchPuzzle(
+        ligne=0, fen_initiale=fen, coups_uci=coups, solution_uci=solution,
+        rating=rating, themes=themes,
+    )
+
+
+def _faux_reseau(coup_prefere, p=0.7):
+    """policy_fn factice : met p sur coup_prefere, repartit le reste."""
+    def policy_fn(board):
+        indices = board.get_legal_move_indices()
+        cible = uci_to_index(board, coup_prefere)
+        reste = (1.0 - p) / max(1, len(indices) - 1)
+        return {i: (p if i == cible else reste) for i in indices}, 0.25
+    return policy_fn
+
+
+def _visites_sur(board, coup):
+    pi = [0.0] * 4672
+    pi[uci_to_index(board, coup)] = 1.0
+    return pi
+
+
+def _recherche_sequentielle(coups):
+    """search_fn factice : renvoie les coups fournis, dans l'ordre des appels.
+
+    Plus explicite que d'inspecter des cases du plateau pour deviner a quel
+    coup de la ligne on se trouve.
+    """
+    restants = list(coups)
+
+    def search_fn(board):
+        return _visites_sur(board, restants.pop(0))
+    return search_fn
+
+
+def test_charger_position_rejoue_l_historique():
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["b8c6"])
+
+    board = charger_position(puzzle)
+
+    assert board.turn == chess_engine.Color.BLACK
+    # Le cavalier est arrive en f3, soit file 5 rang 2.
+    assert board.get_square(5, 2).get_piece().get_type() == chess_engine.PieceType.KNIGHT
+
+
+def test_charger_position_refuse_un_historique_illegal():
+    puzzle = _puzzle(["e2e4", "e2e4"], ["b8c6"])
+
+    with pytest.raises(DonneesInvalides) as info:
+        charger_position(puzzle)
+
+    assert info.value.cause == "historique_illegal"
+
+
+def test_charger_position_sans_historique_donne_la_meme_position():
+    """Le bras sans historique repart de la FEN atteinte, ce qui vide les plans
+    d'historique du tenseur sans changer la position."""
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["b8c6"])
+
+    avec = charger_position(puzzle)
+    sans = charger_position(puzzle, sans_historique=True)
+
+    assert avec.to_fen() == sans.to_fen()
+    assert avec.get_legal_move_indices() == sans.get_legal_move_indices()
+    assert not (avec.get_alphazero_tensor() == sans.get_alphazero_tensor()).all()
+
+
+def test_measure_puzzle_compte_une_reussite_au_premier_coup():
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["b8c6"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("b8c6"),
+                            _recherche_sequentielle(["b8c6"]))
+
+    assert mesure.erreur == ""
+    assert mesure.reussi_reseau is True
+    assert mesure.reussi_recherche is True
+    assert mesure.reussi_ligne is True
+    assert mesure.premier_ecart == -1
+    assert mesure.coup_reseau == "b8c6"
+    assert mesure.coup_recherche == "b8c6"
+    assert mesure.p_correct_reseau == pytest.approx(0.7)
+    assert mesure.rang_correct_reseau == 1
+    assert mesure.part_visites_correct == pytest.approx(1.0)
+    assert mesure.nb_recherches == 1
+    assert mesure.plies_historique == 3
+    assert mesure.nb_coups_legaux > 0
+
+
+def test_measure_puzzle_compte_un_echec_et_le_rang_du_bon_coup():
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["b8c6"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("g8f6"),
+                            _recherche_sequentielle(["g8f6"]))
+
+    assert mesure.reussi_reseau is False
+    assert mesure.reussi_recherche is False
+    assert mesure.reussi_ligne is False
+    assert mesure.premier_ecart == 0
+    assert mesure.coup_recherche == "g8f6"
+    assert mesure.rang_correct_reseau > 1
+    assert mesure.part_visites_correct == pytest.approx(0.0)
+    assert mesure.nb_recherches == 1
+
+
+def test_measure_puzzle_suit_une_ligne_de_trois_coups():
+    """Les coups du solveur sont aux index pairs : ici deux recherches."""
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3", "b8c6"],
+                     ["f1b5", "a7a6", "b5c6"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("f1b5"),
+                            _recherche_sequentielle(["f1b5", "b5c6"]))
+
+    assert mesure.erreur == ""
+    assert mesure.reussi_recherche is True
+    assert mesure.reussi_ligne is True
+    assert mesure.premier_ecart == -1
+    assert mesure.nb_recherches == 2
+
+
+def test_measure_puzzle_s_arrete_au_premier_ecart_de_la_ligne():
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3", "b8c6"],
+                     ["f1b5", "a7a6", "b5c6"])
+
+    # Premier coup bon, second coup solveur (index 2) faux.
+    mesure = measure_puzzle(puzzle, _faux_reseau("f1b5"),
+                            _recherche_sequentielle(["f1b5", "b5a4"]))
+
+    assert mesure.reussi_recherche is True      # le premier coup reste bon
+    assert mesure.reussi_ligne is False
+    assert mesure.premier_ecart == 2
+    assert mesure.nb_recherches == 2
+
+
+def test_measure_puzzle_gere_une_solution_d_un_seul_coup():
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["b8c6"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("b8c6"),
+                            _recherche_sequentielle(["b8c6"]))
+
+    assert mesure.nb_recherches == 1
+    assert mesure.reussi_ligne is True
+
+
+def test_measure_puzzle_signale_une_solution_illegale():
+    """Second controle, independant des tests de build_puzzle_dataset : si
+    solution[0] n'est pas legal, on compte au lieu de planter."""
+    puzzle = _puzzle(["e2e4", "e7e5", "g1f3"], ["e2e4"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("b8c6"),
+                            _recherche_sequentielle(["b8c6"]))
+
+    assert mesure.erreur == "solution_illegale"
+    assert mesure.nb_recherches == 0
+    assert mesure.reussi_ligne is False
+
+
+def test_measure_puzzle_signale_un_historique_illegal():
+    puzzle = _puzzle(["e2e4", "e2e4"], ["b8c6"])
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("b8c6"),
+                            _recherche_sequentielle(["b8c6"]))
+
+    assert mesure.erreur == "historique_illegal"
+    assert mesure.nb_recherches == 0
+
+
+def test_measure_puzzle_compare_des_index_et_pas_des_chaines():
+    """Une promotion dame s'ecrit 'a7a8q' cote Lichess et peut se decoder sans
+    suffixe : comparer les chaines produirait un faux echec."""
+    puzzle = _puzzle(["a2a4"], ["a7a8q"],
+                     fen="7k/P7/8/8/8/8/8/7K w - - 0 1")
+    # a2a4 n'existe pas dans cette position : on verifie d'abord le rejet,
+    # puis on mesure la vraie position sans historique.
+    assert measure_puzzle(puzzle, _faux_reseau("a7a8q"),
+                          _recherche_sequentielle(["a7a8q"])).erreur == "historique_illegal"
+
+    puzzle = _puzzle([], ["a7a8q"], fen="7k/P7/8/8/8/8/8/7K w - - 0 1")
+
+    mesure = measure_puzzle(puzzle, _faux_reseau("a7a8q"),
+                            _recherche_sequentielle(["a7a8q"]))
+
+    assert mesure.erreur == ""
+    assert mesure.reussi_recherche is True
+    assert mesure.reussi_ligne is True
+
+
 def test_parse_bench_line_reads_the_real_bench_file():
     """La lecture doit tenir sur les donnees reelles, pas seulement sur une
     ligne forgee."""
