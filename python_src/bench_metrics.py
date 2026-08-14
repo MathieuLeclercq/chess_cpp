@@ -8,6 +8,9 @@ se teste entierement avec des faux.
 Voir docs/superpowers/specs/2026-08-14-puzzle-bench-design.md
 """
 
+import collections
+import math
+import statistics
 import time
 from dataclasses import dataclass
 
@@ -21,6 +24,18 @@ from move_coding import (
 )
 
 TAILLE_POLICY = 4672
+
+# Reprises de build_puzzle_dataset.BENCH_BUCKETS, avec leur etiquette.
+TRANCHES = (
+    ("1000-1449", 1000, 1449),
+    ("1450-1899", 1450, 1899),
+    ("1900-2349", 1900, 2349),
+    ("2350-2800", 2350, 2800),
+)
+
+# TT_MAX_MOVES cote C++ (mcts.hpp:34) : au dela, les coups legaux sont tronques
+# et ne peuvent jamais etre joues.
+LIMITE_TT_MAX_MOVES = 128
 
 
 @dataclass(frozen=True)
@@ -228,3 +243,115 @@ def measure_puzzle(puzzle: BenchPuzzle, policy_fn, search_fn,
         value=value, coup_recherche=coup_recherche,
         reussi_recherche=reussi_recherche, part_visites=part_visites,
         premier_ecart=premier_ecart, nb_recherches=nb_recherches)
+
+
+def wilson(succes: int, total: int, z: float = 1.96) -> tuple[float, float]:
+    """Intervalle de Wilson.
+
+    Preferable a l'intervalle normal sur des taux proches de 0 ou de 1, et sur
+    de petits effectifs, ou l'intervalle normal peut sortir de [0, 1].
+    """
+    if total == 0:
+        return (0.0, 0.0)
+
+    p = succes / total
+    d = 1.0 + z * z / total
+    centre = (p + z * z / (2 * total)) / d
+    demi = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / d
+    return (max(0.0, centre - demi), min(1.0, centre + demi))
+
+
+def mcnemar(b: int, c: int) -> tuple[float, float]:
+    """Test de McNemar avec correction de continuite.
+
+    b : le reseau seul avait trouve, la recherche a perdu.
+    c : le reseau seul avait manque, la recherche a trouve.
+
+    Le test est symetrique en b et c : il dit s'il y a un ecart, pas dans quel
+    sens. Ce sont b et c, rapportes separement, qui portent le sens.
+
+    La p-valeur bilaterale d'un chi2 a un degre de liberte vaut
+    erfc(sqrt(chi2 / 2)), ce qui evite une dependance a scipy.
+    """
+    n = b + c
+    if n == 0:
+        return (0.0, 1.0)
+
+    chi2 = max(0.0, abs(b - c) - 1.0) ** 2 / n
+    return (chi2, math.erfc(math.sqrt(chi2 / 2.0)))
+
+
+@dataclass(frozen=True)
+class Taux:
+    total: int
+    reseau: int
+    recherche: int
+    ligne: int
+    p_correct_median: float
+    part_visites_median: float
+
+
+@dataclass(frozen=True)
+class BenchStats:
+    global_: Taux
+    par_tranche: dict
+    par_theme: dict
+    mcnemar_b: int
+    mcnemar_c: int
+    mcnemar_chi2: float
+    mcnemar_p: float
+    erreurs: dict
+    au_dela_128: int
+
+
+def _taux(mesures: list) -> Taux:
+    if not mesures:
+        return Taux(0, 0, 0, 0, 0.0, 0.0)
+
+    return Taux(
+        total=len(mesures),
+        reseau=sum(1 for m in mesures if m.reussi_reseau),
+        recherche=sum(1 for m in mesures if m.reussi_recherche),
+        ligne=sum(1 for m in mesures if m.reussi_ligne),
+        p_correct_median=statistics.median(m.p_correct_reseau for m in mesures),
+        part_visites_median=statistics.median(
+            m.part_visites_correct for m in mesures),
+    )
+
+
+def aggregate(mesures: list) -> BenchStats:
+    """Agrege les mesures : global, par tranche de rating, par theme.
+
+    Les puzzles en erreur sont exclus des taux et comptes a part : les inclure
+    ferait passer un defaut de donnees pour une faiblesse du modele.
+    """
+    from build_puzzle_dataset import TACTICAL_THEMES
+
+    erreurs: collections.Counter = collections.Counter(
+        m.erreur for m in mesures if m.erreur)
+    valides = [m for m in mesures if not m.erreur]
+
+    par_tranche = {
+        etiquette: _taux([m for m in valides if bas <= m.rating <= haut])
+        for etiquette, bas, haut in TRANCHES
+    }
+
+    par_theme = {}
+    for theme in sorted(TACTICAL_THEMES):
+        lot = [m for m in valides if theme in m.themes.split()]
+        if lot:
+            par_theme[theme] = _taux(lot)
+
+    b = sum(1 for m in valides if m.reussi_reseau and not m.reussi_recherche)
+    c = sum(1 for m in valides if not m.reussi_reseau and m.reussi_recherche)
+    chi2, p = mcnemar(b, c)
+
+    return BenchStats(
+        global_=_taux(valides),
+        par_tranche=par_tranche,
+        par_theme=par_theme,
+        mcnemar_b=b, mcnemar_c=c, mcnemar_chi2=chi2, mcnemar_p=p,
+        erreurs=dict(erreurs),
+        au_dela_128=sum(1 for m in valides
+                        if m.nb_coups_legaux > LIMITE_TT_MAX_MOVES),
+    )

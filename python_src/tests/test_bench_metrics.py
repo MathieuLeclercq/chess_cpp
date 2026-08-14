@@ -266,6 +266,170 @@ def test_measure_puzzle_compare_des_index_et_pas_des_chaines():
     assert mesure.reussi_ligne is True
 
 
+from bench_metrics import PuzzleMeasure, aggregate, mcnemar, wilson
+
+
+def test_wilson_encadre_la_proportion():
+    bas, haut = wilson(50, 100)
+
+    assert bas < 0.5 < haut
+    # Valeurs connues pour 50/100 a 95 pour cent.
+    assert 0.40 < bas < 0.41
+    assert 0.59 < haut < 0.60
+
+
+def test_wilson_ne_sort_jamais_de_zero_un():
+    assert wilson(0, 10)[0] == 0.0
+    assert wilson(10, 10)[1] == 1.0
+    assert wilson(0, 0) == (0.0, 0.0)
+
+
+def test_wilson_se_resserre_quand_l_effectif_grandit():
+    """C'est tout l'interet de l'afficher : distinguer un ecart d'un bruit."""
+    petit = wilson(50, 100)
+    grand = wilson(500, 1000)
+
+    assert (grand[1] - grand[0]) < (petit[1] - petit[0])
+
+
+def test_mcnemar_sur_une_table_connue():
+    chi2, p = mcnemar(10, 40)
+
+    assert chi2 == pytest.approx((abs(10 - 40) - 1) ** 2 / 50)
+    assert p < 0.001
+
+
+def test_mcnemar_sans_discordance_ne_signale_rien():
+    assert mcnemar(0, 0) == (0.0, 1.0)
+
+    chi2, p = mcnemar(20, 20)
+    assert chi2 == 0.0
+    assert p == pytest.approx(1.0)
+
+
+def test_mcnemar_est_symetrique():
+    """Le test dit s'il y a un ecart, pas dans quel sens : ce sont b et c,
+    rapportes separement, qui portent le sens."""
+    assert mcnemar(10, 40) == mcnemar(40, 10)
+
+
+def _m(ligne, rating, reseau, recherche, ligne_ok, p=0.5, part=0.5,
+       themes="fork short", erreur="", nb_legaux=30):
+    return PuzzleMeasure(
+        ligne=ligne, rating=rating, themes=themes,
+        plies_historique=20, nb_coups_legaux=nb_legaux,
+        coup_reseau="e2e4", reussi_reseau=reseau, p_correct_reseau=p,
+        rang_correct_reseau=1, value_reseau=0.1,
+        coup_recherche="e2e4", reussi_recherche=recherche,
+        part_visites_correct=part, reussi_ligne=ligne_ok,
+        premier_ecart=-1 if ligne_ok else 0, nb_recherches=1,
+        duree_s=0.5, erreur=erreur,
+    )
+
+
+def test_aggregate_compte_les_taux_globaux():
+    mesures = [
+        _m(0, 1100, True, True, True),
+        _m(1, 1500, False, True, False),
+        _m(2, 2000, True, False, False),
+        _m(3, 2400, False, False, False),
+    ]
+
+    stats = aggregate(mesures)
+
+    assert stats.global_.total == 4
+    assert stats.global_.reseau == 2
+    assert stats.global_.recherche == 2
+    assert stats.global_.ligne == 1
+
+
+def test_aggregate_ventile_par_tranche_de_rating():
+    mesures = [
+        _m(0, 1100, True, True, True),
+        _m(1, 1500, True, True, True),
+        _m(2, 1500, False, False, False),
+    ]
+
+    stats = aggregate(mesures)
+
+    assert stats.par_tranche["1000-1449"].total == 1
+    assert stats.par_tranche["1450-1899"].total == 2
+    assert stats.par_tranche["1450-1899"].reseau == 1
+    assert stats.par_tranche["1900-2349"].total == 0
+
+
+def test_aggregate_compte_un_puzzle_dans_chacun_de_ses_themes():
+    mesures = [_m(0, 1500, True, True, True, themes="fork pin short")]
+
+    stats = aggregate(mesures)
+
+    assert stats.par_theme["fork"].total == 1
+    assert stats.par_theme["pin"].total == 1
+    # 'short' decrit la longueur, pas un motif : il ne doit pas apparaitre.
+    assert "short" not in stats.par_theme
+
+
+def test_aggregate_remplit_les_cases_discordantes_de_mcnemar():
+    mesures = [
+        _m(0, 1500, True, False, False),    # reseau bon, recherche mauvaise
+        _m(1, 1500, True, False, False),
+        _m(2, 1500, False, True, False),    # l'inverse
+        _m(3, 1500, True, True, True),      # concordant
+    ]
+
+    stats = aggregate(mesures)
+
+    assert stats.mcnemar_b == 2
+    assert stats.mcnemar_c == 1
+
+
+def test_aggregate_exclut_les_erreurs_des_taux_et_les_compte_a_part():
+    """Les inclure ferait passer un defaut de donnees pour une faiblesse du
+    modele."""
+    mesures = [
+        _m(0, 1500, True, True, True),
+        _m(1, 1500, False, False, False, erreur="solution_illegale"),
+    ]
+
+    stats = aggregate(mesures)
+
+    assert stats.global_.total == 1
+    assert stats.global_.reseau == 1
+    assert stats.erreurs == {"solution_illegale": 1}
+
+
+def test_aggregate_signale_les_positions_au_dela_de_la_limite_de_tt():
+    """TT_MAX_MOVES tronque a 128 : au dela, des coups legaux ne peuvent jamais
+    etre joues."""
+    mesures = [
+        _m(0, 1500, True, True, True, nb_legaux=52),
+        _m(1, 1500, True, True, True, nb_legaux=140),
+    ]
+
+    assert aggregate(mesures).au_dela_128 == 1
+
+
+def test_aggregate_calcule_les_medianes():
+    mesures = [
+        _m(0, 1500, True, True, True, p=0.1, part=0.2),
+        _m(1, 1500, True, True, True, p=0.5, part=0.6),
+        _m(2, 1500, True, True, True, p=0.9, part=1.0),
+    ]
+
+    stats = aggregate(mesures)
+
+    assert stats.global_.p_correct_median == pytest.approx(0.5)
+    assert stats.global_.part_visites_median == pytest.approx(0.6)
+
+
+def test_aggregate_supporte_une_liste_vide():
+    stats = aggregate([])
+
+    assert stats.global_.total == 0
+    assert stats.mcnemar_b == 0
+    assert stats.erreurs == {}
+
+
 def test_parse_bench_line_reads_the_real_bench_file():
     """La lecture doit tenir sur les donnees reelles, pas seulement sur une
     ligne forgee."""
