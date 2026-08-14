@@ -128,3 +128,61 @@ def test_la_taille_de_tt_reste_petite():
     import puzzle_bench
 
     assert puzzle_bench.TAILLE_TT <= 65536
+
+
+def test_main_de_bout_en_bout_sur_un_petit_echantillon(tmp_path, monkeypatch):
+    """Execute main() sur 6 puzzles et 8 simulations : verifie l'assemblage,
+    pas la qualite du modele."""
+    import csv as csv_mod
+
+    import puzzle_bench
+
+    sortie_csv = tmp_path / "res.csv"
+    sortie_rapport = tmp_path / "rapport.md"
+
+    monkeypatch.setattr(sys, "argv", [
+        "puzzle_bench.py",
+        "--model", str(CHECKPOINT),
+        "--banc", str(BANC),
+        "--limite", "6",
+        "--simulations", "8",
+        "--travailleurs", "2",
+        "--dossier-onnx", str(tmp_path / "onnx"),
+        "--out-csv", str(sortie_csv),
+        "--out-rapport", str(sortie_rapport),
+    ])
+
+    assert puzzle_bench.main() == 0
+
+    with open(sortie_csv, encoding="utf-8", newline="") as f:
+        lignes = list(csv_mod.DictReader(f))
+
+    assert len(lignes) == 6
+    assert list(lignes[0]) == list(puzzle_bench.CHAMPS_CSV)
+    assert [int(l["ligne"]) for l in lignes] == list(range(6))
+    # Aucune erreur de donnees : second controle de la correction du pipeline,
+    # independant des tests de build_puzzle_dataset.
+    assert all(l["erreur"] == "" for l in lignes), [
+        l["erreur"] for l in lignes if l["erreur"]]
+    # La ligne complete implique le premier coup, jamais l'inverse.
+    for l in lignes:
+        if l["reussi_ligne"] == "True":
+            assert l["reussi_recherche"] == "True"
+
+    rapport = sortie_rapport.read_text(encoding="utf-8")
+    assert "Banc de puzzles" in rapport
+    assert "McNemar" in rapport
+
+
+def test_main_refuse_un_fichier_de_banc_absent(tmp_path, monkeypatch):
+    import puzzle_bench
+
+    monkeypatch.setattr(sys, "argv", [
+        "puzzle_bench.py",
+        "--model", str(CHECKPOINT),
+        "--banc", str(tmp_path / "absent.txt"),
+        "--out-csv", str(tmp_path / "res.csv"),
+        "--out-rapport", str(tmp_path / "rapport.md"),
+    ])
+
+    assert puzzle_bench.main() == 2

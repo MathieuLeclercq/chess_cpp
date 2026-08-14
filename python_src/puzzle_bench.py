@@ -136,3 +136,170 @@ def faire_search_fn(evaluateur, simulations: int, c_puct: float):
         return mcts.mcts_search(board, simulations, c_puct, False)
 
     return search_fn
+
+
+CHAMPS_CSV = (
+    "ligne", "rating", "themes", "plies_historique", "nb_coups_legaux",
+    "coup_reseau", "reussi_reseau", "p_correct_reseau", "rang_correct_reseau",
+    "value_reseau", "coup_recherche", "reussi_recherche",
+    "part_visites_correct", "reussi_ligne", "premier_ecart", "nb_recherches",
+    "duree_s", "erreur",
+)
+
+# Etat par processus travailleur : la session onnxruntime et l'evaluateur ne
+# sont crees qu'une fois par travailleur, pas a chaque puzzle.
+_ETAT: dict = {}
+
+
+def initialiser_travailleur(onnx: str, simulations: int, c_puct: float,
+                            sans_historique: bool) -> None:
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 1
+    options.inter_op_num_threads = 1
+    session = ort.InferenceSession(onnx, options,
+                                   providers=["CPUExecutionProvider"])
+
+    _ETAT["policy_fn"] = faire_policy_fn(session)
+    _ETAT["search_fn"] = faire_search_fn(
+        chess_engine.ONNXEvaluator(onnx, False), simulations, c_puct)
+    _ETAT["sans_historique"] = sans_historique
+
+
+def traiter_lot(lot: list) -> list:
+    """lot : liste de (index, ligne brute). Renvoie des PuzzleMeasure."""
+    from bench_metrics import measure_puzzle, parse_bench_line
+
+    return [
+        measure_puzzle(
+            parse_bench_line(index, ligne),
+            _ETAT["policy_fn"],
+            _ETAT["search_fn"],
+            sans_historique=_ETAT["sans_historique"],
+        )
+        for index, ligne in lot
+    ]
+
+
+def ecrire_csv(mesures: list, chemin: Path) -> None:
+    """Une ligne par puzzle, dans l'ordre du fichier de banc.
+
+    Le pool rend les lots dans l'ordre d'achevement, donc le tri est necessaire
+    pour que l'index de ligne reste un identifiant utilisable.
+    """
+    import csv
+    import dataclasses
+
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    with open(chemin, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(CHAMPS_CSV))
+        writer.writeheader()
+        for mesure in sorted(mesures, key=lambda m: m.ligne):
+            writer.writerow(dataclasses.asdict(mesure))
+
+
+def _lots(lignes: list, taille: int) -> list:
+    return [lignes[i:i + taille] for i in range(0, len(lignes), taille)]
+
+
+def main() -> int:
+    import argparse
+    import multiprocessing as mp
+    import time
+
+    from bench_metrics import aggregate, format_report
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", type=Path, required=True,
+                        help="checkpoint .pt ou modele .onnx")
+    parser.add_argument("--banc", type=Path,
+                        default=Path("../data/puzzles_bench.txt"))
+    parser.add_argument("--dossier-onnx", type=Path,
+                        default=Path("checkpoints_onnx"))
+    parser.add_argument("--out-csv", type=Path, default=None)
+    parser.add_argument("--out-rapport", type=Path, default=None)
+    parser.add_argument("--simulations", type=int, default=800)
+    parser.add_argument("--c-puct", type=float, default=1.4)
+    parser.add_argument("--travailleurs", type=int, default=16)
+    parser.add_argument("--limite", type=int, default=0,
+                        help="ne traiter que les N premiers puzzles")
+    parser.add_argument("--sans-historique", action="store_true",
+                        help="presente les puzzles avec l'historique vide")
+    args = parser.parse_args()
+
+    if not args.banc.exists():
+        print(f"fichier de banc introuvable : {args.banc}", file=sys.stderr)
+        return 2
+
+    onnx, meta = resoudre_modele(args.model, args.dossier_onnx)
+    if not Path(onnx).exists():
+        print(f"modele ONNX introuvable : {onnx}", file=sys.stderr)
+        return 2
+
+    with open(args.banc, encoding="utf-8") as f:
+        lignes = list(enumerate(f))
+    if args.limite:
+        lignes = lignes[:args.limite]
+
+    # Posee dans le parent pour etre heritee : sous Windows le pool utilise
+    # spawn et reimporte le module avant d'executer l'initialiseur, donc la
+    # poser dans l'initialiseur serait trop tard.
+    os.environ["OMP_NUM_THREADS"] = "1"
+
+    suffixe = " (sans historique)" if args.sans_historique else ""
+    print(f"{len(lignes)} puzzles, {args.simulations} simulations, "
+          f"{args.travailleurs} travailleurs{suffixe}")
+
+    debut = time.perf_counter()
+    lots = _lots(lignes, 16)
+    mesures: list = []
+    with mp.Pool(args.travailleurs, initializer=initialiser_travailleur,
+                 initargs=(str(onnx), args.simulations, args.c_puct,
+                           args.sans_historique)) as pool:
+        for i, resultat in enumerate(pool.imap_unordered(traiter_lot, lots), 1):
+            mesures.extend(resultat)
+            if i % 10 == 0 or i == len(lots):
+                ecoule = time.perf_counter() - debut
+                print(f"  {len(mesures)}/{len(lignes)} puzzles, "
+                      f"{ecoule / 60.0:.1f} min, "
+                      f"{len(mesures) / max(1e-9, ecoule):.1f} puzzles/s",
+                      flush=True)
+    duree = time.perf_counter() - debut
+
+    stats = aggregate(mesures)
+    contexte = {
+        "modele": Path(onnx).name,
+        "iteration": meta.get("iteration"),
+        "global_step": meta.get("global_step"),
+        "simulations": args.simulations,
+        "c_puct": args.c_puct,
+        "fichier_banc": str(args.banc),
+        "sans_historique": args.sans_historique,
+        "duree_totale_s": duree,
+        "travailleurs": args.travailleurs,
+    }
+
+    out_csv = args.out_csv or Path(
+        f"../data/bench_results/{Path(onnx).stem}.csv")
+    out_rapport = args.out_rapport or Path(
+        f"../docs/superpowers/specs/{time.strftime('%Y-%m-%d')}"
+        "-puzzle-bench-resultats.md")
+
+    ecrire_csv(mesures, out_csv)
+    out_rapport.parent.mkdir(parents=True, exist_ok=True)
+    out_rapport.write_text(format_report(stats, contexte), encoding="utf-8")
+
+    print(f"\nCSV     : {out_csv}")
+    print(f"Rapport : {out_rapport}")
+    print(f"Duree   : {duree / 60.0:.1f} min")
+    if stats.erreurs:
+        print(f"Erreurs de donnees : {stats.erreurs}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    import multiprocessing as mp
+
+    mp.freeze_support()
+    sys.exit(main())
