@@ -205,12 +205,86 @@ def test_format_line_has_five_fields_and_no_separator_inside():
     assert len(fields) == 5
     assert fields[0] == chess.STARTING_FEN
     assert fields[1] == "e2e4 e7e5"
-    # Le premier coup de Moves est la gaffe adverse, deja incluse dans les
-    # coups rejoues. La solution commence donc au deuxieme.
+    # Le premier coup de Moves est la gaffe adverse, ajoutee a l'historique par
+    # append_blunder. La solution commence donc au deuxieme.
     assert fields[2] == "e7e5 g1f3"
     assert fields[3] == "1500"
     assert fields[4] == "mateIn2 short"
     assert "\n" not in line
+
+
+def test_solution_first_move_is_legal_after_replaying_history():
+    """L'invariant que le portage de l'ancienne extraction avait perdu.
+
+    La position ecrite doit etre celle ou le solveur a le trait : apres rejeu de
+    l'historique, le premier coup de la solution doit etre legal. Sans
+    append_blunder l'historique s'arrete un demi-coup trop tot, avant le motif
+    tactique, et ce coup y est illegal. Aucun des tests precedents ne
+    l'exercait, et les 105 000 lignes produites etaient toutes fausses.
+    """
+    line = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"]
+    puzzle_ply = 4                      # position depuis laquelle part Moves
+    puzzle_fen = _fen_after(line[:puzzle_ply])
+    blunder, solution_move = line[4], line[5]
+
+    row = PuzzleRow(
+        puzzle_id="abc12",
+        fen=puzzle_fen,
+        moves=[blunder, solution_move],
+        rating=1500,
+        themes="mateIn2 short",
+        game_url="https://lichess.org/testtest#4",
+    )
+
+    match = match_puzzle_in_game(_pgn_from_uci(line), puzzle_fen, ply_hint=None)
+    match = bpd.append_blunder(match, row.moves[0])
+    fields = format_line(row, match).split("|")
+
+    board = chess.Board(fields[0])
+    for uci in fields[1].split():
+        board.push_uci(uci)
+
+    assert fields[2].split() == [solution_move]
+    assert chess.Move.from_uci(solution_move) in board.legal_moves
+
+
+def test_append_blunder_adds_exactly_one_ply():
+    line = ["e2e4", "e7e5", "g1f3"]
+    match = MatchResult(start_fen=chess.STARTING_FEN, moves_uci=line[:2])
+
+    result = bpd.append_blunder(match, line[2])
+
+    assert result.moves_uci == line
+    assert result.start_fen == chess.STARTING_FEN
+
+
+def test_append_blunder_rejects_a_blunder_that_is_not_legal():
+    """Un appariement leve par ply_hint peut avoir retenu la mauvaise occurrence.
+
+    On veut alors un rejet comptabilise, pas une ligne silencieusement fausse.
+    """
+    match = MatchResult(start_fen=chess.STARTING_FEN, moves_uci=["e2e4"])
+
+    assert bpd.append_blunder(match, "e2e4") == MatchError.ILLEGAL_BLUNDER
+    assert bpd.append_blunder(match, "pouet") == MatchError.ILLEGAL_BLUNDER
+
+
+def test_read_puzzle_csv_skips_rows_with_fewer_than_two_moves(tmp_path):
+    """Sans gaffe ET reponse, les deux champs produits seraient vides."""
+    csv_path = tmp_path / "puzzles.csv"
+    header = ("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,"
+              "Themes,GameUrl,OpeningTags")
+    fen = chess.STARTING_FEN
+    rows = [
+        f"solo,{fen},e2e4,1500,80,90,120,mateIn2 short,https://lichess.org/aaaaaaaa,",
+        f"vide,{fen},,1500,80,90,120,mateIn2 short,https://lichess.org/bbbbbbbb,",
+        f"bon,{fen},e2e4 e7e5,1500,80,90,120,mateIn2 short,https://lichess.org/cccccccc,",
+    ]
+    csv_path.write_text("\n".join([header, *rows]) + "\n", encoding="utf-8")
+
+    lus = list(bpd.read_puzzle_csv(csv_path))
+
+    assert [r.puzzle_id for r in lus] == ["bon"]
 
 
 def test_train_and_bench_never_share_a_puzzle_id():
@@ -245,8 +319,13 @@ def test_end_to_end_on_synthetic_data(tmp_path, monkeypatch, capsys):
     des deux fichiers et code de sortie.
     """
     line = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"]
-    puzzle_ply = 5  # position apres f1b5
-    puzzle_fen = _fen_after(line[:puzzle_ply])
+    # Convention Lichess : la FEN du puzzle est la position DEPUIS laquelle part
+    # le champ Moves, dont le premier coup est la gaffe adverse. Ici Moves
+    # commence par f1b5, donc la FEN est celle d'avant f1b5, soit 4 plies.
+    blunder_ply = 4
+    puzzle_fen = _fen_after(line[:blunder_ply])
+    # Historique attendu en sortie : jusqu'a la FEN du puzzle, gaffe incluse.
+    history_attendu = line[:blunder_ply + 1]
     game_id = "abcd1234"
 
     cache = tmp_path / "cache"
@@ -263,10 +342,10 @@ def test_end_to_end_on_synthetic_data(tmp_path, monkeypatch, capsys):
     rows = [
         # rating 1500 : dans la plage d'entrainement
         f"{train_id},{puzzle_fen},f1b5 a7a6 b5c6,1500,80,90,100,mateIn2 short,"
-        f"https://lichess.org/{game_id}#{puzzle_ply},",
+        f"https://lichess.org/{game_id}#{blunder_ply},",
         # rating 1200 : hors plage d'entrainement, mais dans la tranche 0 du banc
         f"{bench_id},{puzzle_fen},f1b5 a7a6 b5c6,1200,80,90,100,fork short,"
-        f"https://lichess.org/{game_id}#{puzzle_ply},",
+        f"https://lichess.org/{game_id}#{blunder_ply},",
     ]
     csv_path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
 
@@ -295,10 +374,15 @@ def test_end_to_end_on_synthetic_data(tmp_path, monkeypatch, capsys):
     fields = train_lines[0].split("|")
     assert len(fields) == 5
     assert fields[0] == chess.STARTING_FEN
-    # Les coups rejoues vont du debut jusqu'a la position du puzzle incluse.
-    assert fields[1] == " ".join(line[:puzzle_ply])
-    # La solution est Moves[1:], la gaffe etant deja dans les coups rejoues.
+    # Les coups rejoues vont du debut jusqu'a la position du puzzle, gaffe incluse.
+    assert fields[1] == " ".join(history_attendu)
+    # La solution est Moves[1:], la gaffe etant desormais dans les coups rejoues.
     assert fields[2] == "a7a6 b5c6"
+    # L'invariant, verifie aussi de bout en bout : le solveur a le trait.
+    board = chess.Board(fields[0])
+    for uci in fields[1].split():
+        board.push_uci(uci)
+    assert chess.Move.from_uci("a7a6") in board.legal_moves
     assert fields[3] == "1500"
 
     assert bench_lines[0].split("|")[3] == "1200"

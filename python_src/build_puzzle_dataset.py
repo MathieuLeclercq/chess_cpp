@@ -105,10 +105,15 @@ def read_puzzle_csv(path: Path) -> Iterator[PuzzleRow]:
                 rating = int(row["Rating"])
             except (KeyError, ValueError):
                 continue
+            moves = row.get("Moves", "").split()
+            # Un puzzle exploitable compte au moins la gaffe adverse et une
+            # reponse. En dessous, les deux champs produits seraient vides.
+            if len(moves) < 2:
+                continue
             yield PuzzleRow(
                 puzzle_id=row["PuzzleId"],
                 fen=row["FEN"],
-                moves=row["Moves"].split(),
+                moves=moves,
                 rating=rating,
                 themes=themes,
                 game_url=row.get("GameUrl", ""),
@@ -121,6 +126,7 @@ class MatchError:
     AMBIGUOUS = "ambiguous"
     GAME_MISSING = "game_missing"
     UNREADABLE = "unreadable"
+    ILLEGAL_BLUNDER = "illegal_blunder"
 
 
 @dataclass(frozen=True)
@@ -189,11 +195,42 @@ def match_puzzle_in_game(pgn_text: str,
     return MatchResult(start_fen=start_fen, moves_uci=best)
 
 
+def append_blunder(match: MatchResult, blunder_uci: str):
+    """Prolonge l'historique de la gaffe adverse, premier coup du champ Moves.
+
+    match_puzzle_in_game s'arrete SUR la position du puzzle, c'est-a-dire celle
+    depuis laquelle le CSV joue Moves[0]. Cette gaffe n'est donc pas dans
+    l'historique et doit y etre ajoutee : sans elle, la position ecrite precede
+    le motif tactique d'un demi-coup et le premier coup de la solution y est
+    illegal. C'est ce que faisait l'ancienne extraction, dont le portage a perdu
+    l'etape.
+
+    La legalite est verifiee et non supposee : un appariement leve par ply_hint
+    peut avoir retenu la mauvaise occurrence de la position.
+
+    Renvoie un MatchResult, ou MatchError.ILLEGAL_BLUNDER.
+    """
+    board = chess.Board(match.start_fen)
+    for uci in match.moves_uci:
+        board.push_uci(uci)
+
+    try:
+        move = chess.Move.from_uci(blunder_uci)
+    except ValueError:
+        return MatchError.ILLEGAL_BLUNDER
+    if move not in board.legal_moves:
+        return MatchError.ILLEGAL_BLUNDER
+
+    return MatchResult(start_fen=match.start_fen,
+                       moves_uci=[*match.moves_uci, blunder_uci])
+
+
 def format_line(row: PuzzleRow, match: MatchResult) -> str:
     """Une ligne du fichier de sortie.
 
-    Le premier coup du champ Moves du CSV est la gaffe de l'adversaire, deja
-    incluse dans les coups rejoues. La solution commence donc au deuxieme.
+    Le premier coup du champ Moves du CSV est la gaffe de l'adversaire, ajoutee
+    a l'historique par append_blunder. La solution commence donc au deuxieme, et
+    son premier coup est legal dans la position obtenue en rejouant l'historique.
     """
     return "|".join((
         match.start_fen,
@@ -292,6 +329,10 @@ def main() -> int:
                     continue
                 result = match_puzzle_in_game(
                     pgn, row.fen, ply_hint_from_url(row.game_url))
+                if isinstance(result, str):
+                    counters[result] += 1
+                    continue
+                result = append_blunder(result, row.moves[0])
                 if isinstance(result, str):
                     counters[result] += 1
                     continue
