@@ -76,7 +76,12 @@ private:
     std::mt19937 m_rng{ std::random_device{}() };
 
     // pour entrainement tactique sur puzzles lichess
-    std::vector<char> m_is_tactical;
+    // Renfort tactique du PREMIER coup d'une partie amorcee par un puzzle :
+    // TACTICAL_FIRST_MOVE_SIMS simulations et TACTICAL_EPSILON de bruit. Le
+    // drapeau est consomme dans play_best_move une fois ce coup joue, apres
+    // quoi la partie redevient une partie normale, budget de recherche comme
+    // bruit de Dirichlet.
+    std::vector<char> m_tactical_boost;
     struct TacticalPuzzle {
         std::string start_fen;
         std::vector<std::string> moves; // UCI, jusqu'à la position du puzzle incluse

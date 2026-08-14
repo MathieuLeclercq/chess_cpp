@@ -35,7 +35,7 @@ SelfPlayManager::SelfPlayManager(
 
     m_shared_mcts = std::make_unique<MCTS>(m_evaluator, tt_size);
 
-    m_is_tactical.resize(num_concurrent_games, false);
+    m_tactical_boost.resize(num_concurrent_games, false);
     load_tactical_puzzles("../training_data/puzzles_train.txt");
 
     for (int i = 0; i < num_concurrent_games; ++i) {
@@ -69,19 +69,19 @@ void SelfPlayManager::reset_game(int game_idx) {
         }
 
         if (replay_ok) {
-            m_is_tactical[game_idx] = true;
+            m_tactical_boost[game_idx] = true;
         }
         else {
             // Rejeu impossible : on retombe sur une partie normale plutôt que
             // de partir d'une position corrompue.
             m_boards[game_idx].clear();
             m_boards[game_idx].setStartupPieces();
-            m_is_tactical[game_idx] = false;
+            m_tactical_boost[game_idx] = false;
         }
     }
     else {
         m_boards[game_idx].setStartupPieces();
-        m_is_tactical[game_idx] = false;
+        m_tactical_boost[game_idx] = false;
     }
 
     m_roots[game_idx] = std::make_unique<MCTSNode>(0.0f);
@@ -91,7 +91,7 @@ void SelfPlayManager::reset_game(int game_idx) {
 
     m_shared_mcts->expand_node_single(m_roots[game_idx].get(), m_boards[game_idx]);
 
-    if (m_is_tactical[game_idx]) {
+    if (m_tactical_boost[game_idx]) {
         // on force la tactique à trouver à être en slow move
         m_is_slow_move[game_idx] = true;
         m_sims_target[game_idx] = TACTICAL_FIRST_MOVE_SIMS;
@@ -101,7 +101,7 @@ void SelfPlayManager::reset_game(int game_idx) {
         roll_next_move(game_idx);
     }
 
-    float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+    float current_epsilon = m_tactical_boost[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
     m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
 }
 
@@ -120,7 +120,7 @@ void SelfPlayManager::execute_gpu_batch() {
         m_shared_mcts->expand_and_backup(m_waiting_leaves[i], m_boards[game_idx], single_policy, value);
 
         if (m_waiting_leaves[i] == m_roots[game_idx].get()) {
-            float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+            float current_epsilon = m_tactical_boost[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
             m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
         }
 
@@ -222,10 +222,19 @@ void SelfPlayManager::play_best_move(int game_idx) {
 
     roll_next_move(game_idx);
 
-    // Si la racine réutilisée avait déjà des enfants (rare mais possible), 
+    // Le renfort tactique ne vaut que pour le premier coup, celui où il y a une
+    // tactique à trouver. On le consomme ici : la suite de la partie retrouve le
+    // bruit de Dirichlet normal, comme elle a déjà retrouvé le budget de
+    // recherche normal via roll_next_move. Sans cette ligne, une partie amorcée
+    // par un puzzle gardait 0,30 de bruit du début à la fin, et ses coups
+    // suivants étaient enregistrés comme échantillons avec des cibles issues
+    // d'un jeu plus bruité que la normale.
+    m_tactical_boost[game_idx] = false;
+
+    // Si la racine réutilisée avait déjà des enfants (rare mais possible),
     // on applique le bruit de suite. Sinon, ça sera fait dans execute_gpu_batch.
     if (!m_roots[game_idx]->children.empty()) {
-        float current_epsilon = m_is_tactical[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
+        float current_epsilon = m_tactical_boost[game_idx] ? TACTICAL_EPSILON : NORMAL_EPSILON;
         m_shared_mcts->add_dirichlet_noise(m_roots[game_idx].get(), current_epsilon);
     }
 }
