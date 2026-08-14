@@ -355,3 +355,112 @@ def aggregate(mesures: list) -> BenchStats:
         au_dela_128=sum(1 for m in valides
                         if m.nb_coups_legaux > LIMITE_TT_MAX_MOVES),
     )
+
+
+_EN_TETE_TABLE = (
+    "| | n | Reseau seul % | Recherche % | Ligne complete % "
+    "| p med. du bon coup | part de visites med. |\n"
+    "|---|---|---|---|---|---|---|"
+)
+
+
+def _ligne_taux(etiquette: str, t: Taux) -> str:
+    """Une ligne de table, taux suivis de leur intervalle de Wilson."""
+    if t.total == 0:
+        return f"| {etiquette} | 0 | | | | | |"
+
+    br, hr = wilson(t.reseau, t.total)
+    bs, hs = wilson(t.recherche, t.total)
+    bl, hl = wilson(t.ligne, t.total)
+    return (
+        f"| {etiquette} | {t.total} "
+        f"| {100.0 * t.reseau / t.total:.1f} "
+        f"({100 * br:.1f} a {100 * hr:.1f}) "
+        f"| {100.0 * t.recherche / t.total:.1f} "
+        f"({100 * bs:.1f} a {100 * hs:.1f}) "
+        f"| {100.0 * t.ligne / t.total:.1f} "
+        f"({100 * bl:.1f} a {100 * hl:.1f}) "
+        f"| {t.p_correct_median:.3f} | {t.part_visites_median:.3f} |"
+    )
+
+
+def format_report(stats: BenchStats, contexte: dict) -> str:
+    """Rapport markdown.
+
+    Les taux sont suivis de leur intervalle de Wilson a 95 pour cent, sans quoi
+    deux points d'ecart se liraient comme un ecart.
+    """
+    bras = "sans historique" if contexte["sans_historique"] else "avec historique"
+
+    lignes = [
+        "# Banc de puzzles : resultats",
+        "",
+        f"Modele : `{contexte['modele']}`, iteration {contexte['iteration']}, "
+        f"global_step {contexte['global_step']}",
+        f"Banc : `{contexte['fichier_banc']}`, bras {bras}",
+        f"Recherche : {contexte['simulations']} simulations, "
+        f"c_puct {contexte['c_puct']}, {contexte['travailleurs']} travailleurs",
+        f"Duree : {contexte['duree_totale_s'] / 60.0:.1f} min",
+        "",
+        "La colonne reseau seul est une inference sans aucune recherche : c'est",
+        "la policy brute, la grandeur qui s'effondrait sur les puzzles prives",
+        "d'historique. La colonne recherche est le meme reseau avec le MCTS.",
+        "",
+        "## Global",
+        "",
+        _EN_TETE_TABLE,
+        _ligne_taux("global", stats.global_),
+        "",
+        "## Par tranche de rating",
+        "",
+        _EN_TETE_TABLE,
+    ]
+    lignes += [_ligne_taux(etiquette, stats.par_tranche[etiquette])
+               for etiquette, _, _ in TRANCHES]
+
+    lignes += [
+        "",
+        "## Par theme tactique",
+        "",
+        "Un puzzle portant plusieurs themes compte dans chacun : la ventilation",
+        "est multi-etiquettes et ne somme pas au total.",
+        "",
+        _EN_TETE_TABLE,
+    ]
+    lignes += [_ligne_taux(theme, t) for theme, t in
+               sorted(stats.par_theme.items(), key=lambda kv: -kv[1].total)]
+
+    lignes += [
+        "",
+        "## Reseau seul contre recherche, comparaison appariee",
+        "",
+        "Les deux colonnes portent sur les memes puzzles, donc McNemar",
+        "s'applique. La case qui compte est la premiere : si elle est grosse, la",
+        "recherche detruit des tactiques que la policy voyait deja, ce qui est un",
+        "diagnostic tout autre qu'un reseau faible.",
+        "",
+        f"- Reseau bon, recherche mauvaise : **{stats.mcnemar_b}**",
+        f"- Reseau mauvais, recherche bonne : **{stats.mcnemar_c}**",
+        f"- McNemar : chi2 = {stats.mcnemar_chi2:.2f}, p = {stats.mcnemar_p:.2e}",
+    ]
+
+    if stats.erreurs:
+        lignes += ["", "## Erreurs de donnees", ""]
+        lignes += [f"- `{cause}` : {n}"
+                   for cause, n in sorted(stats.erreurs.items())]
+        lignes += [
+            "",
+            "Ces puzzles sont exclus des taux ci-dessus. Les compter dedans "
+            "ferait passer un defaut de donnees pour une faiblesse du modele.",
+        ]
+
+    if stats.au_dela_128:
+        lignes += [
+            "",
+            f"Attention : {stats.au_dela_128} positions depassent "
+            f"{LIMITE_TT_MAX_MOVES} coups legaux, or TT_MAX_MOVES tronque a "
+            f"{LIMITE_TT_MAX_MOVES} et les coups au dela ne peuvent jamais "
+            "etre joues.",
+        ]
+
+    return "\n".join(lignes) + "\n"

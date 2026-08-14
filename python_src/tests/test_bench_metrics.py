@@ -430,6 +430,77 @@ def test_aggregate_supporte_une_liste_vide():
     assert stats.erreurs == {}
 
 
+from bench_metrics import format_report
+
+CONTEXTE = {
+    "modele": "iter316_dynamic.onnx",
+    "iteration": 316,
+    "global_step": 19415,
+    "simulations": 800,
+    "c_puct": 1.4,
+    "fichier_banc": "data/puzzles_bench.txt",
+    "sans_historique": False,
+    "duree_totale_s": 3600.0,
+    "travailleurs": 16,
+}
+
+
+def _stats_exemple():
+    return aggregate([
+        _m(0, 1100, True, True, True, p=0.8, part=0.9),
+        _m(1, 1500, False, True, False, p=0.1, part=0.6),
+        _m(2, 2000, True, False, False, p=0.7, part=0.2, themes="pin short"),
+    ])
+
+
+def test_format_report_contient_le_contexte_et_les_taux():
+    texte = format_report(_stats_exemple(), CONTEXTE)
+
+    assert "iter316_dynamic.onnx" in texte
+    assert "19415" in texte
+    assert "800" in texte
+    assert "McNemar" in texte
+    assert "1000-1449" in texte
+    assert "avec historique" in texte
+
+
+def test_format_report_annonce_le_bras_sans_historique():
+    contexte = dict(CONTEXTE, sans_historique=True)
+
+    assert "sans historique" in format_report(_stats_exemple(), contexte)
+
+
+def test_format_report_ne_contient_pas_de_tiret_cadratin():
+    """Regle de redaction du projet."""
+    assert "—" not in format_report(_stats_exemple(), CONTEXTE)
+
+
+def test_format_report_signale_les_erreurs_quand_il_y_en_a():
+    stats = aggregate([
+        _m(0, 1500, True, True, True),
+        _m(1, 1500, False, False, False, erreur="solution_illegale"),
+    ])
+
+    assert "solution_illegale" in format_report(stats, CONTEXTE)
+
+
+def test_format_report_reste_muet_sur_les_erreurs_quand_il_n_y_en_a_pas():
+    assert "solution_illegale" not in format_report(_stats_exemple(), CONTEXTE)
+
+
+def test_format_report_avertit_au_dela_de_la_limite_de_tt():
+    stats = aggregate([_m(0, 1500, True, True, True, nb_legaux=140)])
+
+    assert "128" in format_report(stats, CONTEXTE)
+
+
+def test_format_report_supporte_des_stats_vides():
+    """Le rapport d'un essai a zero puzzle ne doit pas lever."""
+    texte = format_report(aggregate([]), CONTEXTE)
+
+    assert "Banc de puzzles" in texte
+
+
 def test_parse_bench_line_reads_the_real_bench_file():
     """La lecture doit tenir sur les donnees reelles, pas seulement sur une
     ligne forgee."""
