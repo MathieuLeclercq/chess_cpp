@@ -194,7 +194,7 @@ temporaire. Mesurable avec le banc de puzzles.
 
 - `119` apparaît dans **19 occurrences fonctionnelles sur 8 fichiers** (`bindings.cpp`,
   `chessboard.cpp`, `mcts.cpp`, `onnx_evaluator.cpp`, `selfplay_manager.cpp/hpp`,
-  `export_batch_onnx.py`, `lib.py`, `model.py`), sans définition partagée. Une migration
+  `lib.py`, `model.py`, `puzzle_bench.py`), sans définition partagée. Une migration
   partielle ne casserait pas la compilation mais ferait lire de la mémoire arbitraire à
   ONNX Runtime via `expected_elements` (`onnx_evaluator.cpp:46`). **Introduire une
   constante unique exposée par les bindings avant toute migration.**
