@@ -517,3 +517,40 @@ def test_parse_bench_line_reads_the_real_bench_file():
     assert all(p.solution_uci for p in puzzles)
     assert all(1000 <= p.rating <= 2800 for p in puzzles)
     assert [p.ligne for p in puzzles] == list(range(20))
+
+
+def test_sous_echantillon_etale_sur_tout_le_fichier():
+    """Prendre les premieres lignes biaiserait l'echantillon : le banc est
+    ecrit tranche de rating par tranche de rating."""
+    import puzzle_bench
+
+    lignes = list(enumerate(f"l{i}" for i in range(5000)))
+
+    echantillon = puzzle_bench.sous_echantillon(lignes, 4)
+
+    assert len(echantillon) == 4
+    index = [i for i, _ in echantillon]
+    assert index == sorted(index)
+    assert index[0] == 0
+    assert index[-1] >= 3750, index
+    assert len(set(index)) == 4
+
+
+def test_sous_echantillon_rend_tout_si_la_limite_depasse():
+    import puzzle_bench
+
+    lignes = list(enumerate("abc"))
+
+    assert puzzle_bench.sous_echantillon(lignes, 10) == lignes
+    assert puzzle_bench.sous_echantillon(lignes, 0) == lignes
+
+
+def test_sous_echantillon_ne_sort_jamais_des_bornes():
+    import puzzle_bench
+
+    lignes = list(enumerate(range(7)))
+
+    for combien in range(1, 8):
+        echantillon = puzzle_bench.sous_echantillon(lignes, combien)
+        assert len(echantillon) == combien
+        assert all(0 <= i < 7 for i, _ in echantillon)

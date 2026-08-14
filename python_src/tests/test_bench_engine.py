@@ -159,7 +159,11 @@ def test_main_de_bout_en_bout_sur_un_petit_echantillon(tmp_path, monkeypatch):
 
     assert len(lignes) == 6
     assert list(lignes[0]) == list(puzzle_bench.CHAMPS_CSV)
-    assert [int(l["ligne"]) for l in lignes] == list(range(6))
+    # Le sous-echantillon est a pas regulier, donc etale sur tout le fichier,
+    # et le CSV reste trie par index de ligne.
+    index = [int(l["ligne"]) for l in lignes]
+    assert index == sorted(index)
+    assert index[-1] > 100, "l'echantillon ne couvre qu'un debut de fichier"
     # Aucune erreur de donnees : second controle de la correction du pipeline,
     # independant des tests de build_puzzle_dataset.
     assert all(l["erreur"] == "" for l in lignes), [

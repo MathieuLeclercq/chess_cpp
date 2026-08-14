@@ -199,6 +199,22 @@ def ecrire_csv(mesures: list, chemin: Path) -> None:
             writer.writerow(dataclasses.asdict(mesure))
 
 
+def sous_echantillon(lignes: list, combien: int) -> list:
+    """Retient `combien` lignes a pas regulier sur tout le fichier.
+
+    Prendre les premieres lignes donnerait un echantillon biaise : le pipeline
+    ecrit le banc tranche de rating par tranche de rating, donc les 200
+    premieres lignes appartiennent toutes a la meme tranche. Le pas regulier
+    reste deterministe, ce qui compte puisque le fichier n'a pas de PuzzleId et
+    que l'index de ligne fait office d'identifiant.
+    """
+    if combien <= 0 or combien >= len(lignes):
+        return lignes
+
+    pas = len(lignes) / combien
+    return [lignes[min(len(lignes) - 1, int(i * pas))] for i in range(combien)]
+
+
 def _lots(lignes: list, taille: int) -> list:
     return [lignes[i:i + taille] for i in range(0, len(lignes), taille)]
 
@@ -223,7 +239,10 @@ def main() -> int:
     parser.add_argument("--c-puct", type=float, default=1.4)
     parser.add_argument("--travailleurs", type=int, default=16)
     parser.add_argument("--limite", type=int, default=0,
-                        help="ne traiter que les N premiers puzzles")
+                        help="sous-echantillon de N puzzles, a pas regulier "
+                             "sur tout le fichier (les N premieres lignes "
+                             "tomberaient toutes dans la meme tranche de "
+                             "rating, le banc etant ecrit tranche par tranche)")
     parser.add_argument("--sans-historique", action="store_true",
                         help="presente les puzzles avec l'historique vide")
     args = parser.parse_args()
@@ -240,7 +259,7 @@ def main() -> int:
     with open(args.banc, encoding="utf-8") as f:
         lignes = list(enumerate(f))
     if args.limite:
-        lignes = lignes[:args.limite]
+        lignes = sous_echantillon(lignes, args.limite)
 
     # Posee dans le parent pour etre heritee : sous Windows le pool utilise
     # spawn et reimporte le module avant d'executer l'initialiseur, donc la
