@@ -19,8 +19,8 @@ import chess_engine
 
 # Un MCTS neuf est cree a chaque recherche. Au defaut de 2 097 143 entrees a
 # 1040 octets, chaque instance reserverait 2,03 Gio, soit 32,5 Gio a 16
-# travailleurs pour 31,4 Gio de RAM. 800 simulations ne stockent au plus que
-# 800 positions distinctes, donc 8192 entrees suffisent largement.
+# travailleurs pour 31,4 Gio de RAM. Une recherche ne stocke au plus que
+# `simulations` positions distinctes, donc 8192 entrees suffisent largement.
 TAILLE_TT = 8192
 
 
@@ -142,8 +142,7 @@ CHAMPS_CSV = (
     "ligne", "rating", "themes", "plies_historique", "nb_coups_legaux",
     "coup_reseau", "reussi_reseau", "p_correct_reseau", "rang_correct_reseau",
     "value_reseau", "coup_recherche", "reussi_recherche",
-    "part_visites_correct", "reussi_ligne", "premier_ecart", "nb_recherches",
-    "duree_s", "erreur",
+    "part_visites_correct", "duree_s", "erreur",
 )
 
 # Etat par processus travailleur : la session onnxruntime et l'evaluateur ne
@@ -235,14 +234,22 @@ def main() -> int:
                         default=Path("checkpoints_onnx"))
     parser.add_argument("--out-csv", type=Path, default=None)
     parser.add_argument("--out-rapport", type=Path, default=None)
-    parser.add_argument("--simulations", type=int, default=800)
+    # 700 simulations : le banc sert a deux comparaisons relatives, la
+    # recherche contre la policy brute et une iteration contre la precedente.
+    # Les deux valent a budget fixe, quel qu'il soit.
+    parser.add_argument("--simulations", type=int, default=700)
     parser.add_argument("--c-puct", type=float, default=1.4)
     parser.add_argument("--travailleurs", type=int, default=16)
-    parser.add_argument("--limite", type=int, default=0,
-                        help="sous-echantillon de N puzzles, a pas regulier "
-                             "sur tout le fichier (les N premieres lignes "
-                             "tomberaient toutes dans la meme tranche de "
-                             "rating, le banc etant ecrit tranche par tranche)")
+    # 2500 sur les 5000 du fichier : la demi-largeur de Wilson globale passe
+    # de 1,2 a 1,6 point seulement, et le passage tient en deux fois moins de
+    # temps. Le pas etant regulier et le fichier ecrit tranche par tranche, on
+    # garde 625 puzzles par tranche de rating.
+    parser.add_argument("--limite", type=int, default=2500,
+                        help="sous-echantillon de N puzzles, a pas regulier sur "
+                             "tout le fichier ; 0 pour tout prendre. Les N "
+                             "premieres lignes tomberaient toutes dans la meme "
+                             "tranche de rating, le banc etant ecrit tranche "
+                             "par tranche")
     parser.add_argument("--sans-historique", action="store_true",
                         help="presente les puzzles avec l'historique vide")
     args = parser.parse_args()
@@ -258,6 +265,7 @@ def main() -> int:
 
     with open(args.banc, encoding="utf-8") as f:
         lignes = list(enumerate(f))
+    total_fichier = len(lignes)
     if args.limite:
         lignes = sous_echantillon(lignes, args.limite)
 
@@ -267,7 +275,8 @@ def main() -> int:
     os.environ["OMP_NUM_THREADS"] = "1"
 
     suffixe = " (sans historique)" if args.sans_historique else ""
-    print(f"{len(lignes)} puzzles, {args.simulations} simulations, "
+    print(f"{len(lignes)} puzzles sur {total_fichier} du fichier, "
+          f"{args.simulations} simulations, premier coup seul, "
           f"{args.travailleurs} travailleurs{suffixe}")
 
     debut = time.perf_counter()

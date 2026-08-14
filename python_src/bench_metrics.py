@@ -129,9 +129,6 @@ class PuzzleMeasure:
     coup_recherche: str
     reussi_recherche: bool
     part_visites_correct: float
-    reussi_ligne: bool
-    premier_ecart: int
-    nb_recherches: int
     duree_s: float
     erreur: str
 
@@ -141,8 +138,7 @@ def _mesure(puzzle: BenchPuzzle, duree: float, erreur: str = "", *,
             coup_reseau: str = "", reussi_reseau: bool = False,
             p_correct: float = 0.0, rang: int = 0, value: float = 0.0,
             coup_recherche: str = "", reussi_recherche: bool = False,
-            part_visites: float = 0.0, premier_ecart: int = -1,
-            nb_recherches: int = 0) -> PuzzleMeasure:
+            part_visites: float = 0.0) -> PuzzleMeasure:
     return PuzzleMeasure(
         ligne=puzzle.ligne, rating=puzzle.rating, themes=puzzle.themes,
         plies_historique=len(puzzle.coups_uci),
@@ -152,8 +148,6 @@ def _mesure(puzzle: BenchPuzzle, duree: float, erreur: str = "", *,
         value_reseau=float(value),
         coup_recherche=coup_recherche, reussi_recherche=reussi_recherche,
         part_visites_correct=float(part_visites),
-        reussi_ligne=(premier_ecart == -1 and not erreur),
-        premier_ecart=premier_ecart, nb_recherches=nb_recherches,
         duree_s=duree, erreur=erreur,
     )
 
@@ -161,7 +155,13 @@ def _mesure(puzzle: BenchPuzzle, duree: float, erreur: str = "", *,
 def measure_puzzle(puzzle: BenchPuzzle, policy_fn, search_fn,
                    sans_historique: bool = False,
                    horloge=time.perf_counter) -> PuzzleMeasure:
-    """Mesure un puzzle : colonne reseau seul, puis colonne recherche.
+    """Mesure un puzzle : reseau seul, puis recherche, sur le PREMIER coup.
+
+    Seul le premier coup est score, et non la ligne complete. Deux raisons : le
+    self-play ne traite specialement que le premier coup d'une position de
+    puzzle (TACTICAL_FIRST_MOVE_SIMS), donc le banc mesure exactement ce que
+    l'entrainement optimise ; et cela divise le cout par 2,17, le nombre moyen
+    de coups solveur par ligne.
 
     policy_fn(board) -> (probabilites sur les index legaux, value)
     search_fn(board) -> sequence de 4672 flottants, visites normalisees
@@ -180,69 +180,32 @@ def measure_puzzle(puzzle: BenchPuzzle, policy_fn, search_fn,
     except DonneesInvalides as exc:
         return _mesure(puzzle, horloge() - debut, exc.cause)
 
-    nb_coups_legaux = len(board.get_legal_move_indices())
+    legaux = set(board.get_legal_move_indices())
+    nb_coups_legaux = len(legaux)
     idx_solution = uci_to_index(board, puzzle.solution_uci[0])
-    if idx_solution not in set(board.get_legal_move_indices()):
+    if idx_solution not in legaux:
         return _mesure(puzzle, horloge() - debut, "solution_illegale",
                        nb_coups_legaux=nb_coups_legaux)
 
-    # --- Colonne reseau seul, sur la position de depart uniquement ---
+    # --- Reseau seul : une inference, aucune recherche ---
     probs, value = policy_fn(board)
     p_correct = probs.get(idx_solution, 0.0)
     rang = 1 + sum(1 for p in probs.values() if p > p_correct)
     idx_reseau = max(probs, key=probs.get)
-    coup_reseau = index_to_uci(board, idx_reseau)
-    reussi_reseau = idx_reseau == idx_solution
 
-    # --- Colonne recherche : premier coup, puis ligne complete ---
-    coup_recherche = ""
-    reussi_recherche = False
-    part_visites = 0.0
-    premier_ecart = -1
-    nb_recherches = 0
-
-    for rang_ply, coup_attendu in enumerate(puzzle.solution_uci):
-        if rang_ply % 2 == 0:
-            idx_attendu = uci_to_index(board, coup_attendu)
-            if idx_attendu not in set(board.get_legal_move_indices()):
-                return _mesure(
-                    puzzle, horloge() - debut, "ligne_illegale",
-                    nb_coups_legaux=nb_coups_legaux, coup_reseau=coup_reseau,
-                    reussi_reseau=reussi_reseau, p_correct=p_correct, rang=rang,
-                    value=value, coup_recherche=coup_recherche,
-                    reussi_recherche=reussi_recherche,
-                    part_visites=part_visites, premier_ecart=rang_ply,
-                    nb_recherches=nb_recherches)
-
-            pi = search_fn(board)
-            nb_recherches += 1
-            idx_choisi = max(range(TAILLE_POLICY), key=lambda i: pi[i])
-
-            if rang_ply == 0:
-                coup_recherche = index_to_uci(board, idx_choisi)
-                part_visites = float(pi[idx_attendu])
-                reussi_recherche = idx_choisi == idx_attendu
-
-            if idx_choisi != idx_attendu:
-                premier_ecart = rang_ply
-                break
-
-        if not board.move_piece_uci(coup_attendu):
-            return _mesure(
-                puzzle, horloge() - debut, "ligne_illegale",
-                nb_coups_legaux=nb_coups_legaux, coup_reseau=coup_reseau,
-                reussi_reseau=reussi_reseau, p_correct=p_correct, rang=rang,
-                value=value, coup_recherche=coup_recherche,
-                reussi_recherche=reussi_recherche, part_visites=part_visites,
-                premier_ecart=rang_ply, nb_recherches=nb_recherches)
+    # --- Recherche : le meme reseau avec le MCTS ---
+    pi = search_fn(board)
+    idx_recherche = max(range(TAILLE_POLICY), key=lambda i: pi[i])
 
     return _mesure(
         puzzle, horloge() - debut, "",
-        nb_coups_legaux=nb_coups_legaux, coup_reseau=coup_reseau,
-        reussi_reseau=reussi_reseau, p_correct=p_correct, rang=rang,
-        value=value, coup_recherche=coup_recherche,
-        reussi_recherche=reussi_recherche, part_visites=part_visites,
-        premier_ecart=premier_ecart, nb_recherches=nb_recherches)
+        nb_coups_legaux=nb_coups_legaux,
+        coup_reseau=index_to_uci(board, idx_reseau),
+        reussi_reseau=(idx_reseau == idx_solution),
+        p_correct=p_correct, rang=rang, value=value,
+        coup_recherche=index_to_uci(board, idx_recherche),
+        reussi_recherche=(idx_recherche == idx_solution),
+        part_visites=float(pi[idx_solution]))
 
 
 def wilson(succes: int, total: int, z: float = 1.96) -> tuple[float, float]:
@@ -286,7 +249,6 @@ class Taux:
     total: int
     reseau: int
     recherche: int
-    ligne: int
     p_correct_median: float
     part_visites_median: float
 
@@ -306,13 +268,12 @@ class BenchStats:
 
 def _taux(mesures: list) -> Taux:
     if not mesures:
-        return Taux(0, 0, 0, 0, 0.0, 0.0)
+        return Taux(0, 0, 0, 0.0, 0.0)
 
     return Taux(
         total=len(mesures),
         reseau=sum(1 for m in mesures if m.reussi_reseau),
         recherche=sum(1 for m in mesures if m.reussi_recherche),
-        ligne=sum(1 for m in mesures if m.reussi_ligne),
         p_correct_median=statistics.median(m.p_correct_reseau for m in mesures),
         part_visites_median=statistics.median(
             m.part_visites_correct for m in mesures),
@@ -358,28 +319,25 @@ def aggregate(mesures: list) -> BenchStats:
 
 
 _EN_TETE_TABLE = (
-    "| | n | Reseau seul % | Recherche % | Ligne complete % "
+    "| | n | Reseau seul % | Recherche % "
     "| p med. du bon coup | part de visites med. |\n"
-    "|---|---|---|---|---|---|---|"
+    "|---|---|---|---|---|---|"
 )
 
 
 def _ligne_taux(etiquette: str, t: Taux) -> str:
     """Une ligne de table, taux suivis de leur intervalle de Wilson."""
     if t.total == 0:
-        return f"| {etiquette} | 0 | | | | | |"
+        return f"| {etiquette} | 0 | | | | |"
 
     br, hr = wilson(t.reseau, t.total)
     bs, hs = wilson(t.recherche, t.total)
-    bl, hl = wilson(t.ligne, t.total)
     return (
         f"| {etiquette} | {t.total} "
         f"| {100.0 * t.reseau / t.total:.1f} "
         f"({100 * br:.1f} a {100 * hr:.1f}) "
         f"| {100.0 * t.recherche / t.total:.1f} "
         f"({100 * bs:.1f} a {100 * hs:.1f}) "
-        f"| {100.0 * t.ligne / t.total:.1f} "
-        f"({100 * bl:.1f} a {100 * hl:.1f}) "
         f"| {t.p_correct_median:.3f} | {t.part_visites_median:.3f} |"
     )
 
@@ -402,8 +360,12 @@ def format_report(stats: BenchStats, contexte: dict) -> str:
         f"c_puct {contexte['c_puct']}, {contexte['travailleurs']} travailleurs",
         f"Duree : {contexte['duree_totale_s'] / 60.0:.1f} min",
         "",
-        "La colonne reseau seul est une inference sans aucune recherche : c'est",
-        "la policy brute, la grandeur qui s'effondrait sur les puzzles prives",
+        "Seul le PREMIER coup est score, celui ou il y a une tactique a trouver.",
+        "C'est aussi le seul coup que le self-play traite specialement, donc le",
+        "banc mesure ce que l'entrainement optimise.",
+        "",
+        "La colonne reseau seul est une inference sans aucune recherche : c'est la",
+        "policy brute, la grandeur qui s'effondrait sur les puzzles prives",
         "d'historique. La colonne recherche est le meme reseau avec le MCTS.",
         "",
         "## Global",

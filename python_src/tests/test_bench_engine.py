@@ -168,10 +168,10 @@ def test_main_de_bout_en_bout_sur_un_petit_echantillon(tmp_path, monkeypatch):
     # independant des tests de build_puzzle_dataset.
     assert all(l["erreur"] == "" for l in lignes), [
         l["erreur"] for l in lignes if l["erreur"]]
-    # La ligne complete implique le premier coup, jamais l'inverse.
+    # Le premier coup est toujours renseigne quand il n'y a pas d'erreur.
     for l in lignes:
-        if l["reussi_ligne"] == "True":
-            assert l["reussi_recherche"] == "True"
+        assert l["coup_recherche"], l
+        assert l["reussi_recherche"] in ("True", "False")
 
     rapport = sortie_rapport.read_text(encoding="utf-8")
     assert "Banc de puzzles" in rapport

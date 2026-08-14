@@ -156,14 +156,11 @@ def test_measure_puzzle_compte_une_reussite_au_premier_coup():
     assert mesure.erreur == ""
     assert mesure.reussi_reseau is True
     assert mesure.reussi_recherche is True
-    assert mesure.reussi_ligne is True
-    assert mesure.premier_ecart == -1
     assert mesure.coup_reseau == "b8c6"
     assert mesure.coup_recherche == "b8c6"
     assert mesure.p_correct_reseau == pytest.approx(0.7)
     assert mesure.rang_correct_reseau == 1
     assert mesure.part_visites_correct == pytest.approx(1.0)
-    assert mesure.nb_recherches == 1
     assert mesure.plies_historique == 3
     assert mesure.nb_coups_legaux > 0
 
@@ -176,41 +173,41 @@ def test_measure_puzzle_compte_un_echec_et_le_rang_du_bon_coup():
 
     assert mesure.reussi_reseau is False
     assert mesure.reussi_recherche is False
-    assert mesure.reussi_ligne is False
-    assert mesure.premier_ecart == 0
     assert mesure.coup_recherche == "g8f6"
     assert mesure.rang_correct_reseau > 1
     assert mesure.part_visites_correct == pytest.approx(0.0)
-    assert mesure.nb_recherches == 1
 
 
-def test_measure_puzzle_suit_une_ligne_de_trois_coups():
-    """Les coups du solveur sont aux index pairs : ici deux recherches."""
+def test_measure_puzzle_ne_lance_qu_une_recherche_sur_une_longue_solution():
+    """Le banc ne suit plus la ligne : le self-play ne traite specialement que
+    le premier coup, donc c'est lui seul qui est mesure. Le faux ne fournit
+    qu'un coup et leverait IndexError si une seconde recherche etait lancee.
+    """
     puzzle = _puzzle(["e2e4", "e7e5", "g1f3", "b8c6"],
                      ["f1b5", "a7a6", "b5c6"])
 
     mesure = measure_puzzle(puzzle, _faux_reseau("f1b5"),
-                            _recherche_sequentielle(["f1b5", "b5c6"]))
+                            _recherche_sequentielle(["f1b5"]))
 
     assert mesure.erreur == ""
     assert mesure.reussi_recherche is True
-    assert mesure.reussi_ligne is True
-    assert mesure.premier_ecart == -1
-    assert mesure.nb_recherches == 2
 
 
-def test_measure_puzzle_s_arrete_au_premier_ecart_de_la_ligne():
+def test_measure_puzzle_mesure_bien_la_position_du_puzzle():
+    """Aucun coup de la solution n'est joue avant la recherche : la position
+    vue par search_fn est celle du puzzle, sans quoi part_visites porterait sur
+    le mauvais coup."""
     puzzle = _puzzle(["e2e4", "e7e5", "g1f3", "b8c6"],
                      ["f1b5", "a7a6", "b5c6"])
+    vu = {}
 
-    # Premier coup bon, second coup solveur (index 2) faux.
-    mesure = measure_puzzle(puzzle, _faux_reseau("f1b5"),
-                            _recherche_sequentielle(["f1b5", "b5a4"]))
+    def search_fn(board):
+        vu["fen"] = board.to_fen()
+        return _visites_sur(board, "f1b5")
 
-    assert mesure.reussi_recherche is True      # le premier coup reste bon
-    assert mesure.reussi_ligne is False
-    assert mesure.premier_ecart == 2
-    assert mesure.nb_recherches == 2
+    measure_puzzle(puzzle, _faux_reseau("f1b5"), search_fn)
+
+    assert vu["fen"] == charger_position(puzzle).to_fen()
 
 
 def test_measure_puzzle_gere_une_solution_d_un_seul_coup():
@@ -219,8 +216,7 @@ def test_measure_puzzle_gere_une_solution_d_un_seul_coup():
     mesure = measure_puzzle(puzzle, _faux_reseau("b8c6"),
                             _recherche_sequentielle(["b8c6"]))
 
-    assert mesure.nb_recherches == 1
-    assert mesure.reussi_ligne is True
+    assert mesure.reussi_recherche is True
 
 
 def test_measure_puzzle_signale_une_solution_illegale():
@@ -232,8 +228,7 @@ def test_measure_puzzle_signale_une_solution_illegale():
                             _recherche_sequentielle(["b8c6"]))
 
     assert mesure.erreur == "solution_illegale"
-    assert mesure.nb_recherches == 0
-    assert mesure.reussi_ligne is False
+    assert mesure.reussi_recherche is False
 
 
 def test_measure_puzzle_signale_un_historique_illegal():
@@ -243,7 +238,7 @@ def test_measure_puzzle_signale_un_historique_illegal():
                             _recherche_sequentielle(["b8c6"]))
 
     assert mesure.erreur == "historique_illegal"
-    assert mesure.nb_recherches == 0
+    assert mesure.reussi_recherche is False
 
 
 def test_measure_puzzle_compare_des_index_et_pas_des_chaines():
@@ -263,7 +258,6 @@ def test_measure_puzzle_compare_des_index_et_pas_des_chaines():
 
     assert mesure.erreur == ""
     assert mesure.reussi_recherche is True
-    assert mesure.reussi_ligne is True
 
 
 from bench_metrics import PuzzleMeasure, aggregate, mcnemar, wilson
@@ -313,7 +307,7 @@ def test_mcnemar_est_symetrique():
     assert mcnemar(10, 40) == mcnemar(40, 10)
 
 
-def _m(ligne, rating, reseau, recherche, ligne_ok, p=0.5, part=0.5,
+def _m(ligne, rating, reseau, recherche, p=0.5, part=0.5,
        themes="fork short", erreur="", nb_legaux=30):
     return PuzzleMeasure(
         ligne=ligne, rating=rating, themes=themes,
@@ -321,18 +315,17 @@ def _m(ligne, rating, reseau, recherche, ligne_ok, p=0.5, part=0.5,
         coup_reseau="e2e4", reussi_reseau=reseau, p_correct_reseau=p,
         rang_correct_reseau=1, value_reseau=0.1,
         coup_recherche="e2e4", reussi_recherche=recherche,
-        part_visites_correct=part, reussi_ligne=ligne_ok,
-        premier_ecart=-1 if ligne_ok else 0, nb_recherches=1,
+        part_visites_correct=part,
         duree_s=0.5, erreur=erreur,
     )
 
 
 def test_aggregate_compte_les_taux_globaux():
     mesures = [
-        _m(0, 1100, True, True, True),
-        _m(1, 1500, False, True, False),
-        _m(2, 2000, True, False, False),
-        _m(3, 2400, False, False, False),
+        _m(0, 1100, True, True),
+        _m(1, 1500, False, True),
+        _m(2, 2000, True, False),
+        _m(3, 2400, False, False),
     ]
 
     stats = aggregate(mesures)
@@ -340,14 +333,13 @@ def test_aggregate_compte_les_taux_globaux():
     assert stats.global_.total == 4
     assert stats.global_.reseau == 2
     assert stats.global_.recherche == 2
-    assert stats.global_.ligne == 1
 
 
 def test_aggregate_ventile_par_tranche_de_rating():
     mesures = [
-        _m(0, 1100, True, True, True),
-        _m(1, 1500, True, True, True),
-        _m(2, 1500, False, False, False),
+        _m(0, 1100, True, True),
+        _m(1, 1500, True, True),
+        _m(2, 1500, False, False),
     ]
 
     stats = aggregate(mesures)
@@ -359,7 +351,7 @@ def test_aggregate_ventile_par_tranche_de_rating():
 
 
 def test_aggregate_compte_un_puzzle_dans_chacun_de_ses_themes():
-    mesures = [_m(0, 1500, True, True, True, themes="fork pin short")]
+    mesures = [_m(0, 1500, True, True, themes="fork pin short")]
 
     stats = aggregate(mesures)
 
@@ -371,10 +363,10 @@ def test_aggregate_compte_un_puzzle_dans_chacun_de_ses_themes():
 
 def test_aggregate_remplit_les_cases_discordantes_de_mcnemar():
     mesures = [
-        _m(0, 1500, True, False, False),    # reseau bon, recherche mauvaise
-        _m(1, 1500, True, False, False),
-        _m(2, 1500, False, True, False),    # l'inverse
-        _m(3, 1500, True, True, True),      # concordant
+        _m(0, 1500, True, False),    # reseau bon, recherche mauvaise
+        _m(1, 1500, True, False),
+        _m(2, 1500, False, True),    # l'inverse
+        _m(3, 1500, True, True),      # concordant
     ]
 
     stats = aggregate(mesures)
@@ -387,8 +379,8 @@ def test_aggregate_exclut_les_erreurs_des_taux_et_les_compte_a_part():
     """Les inclure ferait passer un defaut de donnees pour une faiblesse du
     modele."""
     mesures = [
-        _m(0, 1500, True, True, True),
-        _m(1, 1500, False, False, False, erreur="solution_illegale"),
+        _m(0, 1500, True, True),
+        _m(1, 1500, False, False, erreur="solution_illegale"),
     ]
 
     stats = aggregate(mesures)
@@ -402,8 +394,8 @@ def test_aggregate_signale_les_positions_au_dela_de_la_limite_de_tt():
     """TT_MAX_MOVES tronque a 128 : au dela, des coups legaux ne peuvent jamais
     etre joues."""
     mesures = [
-        _m(0, 1500, True, True, True, nb_legaux=52),
-        _m(1, 1500, True, True, True, nb_legaux=140),
+        _m(0, 1500, True, True, nb_legaux=52),
+        _m(1, 1500, True, True, nb_legaux=140),
     ]
 
     assert aggregate(mesures).au_dela_128 == 1
@@ -411,9 +403,9 @@ def test_aggregate_signale_les_positions_au_dela_de_la_limite_de_tt():
 
 def test_aggregate_calcule_les_medianes():
     mesures = [
-        _m(0, 1500, True, True, True, p=0.1, part=0.2),
-        _m(1, 1500, True, True, True, p=0.5, part=0.6),
-        _m(2, 1500, True, True, True, p=0.9, part=1.0),
+        _m(0, 1500, True, True, p=0.1, part=0.2),
+        _m(1, 1500, True, True, p=0.5, part=0.6),
+        _m(2, 1500, True, True, p=0.9, part=1.0),
     ]
 
     stats = aggregate(mesures)
@@ -447,9 +439,9 @@ CONTEXTE = {
 
 def _stats_exemple():
     return aggregate([
-        _m(0, 1100, True, True, True, p=0.8, part=0.9),
-        _m(1, 1500, False, True, False, p=0.1, part=0.6),
-        _m(2, 2000, True, False, False, p=0.7, part=0.2, themes="pin short"),
+        _m(0, 1100, True, True, p=0.8, part=0.9),
+        _m(1, 1500, False, True, p=0.1, part=0.6),
+        _m(2, 2000, True, False, p=0.7, part=0.2, themes="pin short"),
     ])
 
 
@@ -477,8 +469,8 @@ def test_format_report_ne_contient_pas_de_tiret_cadratin():
 
 def test_format_report_signale_les_erreurs_quand_il_y_en_a():
     stats = aggregate([
-        _m(0, 1500, True, True, True),
-        _m(1, 1500, False, False, False, erreur="solution_illegale"),
+        _m(0, 1500, True, True),
+        _m(1, 1500, False, False, erreur="solution_illegale"),
     ])
 
     assert "solution_illegale" in format_report(stats, CONTEXTE)
@@ -489,7 +481,7 @@ def test_format_report_reste_muet_sur_les_erreurs_quand_il_n_y_en_a_pas():
 
 
 def test_format_report_avertit_au_dela_de_la_limite_de_tt():
-    stats = aggregate([_m(0, 1500, True, True, True, nb_legaux=140)])
+    stats = aggregate([_m(0, 1500, True, True, nb_legaux=140)])
 
     assert "128" in format_report(stats, CONTEXTE)
 
@@ -554,3 +546,26 @@ def test_sous_echantillon_ne_sort_jamais_des_bornes():
         echantillon = puzzle_bench.sous_echantillon(lignes, combien)
         assert len(echantillon) == combien
         assert all(0 <= i < 7 for i, _ in echantillon)
+
+
+def test_format_report_produit_des_tables_markdown_valides():
+    """Garde fou : en retirant la colonne ligne complete j'avais laisse un
+    separateur a 5 cellules pour un en-tete a 6, ce qui casse le rendu sans
+    qu'aucun autre test ne le voie."""
+    texte = format_report(_stats_exemple(), CONTEXTE)
+
+    lignes = texte.split("\n")
+    separateurs = [i for i, l in enumerate(lignes) if set(l) <= set("|-") and "-" in l]
+
+    assert separateurs, "aucune table trouvee"
+    for i in separateurs:
+        cols_sep = lignes[i].count("|") - 1
+        cols_tete = lignes[i - 1].count("|") - 1
+        assert cols_sep == cols_tete, (
+            f"table ligne {i} : separateur {cols_sep} cellules, "
+            f"en-tete {cols_tete}")
+        # Les lignes de donnees qui suivent doivent avoir le meme compte.
+        j = i + 1
+        while j < len(lignes) and lignes[j].startswith("|"):
+            assert lignes[j].count("|") - 1 == cols_tete, lignes[j]
+            j += 1
